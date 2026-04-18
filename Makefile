@@ -1,4 +1,4 @@
-.PHONY: install setup-models lock test ingest build-corpus
+.PHONY: install setup-models lock test ingest build-corpus filter-benchmark
 
 -include .env
 
@@ -6,6 +6,7 @@ NQ_PATH ?= data/raw/nq_100.jsonl
 2WIKI_PATH ?= data/raw/2wikimultihop_100.jsonl
 BENCHMARK_PATH ?= data/processed/benchmark.jsonl
 OUTPUT_DIR ?= data/processed
+CORPUS_PATH ?= $(OUTPUT_DIR)/corpus.jsonl
 HF_HOME ?= $(OUTPUT_DIR)/hf_cache
 
 install:
@@ -32,3 +33,8 @@ build-corpus:
 		--nq "$(NQ_PATH)" \
 		--2wiki "$(2WIKI_PATH)" \
 		--output-dir "$(OUTPUT_DIR)"
+
+filter-benchmark:
+	poetry run python scripts/filter_benchmark_by_corpus.py \
+		--benchmark "$(BENCHMARK_PATH)" \
+		--corpus "$(CORPUS_PATH)"
