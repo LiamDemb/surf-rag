@@ -62,6 +62,7 @@ class BenchmarkItem:
     question: str
     gold_answers: List[str]
     dataset_source: str
+    gold_support_sentences: List[str] = field(default_factory=list)
     dataset_version: Optional[str] = None
 
     def to_json(self) -> Dict[str, Any]:
@@ -69,6 +70,7 @@ class BenchmarkItem:
             "question_id": self.question_id,
             "question": self.question,
             "gold_answers": list(self.gold_answers),
+            "gold_support_sentences": list(self.gold_support_sentences),
             "dataset_source": self.dataset_source,
         }
         if self.dataset_version:

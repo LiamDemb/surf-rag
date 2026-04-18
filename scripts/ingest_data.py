@@ -72,6 +72,7 @@ def _load_existing_benchmark(path: Path) -> List[BenchmarkItem]:
                     question=row["question"],
                     gold_answers=row["gold_answers"],
                     dataset_source=row["dataset_source"],
+                    gold_support_sentences=row.get("gold_support_sentences", []),
                     dataset_version=row.get("dataset_version"),
                 )
             )
@@ -155,12 +156,17 @@ def main() -> int:
     new_items: List[BenchmarkItem] = []
     for source, items in new_by_source.items():
         for item in items:
+            if not item.gold_support_sentences:
+                raise ValueError(
+                    "Newly ingested benchmark item is missing gold_support_sentences."
+                )
             new_items.append(
                 BenchmarkItem(
                     question_id=item.question_id,
                     question=item.question,
                     gold_answers=item.gold_answers,
                     dataset_source=item.dataset_source,
+                    gold_support_sentences=item.gold_support_sentences,
                     dataset_version=item.dataset_version,
                 )
             )

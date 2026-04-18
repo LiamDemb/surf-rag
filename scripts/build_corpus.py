@@ -99,6 +99,7 @@ def _build_samples(
                     "question_id": qid,
                     "question": question,
                     "gold_answers": bench.get("gold_answers", []),
+                    "gold_support_sentences": bench.get("gold_support_sentences", []),
                     "document": row.get("document"),
                     "document_html": row.get("document_html"),
                     "document_title": row.get("document_title"),
@@ -125,6 +126,7 @@ def _build_samples(
                     "question_id": qid,
                     "question": question,
                     "gold_answers": bench.get("gold_answers", []),
+                    "gold_support_sentences": bench.get("gold_support_sentences", []),
                     "supporting_facts": supporting_facts,
                 }
             )

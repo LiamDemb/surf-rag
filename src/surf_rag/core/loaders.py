@@ -5,6 +5,12 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
+from surf_rag.benchmark import (
+    extract_2wiki_support_sentences,
+    extract_nq_support_sentences,
+)
+from surf_rag.benchmark.sentence_utils import build_sentencizer
+
 from .schemas import BenchmarkItem, sha256_text
 
 logger = logging.getLogger(__name__)
@@ -260,13 +266,18 @@ def load_nq(
     """
     source = "nq"
     count = 0
+    sentencizer = build_sentencizer()
     for row in _iter_json_records(Path(path)):
         question = nq_row_question_text(row)
         if not question:
             continue
 
         answers = _nq_short_answer_texts_from_annotations(row)
-        if not answers or not _has_nq_document_context(row):
+        support_sentences = extract_nq_support_sentences(
+            row=row,
+            sentencizer=sentencizer,
+        )
+        if not answers or not _has_nq_document_context(row) or not support_sentences:
             continue
 
         yield BenchmarkItem(
@@ -274,6 +285,7 @@ def load_nq(
             question=question,
             gold_answers=answers,
             dataset_source=source,
+            gold_support_sentences=support_sentences,
             dataset_version=dataset_version,
         )
         count += 1
@@ -298,13 +310,16 @@ def load_2wiki(
         supporting_facts = row.get("supporting_facts")
         if not supporting_facts:
             continue
-        wiki_articles: List[str] = supporting_facts["title"]
+        support_sentences = extract_2wiki_support_sentences(row)
+        if not support_sentences:
+            continue
 
         yield BenchmarkItem(
             question_id=sha256_text(question),
             question=question,
             gold_answers=answers,
             dataset_source=source,
+            gold_support_sentences=support_sentences,
             dataset_version=dataset_version,
         )
         count += 1
