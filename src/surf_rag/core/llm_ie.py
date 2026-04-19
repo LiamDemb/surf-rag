@@ -211,9 +211,9 @@ class LLMInformationExtractor:
         if self.max_tokens <= 0:
             self.max_tokens = int(os.getenv("LLM_IE_MAX_TOKENS", "2048"))
         if not self.prompt_template:
-            from surf_rag.core.prompts import get_info_extraction_prompt
+            from surf_rag.core.prompts import get_ie_extraction_prompt
 
-            self.prompt_template = get_info_extraction_prompt()
+            self.prompt_template = get_ie_extraction_prompt()
 
     def _get_client(self) -> OpenAI:
         if self._client is None:
