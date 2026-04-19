@@ -43,48 +43,6 @@ def get_generator_prompt() -> str:
     return BASE_PROMPT
 
 
-# LLM-As-The-Judge Prompt (Legacy)
-DEFAULT_JUDGE_PROMPT_OLD = """You are an expert evaluator grading an AI's answer against a Ground Truth reference. 
-Focus strictly on factual and semantic equivalence. Ignore differences in wording, length, or conversational boilerplate.
-
-Grade the AI Answer on this strict 0-2 scale:
-[0] Incorrect / Refusal: The answer is factually wrong, completely misses the core meaning, or states that the context is insufficient.
-[1] Partial / Superficial: The answer contains relevant keywords or partial facts, but misses the specific reasoning, causality, or completeness of the Ground Truth.
-[2] Comprehensive / Correct: The answer fully captures the core facts and logical meaning of the Ground Truth.
-
-Original Question: {question}
-Ground Truth: {gold_answers}
-AI Answer: {predicted_answer}
-
-Output ONLY a single integer (0, 1, or 2). Do not output any other text or explanation."""
-
-DEFAULT_JUDGE_PROMPT = """You are an expert evaluator grading an AI's answer against a Ground Truth reference for a factual Question Answering task. 
-Your only goal is to determine if the AI successfully retrieved the core fact requested by the question.
-
-CRITICAL GRADING RULES:
-- Entity Resolution: Treat aliases, initials, acronyms, and missing middle names as equivalent (e.g., "E.L. Doctorow" perfectly matches "Edgar Lawrence 'E. L.' Doctorow").
-- Embedded Answers: If the Ground Truth is explicitly present in the AI Answer, it is correct. Ignore extra conversational text or hallucinated context as long as the exact answer to the question is provided.
-
-Grade the AI Answer strictly on this 0-2 scale:
-[2] Correct: The AI Answer contains the exact Ground Truth fact, entity, or date. It successfully answers the question, regardless of minor formatting differences or extra text.
-[1] Partial: The AI Answer contains some correct elements (e.g., 1 out of 2 items in a list) but is incomplete, or it is slightly too broad to be a perfect match.
-[0] Incorrect: The AI Answer completely misses the Ground Truth, contradicts it, or states "insufficient context".
-
-Original Question: {question}
-Ground Truth: {gold_answers}
-AI Answer: {predicted_answer}
-
-Output ONLY a single integer (0, 1, or 2). Do not output any other text or explanation."""
-
-
-def get_judge_prompt() -> str:
-    """Return the judge prompt template. Override via LLM_JUDGE_PROMPT_FILE env."""
-    path = os.getenv("LLM_JUDGE_PROMPT_FILE")
-    if path and Path(path).is_file():
-        return Path(path).read_text(encoding="utf-8")
-    return DEFAULT_JUDGE_PROMPT
-
-
 # Information Extraction Prompt for KG Construction
 DEFAULT_IE_PROMPT = """You are a High-Fidelity Knowledge Graph Extractor. In a SINGLE pass, extract BOTH the entity inventory AND the relational triples from the text. You are the sole authority on what entities and relations exist in the chunk.
 
