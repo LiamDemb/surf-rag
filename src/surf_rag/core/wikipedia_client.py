@@ -191,7 +191,9 @@ class WikipediaClient:
             title = page.get("title")
             if not title:
                 continue
-            redirects = [r.get("title") for r in page.get("redirects", []) if r.get("title")]
+            redirects = [
+                r.get("title") for r in page.get("redirects", []) if r.get("title")
+            ]
             if redirects:
                 redirect_map[title] = redirects
         return redirect_map

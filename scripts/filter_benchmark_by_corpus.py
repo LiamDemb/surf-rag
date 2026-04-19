@@ -59,7 +59,9 @@ def main() -> int:
     if not corpus_path.is_file():
         raise FileNotFoundError(f"Corpus file not found: {corpus_path}")
 
-    backup_path = Path(args.backup) if args.backup else _default_backup_path(benchmark_path)
+    backup_path = (
+        Path(args.backup) if args.backup else _default_backup_path(benchmark_path)
+    )
     backup_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(benchmark_path, backup_path)
     logger.info("Backed up original benchmark to %s", backup_path)
@@ -77,7 +79,11 @@ def main() -> int:
     )
     if stats.dropped_by_source:
         for source in sorted(stats.dropped_by_source):
-            logger.info("Dropped %d row(s) from source '%s'", stats.dropped_by_source[source], source)
+            logger.info(
+                "Dropped %d row(s) from source '%s'",
+                stats.dropped_by_source[source],
+                source,
+            )
     logger.info("Wrote filtered benchmark to %s", benchmark_path)
     return 0
 

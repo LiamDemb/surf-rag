@@ -71,7 +71,9 @@ class EntityAliasResolver:
         output_path = Path(output_dir)
         alias_path = output_path / alias_filename
         if not alias_path.exists():
-            raise FileNotFoundError(f"Required alias artifact not found: {alias_path.as_posix()}")
+            raise FileNotFoundError(
+                f"Required alias artifact not found: {alias_path.as_posix()}"
+            )
 
         with alias_path.open("r", encoding="utf-8") as handle:
             alias_data = json.load(handle)
@@ -83,14 +85,20 @@ class EntityAliasResolver:
 
         if include_curated:
             # Curated aliases are a safety net and should not override persisted redirects.
-            cls._merge_aliases(alias_map, normalize_alias_map(CURATED_ALIASES), overwrite=False)
+            cls._merge_aliases(
+                alias_map, normalize_alias_map(CURATED_ALIASES), overwrite=False
+            )
 
         if include_lexicon:
             lexicon_path = output_path / lexicon_filename
             if lexicon_path.exists():
-                lexicon_resolver = cls.from_lexicon(lexicon_path=lexicon_path.as_posix())
+                lexicon_resolver = cls.from_lexicon(
+                    lexicon_path=lexicon_path.as_posix()
+                )
                 # Lexicon aliases are fallback only; they should not override persisted redirects.
-                cls._merge_aliases(alias_map, lexicon_resolver.alias_map, overwrite=False)
+                cls._merge_aliases(
+                    alias_map, lexicon_resolver.alias_map, overwrite=False
+                )
 
         return cls(alias_map=alias_map)
 

@@ -99,7 +99,9 @@ def build_wiki_title_matcher(
 class WikiTitleMatcher:
     """Matches chunk text against wiki titles and returns matched titles."""
 
-    def __init__(self, keyword_processor: "KeywordProcessor", titles: List[str]) -> None:
+    def __init__(
+        self, keyword_processor: "KeywordProcessor", titles: List[str]
+    ) -> None:
         self._kp = keyword_processor
         self._titles = titles
 

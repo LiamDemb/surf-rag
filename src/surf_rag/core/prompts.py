@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-
 # Generator Prompt
 GENERATOR_SYSTEM_MESSAGE = (
     "You are a strict QA system. Answer based ONLY on the provided context."

@@ -51,7 +51,9 @@ def write_manifest(
     )
 
 
-def update_manifest_artifacts(paths: RunArtifactPaths, artifact_paths: Dict[str, str]) -> None:
+def update_manifest_artifacts(
+    paths: RunArtifactPaths, artifact_paths: Dict[str, str]
+) -> None:
     """Merge artifact path entries into existing manifest."""
     if not paths.manifest.is_file():
         return

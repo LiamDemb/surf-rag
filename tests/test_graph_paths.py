@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from surf_rag.core.build_graph import build_graph
-from surf_rag.graph.graph_paths import enumerate_candidate_paths, relation_labels_from_edge
+from surf_rag.graph.graph_paths import (
+    enumerate_candidate_paths,
+    relation_labels_from_edge,
+)
 from surf_rag.graph.graph_types import GraphHop
-
 
 
 def _sig(path) -> tuple:
@@ -13,12 +15,13 @@ def _sig(path) -> tuple:
     )
 
 
-
 def test_relation_labels_from_edge_uses_labels_then_falls_back_to_label():
-    assert sorted(relation_labels_from_edge({"labels": {"a", "b"}, "label": "a"})) == ["a", "b"]
+    assert sorted(relation_labels_from_edge({"labels": {"a", "b"}, "label": "a"})) == [
+        "a",
+        "b",
+    ]
     assert relation_labels_from_edge({"label": "only_one"}) == ["only_one"]
     assert relation_labels_from_edge({}) == []
-
 
 
 def test_enumerate_candidate_paths_skips_appears_in_and_returns_rel_paths_only():
@@ -28,7 +31,9 @@ def test_enumerate_candidate_paths_skips_appears_in_and_returns_rel_paths_only()
                 "chunk_id": "c1",
                 "metadata": {
                     "entities": [{"norm": "a"}, {"norm": "b"}],
-                    "relations": [{"subj_norm": "a", "pred": "causes", "obj_norm": "b"}],
+                    "relations": [
+                        {"subj_norm": "a", "pred": "causes", "obj_norm": "b"}
+                    ],
                 },
             }
         ]
@@ -47,7 +52,6 @@ def test_enumerate_candidate_paths_skips_appears_in_and_returns_rel_paths_only()
     }
 
 
-
 def test_enumerate_candidate_paths_respects_bidirectionality():
     graph = build_graph(
         [
@@ -55,7 +59,13 @@ def test_enumerate_candidate_paths_respects_bidirectionality():
                 "chunk_id": "c1",
                 "metadata": {
                     "entities": [{"norm": "film"}, {"norm": "director"}],
-                    "relations": [{"subj_norm": "film", "pred": "directed_by", "obj_norm": "director"}],
+                    "relations": [
+                        {
+                            "subj_norm": "film",
+                            "pred": "directed_by",
+                            "obj_norm": "director",
+                        }
+                    ],
                 },
             }
         ]
@@ -74,7 +84,6 @@ def test_enumerate_candidate_paths_respects_bidirectionality():
     }
 
 
-
 def test_enumerate_candidate_paths_expands_multiple_labels_on_same_edge():
     graph = build_graph(
         [
@@ -83,8 +92,16 @@ def test_enumerate_candidate_paths_expands_multiple_labels_on_same_edge():
                 "metadata": {
                     "entities": [{"norm": "film"}, {"norm": "person"}],
                     "relations": [
-                        {"subj_norm": "film", "pred": "directed_by", "obj_norm": "person"},
-                        {"subj_norm": "film", "pred": "written_by", "obj_norm": "person"},
+                        {
+                            "subj_norm": "film",
+                            "pred": "directed_by",
+                            "obj_norm": "person",
+                        },
+                        {
+                            "subj_norm": "film",
+                            "pred": "written_by",
+                            "obj_norm": "person",
+                        },
                     ],
                 },
             }
@@ -103,7 +120,6 @@ def test_enumerate_candidate_paths_expands_multiple_labels_on_same_edge():
         (("E:film", "directed_by", False, "E:person"),),
         (("E:film", "written_by", False, "E:person"),),
     }
-
 
 
 def test_enumerate_candidate_paths_respects_max_hops_and_deduplicates():

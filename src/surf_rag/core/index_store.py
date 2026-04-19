@@ -3,9 +3,10 @@ from dataclasses import dataclass
 from typing import Protocol
 import faiss
 
+
 class FaissIndex(Protocol):
-    def search(self, x, k: int): 
-        ...
+    def search(self, x, k: int): ...
+
 
 @dataclass
 class FaissIndexStore:

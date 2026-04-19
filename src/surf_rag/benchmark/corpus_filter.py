@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence, Tuple
 
-
 _WS_RE = re.compile(r"\s+")
 _SPACE_BEFORE_PUNCT_RE = re.compile(r"\s+([,.;:!?%])")
 
@@ -68,7 +67,9 @@ class CorpusSentenceMatcher:
         return found
 
 
-def _should_keep_nq(support_sentences: Sequence[str], matcher: CorpusSentenceMatcher) -> bool:
+def _should_keep_nq(
+    support_sentences: Sequence[str], matcher: CorpusSentenceMatcher
+) -> bool:
     return any(matcher.sentence_found(s) for s in support_sentences)
 
 

@@ -5,9 +5,10 @@ from typing import List, Protocol
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
+
 class Embedder(Protocol):
-    def embed_query(self, text: str) -> np.ndarray:
-        ...
+    def embed_query(self, text: str) -> np.ndarray: ...
+
 
 @dataclass
 class SentenceTransformersEmbedder:
@@ -15,7 +16,7 @@ class SentenceTransformersEmbedder:
 
     def __post_init__(self) -> None:
         self.model = SentenceTransformer(self.model_name)
-    
+
     def embed_query(self, text: str) -> np.ndarray:
         vector = self.model.encode(
             [text],

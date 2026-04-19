@@ -33,7 +33,10 @@ def build_graph_retriever(output_dir: str):
     from surf_rag.core.entity_index_store import EntityIndexStore
     from surf_rag.core.mapping import JsonCorpusLoader
     from surf_rag.graph.graph_store import NetworkXGraphStore
-    from surf_rag.strategies.graph import GraphRetriever, _default_query_entity_extractor
+    from surf_rag.strategies.graph import (
+        GraphRetriever,
+        _default_query_entity_extractor,
+    )
 
     corpus_path = f"{output_dir}/corpus.jsonl"
     graph_path = f"{output_dir}/graph.pkl"

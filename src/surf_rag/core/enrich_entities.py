@@ -16,7 +16,7 @@ DEFAULT_NOUN_CHUNK_STOPWORD_RATIO_MAX = 0.6
 
 def normalize_key(text: str) -> str:
     s = unicodedata.normalize("NFKC", text).lower()
-    s = re.sub(r"\([^)]*\)", "", s) # Remove anything in brackets
+    s = re.sub(r"\([^)]*\)", "", s)  # Remove anything in brackets
     s = re.sub(r"['’]s\b", "", s)
     s = re.sub(r"[^\w\s-]", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
@@ -61,7 +61,9 @@ def load_spacy(
 ) -> "spacy.Language":
     model = model or os.environ.get("SPACY_MODEL", DEFAULT_SPACY_MODEL)
     noun_chunks_enabled = should_use_noun_chunks(use_noun_chunks)
-    disable = ["lemmatizer"] if noun_chunks_enabled else ["tagger", "parser", "lemmatizer"]
+    disable = (
+        ["lemmatizer"] if noun_chunks_enabled else ["tagger", "parser", "lemmatizer"]
+    )
     try:
         return spacy.load(model, disable=disable)
     except OSError as e:

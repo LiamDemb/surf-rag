@@ -5,7 +5,6 @@ from typing import Dict, Iterable, List
 from .enrich_entities import normalize_key
 from .wikipedia_client import WikipediaClient
 
-
 CURATED_ALIASES = {
     "u.s.": "united states",
     "us": "united states",

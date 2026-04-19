@@ -83,7 +83,9 @@ def test_load_nq_parses_nested_document(tmp_path):
     assert len(items) == 1
     item = items[0]
     assert item.gold_answers == ["Larry Page", "Sergey Brin"]
-    assert item.gold_support_sentences == ["Google was founded by Larry Page and Sergey Brin."]
+    assert item.gold_support_sentences == [
+        "Google was founded by Larry Page and Sergey Brin."
+    ]
 
 
 def test_load_nq_parses_annotations_dict(tmp_path):

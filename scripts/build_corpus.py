@@ -40,7 +40,6 @@ from surf_rag.core.schemas import sha256_text
 from surf_rag.core.wikipedia_client import WikipediaClient
 from surf_rag.core.wikidata_client import WikidataClient
 
-
 logger = logging.getLogger(__name__)
 
 

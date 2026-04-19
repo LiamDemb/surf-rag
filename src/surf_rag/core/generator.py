@@ -47,7 +47,9 @@ class OpenAIChatGenerator:
         prompt_hash = hash_messages(messages)
 
         has_user_content = any(
-            (m.get("content") or "").strip() for m in messages if m.get("role") == "user"
+            (m.get("content") or "").strip()
+            for m in messages
+            if m.get("role") == "user"
         )
         if not has_user_content and len(messages) <= 1:
             return GenerationResult(
@@ -55,7 +57,10 @@ class OpenAIChatGenerator:
                 model_id=self.model_id,
                 latency_ms=(time.perf_counter() - start_time) * 1000,
                 prompt_hash=prompt_hash,
-                sampling={"temperature": self.temperature, "max_tokens": self.max_tokens},
+                sampling={
+                    "temperature": self.temperature,
+                    "max_tokens": self.max_tokens,
+                },
             )
 
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))

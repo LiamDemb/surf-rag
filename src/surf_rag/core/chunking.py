@@ -18,6 +18,7 @@ def _get_encoding():
     global _encoding
     if _encoding is None:
         import tiktoken
+
         _encoding = tiktoken.get_encoding("cl100k_base")
     return _encoding
 
@@ -118,7 +119,9 @@ def chunk_blocks(
         )
         char_cursor = end
         tail = _tail_tokens(chunk_text, overlap_tokens)
-        buf = [Block(text=tail, section_path=buf[-1].section_path, block_type="overlap")]
+        buf = [
+            Block(text=tail, section_path=buf[-1].section_path, block_type="overlap")
+        ]
         buf_tokens = _count_tokens(tail)
 
     for block in blocks:

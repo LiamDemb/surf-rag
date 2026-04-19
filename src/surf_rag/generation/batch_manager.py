@@ -12,7 +12,6 @@ from openai import OpenAI
 from surf_rag.core.openai_batch_limits import batch_limit_requests
 from surf_rag.generation.batch import parse_generation_output
 
-
 # Match default orchestrator / OpenAI docs
 DEFAULT_SHARD_BYTES_LIMIT = 200 * 1024 * 1024
 
@@ -115,9 +114,7 @@ def shard_jsonl_file(
             if not line.strip():
                 continue
             line_bytes = len(line.encode("utf-8"))
-            if buf and (
-                count >= max_requests or buf_bytes + line_bytes > max_bytes
-            ):
+            if buf and (count >= max_requests or buf_bytes + line_bytes > max_bytes):
                 flush()
             buf.append(line)
             buf_bytes += line_bytes

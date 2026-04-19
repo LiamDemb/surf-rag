@@ -361,9 +361,13 @@ def _select_best_cleaned_sentence(
         return None
     best = max(
         matched,
-        key=lambda s: _score_candidate(s, context_terms=context_terms, question_terms=question_terms),
+        key=lambda s: _score_candidate(
+            s, context_terms=context_terms, question_terms=question_terms
+        ),
     )
-    return _trim_long_sentence(best, answer_texts=answer_texts, question_text=question_text)
+    return _trim_long_sentence(
+        best, answer_texts=answer_texts, question_text=question_text
+    )
 
 
 def _extract_sentence_for_span(
@@ -436,7 +440,9 @@ def extract_nq_support_sentences(
     sentencizer = sentencizer or build_sentencizer()
     cleaned_candidates = _cleaned_candidate_sentences(row=row, sentencizer=sentencizer)
     question = row.get("question")
-    question_text = question.get("text") if isinstance(question, dict) else str(question or "")
+    question_text = (
+        question.get("text") if isinstance(question, dict) else str(question or "")
+    )
     question_terms = _keyword_terms(question_text)
     extracted: List[str] = []
     for st, et, span_answer_texts in spans:

@@ -3,6 +3,7 @@ from surf_rag.graph.graph_scoring import score_bundle
 from surf_rag.graph.graph_types import EvidenceBundle, GraphHop, GraphPath, GroundedHop
 from surf_rag.core.scoring_config import ScoringConfig
 
+
 class TinyEmbedder:
     def __init__(self, vectors):
         self.vectors = vectors
@@ -173,4 +174,3 @@ def test_score_bundle_returns_breakdown_with_expected_keys():
     assert "s_len" in breakdown
     assert "s_triple" in breakdown
     assert "hop_scores" in breakdown
-

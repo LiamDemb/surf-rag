@@ -53,10 +53,22 @@ def test_post_process_dedupes_entities_by_norm() -> None:
 def test_post_process_filters_banned_predicates() -> None:
     raw_entities = [{"surface": "Eva Busch", "type": "PERSON"}]
     raw_triples = [
-        {"subj_surface": "Eva Busch", "pred": "is", "obj_surface": "singer", "evidence": ""},
-        {"subj_surface": "Eva Busch", "pred": "occupation", "obj_surface": "singer", "evidence": ""},
+        {
+            "subj_surface": "Eva Busch",
+            "pred": "is",
+            "obj_surface": "singer",
+            "evidence": "",
+        },
+        {
+            "subj_surface": "Eva Busch",
+            "pred": "occupation",
+            "obj_surface": "singer",
+            "evidence": "",
+        },
     ]
-    _, relations = _post_process_ie(raw_entities, raw_triples, "Eva Busch was a singer.", None)
+    _, relations = _post_process_ie(
+        raw_entities, raw_triples, "Eva Busch was a singer.", None
+    )
     assert len(relations) == 1
     assert relations[0]["pred"] == "occupation"
 
@@ -64,7 +76,12 @@ def test_post_process_filters_banned_predicates() -> None:
 def test_post_process_injects_endpoint_entities() -> None:
     raw_entities = [{"surface": "Eva Busch", "type": "PERSON"}]
     raw_triples = [
-        {"subj_surface": "Eva Busch", "pred": "occupation", "obj_surface": "singer", "evidence": ""},
+        {
+            "subj_surface": "Eva Busch",
+            "pred": "occupation",
+            "obj_surface": "singer",
+            "evidence": "",
+        },
     ]
     entities, relations = _post_process_ie(raw_entities, raw_triples, "text", None)
     norms = {e["norm"] for e in entities}
@@ -73,12 +90,23 @@ def test_post_process_injects_endpoint_entities() -> None:
 
 
 def test_post_process_shape() -> None:
-    raw_entities = [{"surface": "Ra", "type": "PERSON"}, {"surface": "sun", "type": "NOUN_CHUNK"}]
+    raw_entities = [
+        {"surface": "Ra", "type": "PERSON"},
+        {"surface": "sun", "type": "NOUN_CHUNK"},
+    ]
     raw_triples = [
-        {"subj_surface": "Ra", "pred": "deity_of", "obj_surface": "sun", "evidence": "Ra, the sun god"},
+        {
+            "subj_surface": "Ra",
+            "pred": "deity_of",
+            "obj_surface": "sun",
+            "evidence": "Ra, the sun god",
+        },
     ]
     entities, relations = _post_process_ie(
-        raw_entities, raw_triples, "In Egyptian mythology, Ra, the sun god was central.", "chunk-1"
+        raw_entities,
+        raw_triples,
+        "In Egyptian mythology, Ra, the sun god was central.",
+        "chunk-1",
     )
     assert len(relations) == 1
     rec = relations[0]
@@ -108,8 +136,18 @@ def test_post_process_skips_incomplete_triple() -> None:
 def test_post_process_dedupes_triples_by_norm_key() -> None:
     raw_entities = [{"surface": "Eva Busch", "type": "PERSON"}]
     raw_triples = [
-        {"subj_surface": "Eva Busch", "pred": "occupation", "obj_surface": "singer", "evidence": ""},
-        {"subj_surface": "Eva Busch", "pred": "occupation", "obj_surface": "Singer", "evidence": ""},
+        {
+            "subj_surface": "Eva Busch",
+            "pred": "occupation",
+            "obj_surface": "singer",
+            "evidence": "",
+        },
+        {
+            "subj_surface": "Eva Busch",
+            "pred": "occupation",
+            "obj_surface": "Singer",
+            "evidence": "",
+        },
     ]
     _, relations = _post_process_ie(raw_entities, raw_triples, "text", None)
     assert len(relations) == 1

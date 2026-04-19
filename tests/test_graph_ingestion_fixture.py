@@ -5,7 +5,6 @@ from __future__ import annotations
 from surf_rag.core.build_graph import build_graph
 
 
-
 def test_build_graph_creates_expected_nodes_and_edges():
     chunks = [
         {
@@ -47,7 +46,6 @@ def test_build_graph_creates_expected_nodes_and_edges():
     assert graph["E:b"]["C:c100"]["kind"] == "appears_in"
 
 
-
 def test_build_graph_accumulates_relation_provenance_across_chunks():
     chunks = [
         {
@@ -72,7 +70,6 @@ def test_build_graph_accumulates_relation_provenance_across_chunks():
     assert set(edge["labels"]) == {"caused"}
     assert set(edge["chunk_ids_by_label"]["caused"]) == {"c1", "c2"}
     assert edge["support_count_by_label"]["caused"] == 2
-
 
 
 def test_build_graph_preserves_multiple_predicates_between_same_nodes():

@@ -1,4 +1,4 @@
-.PHONY: install setup-models lock test ingest build-corpus filter-benchmark
+.PHONY: install install-hooks setup-models lock test ingest build-corpus filter-benchmark
 
 -include .env
 
@@ -11,6 +11,9 @@ HF_HOME ?= $(OUTPUT_DIR)/hf_cache
 
 install:
 	poetry install
+
+install-hooks:
+	poetry run pre-commit install
 
 setup-models:
 	HF_HOME="$(HF_HOME)" poetry run python scripts/setup_models.py

@@ -12,9 +12,7 @@ from surf_rag.evaluation.run_artifacts import (
 
 
 def test_custom_id_roundtrip():
-    cid = make_generation_custom_id(
-        "r1", "nq", "dev", "dense", "q-42"
-    )
+    cid = make_generation_custom_id("r1", "nq", "dev", "dense", "q-42")
     meta = parse_generation_custom_id(cid)
     assert meta is not None
     assert meta["run_id"] == "r1"
