@@ -1,0 +1,42 @@
+[project]
+name = "surf_rag"
+version = "0.1.0"
+description = "SuRF-RAG: Supervised Retrieval Fusion for Mixed-Reasoning QA"
+authors = [
+    {name = "LiamDemb",email = "dembliam@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.12,<3.15,!=3.14.1"
+dependencies = [
+    "sentence-transformers (>=5.4.1,<6.0.0)",
+    "faiss-cpu (>=1.13.2,<2.0.0)",
+    "networkx (>=3.6.1,<4.0.0)",
+    "pandas (>=3.0.2,<4.0.0)",
+    "tqdm (>=4.67.3,<5.0.0)",
+    "python-dotenv (>=1.2.2,<2.0.0)",
+    "spacy (>=3.8.14,<4.0.0)",
+    "openai (>=2.32.0,<3.0.0)",
+    "tiktoken (>=0.12.0,<0.13.0)",
+    "bs4 (>=0.0.2,<0.0.3)",
+    "lxml (>=6.0.4,<7.0.0)",
+    "flashtext (>=2.7,<3.0)",
+    "pyarrow (>=23.0.1,<24.0.0)",
+    "fastparquet (>=2026.3.0,<2027.0.0)",
+    "pytest (>=9.0.3,<10.0.0)"
+]
+
+[tool.poetry]
+packages = [{include = "surf_rag", from = "src"}]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[dependency-groups]
+dev = [
+    "black (>=26.3.1,<27.0.0)",
+    "pre-commit (>=4.5.1,<5.0.0)"
+]
+
+[tool.black]
+target-version = ["py312"]

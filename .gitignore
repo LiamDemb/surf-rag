@@ -51,6 +51,12 @@ yarn-error.log*
 temp/
 .cache/
 .sass-cache/
+__pycache__/
+.pytest_cache
 
 # Development documentation
 /docs/dev
+/scripts/dev
+
+# Data
+/data
