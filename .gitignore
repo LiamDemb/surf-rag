@@ -52,6 +52,7 @@ temp/
 .cache/
 .sass-cache/
 __pycache__/
+.pytest_cache
 
 # Development documentation
 /docs/dev
