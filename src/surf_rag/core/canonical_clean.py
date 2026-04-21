@@ -6,7 +6,7 @@ from typing import List
 from bs4 import BeautifulSoup
 
 from .corpus_schemas import Block, StructuredDoc
-from .infobox_rewrite import is_infobox_table, linearize_infobox_table
+from .infobox_rewrite import is_infobox_table
 
 
 def normalize_text_for_extraction(text: str) -> str:
@@ -112,6 +112,10 @@ def clean_html_to_structured_doc(
     root = soup.find("div", class_="mw-parser-output")
     if root is None:
         root = soup.body if soup.body else soup
+    # Drop Wikipedia infoboxes entirely (no structured or nested text from sidebar tables).
+    for table in list(root.find_all("table")):
+        if is_infobox_table(table):
+            table.decompose()
     for node in root.descendants:
         if not getattr(node, "name", None):
             continue
@@ -152,10 +156,11 @@ def clean_html_to_structured_doc(
                     Block(text=text, section_path=list(current_path), block_type="list")
                 )
         elif node.name == "table":
-            if is_infobox_table(node):
-                text = linearize_infobox_table(node, title)
-            else:
-                text = _table_to_text(node)
+            # if is_infobox_table(node):
+            # text = linearize_infobox_table(node, title)
+            # else:
+            # text = _table_to_text(node)
+            text = _table_to_text(node)
             if text:
                 blocks.append(
                     Block(
