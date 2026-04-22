@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, List, Optional, Sequence, Set
+from typing import Iterable, List, Optional, Tuple
 
 from .docstore import DocRecord, DocStore
 from .wikipedia_client import WikipediaClient
-from .wikidata_client import WikidataClient
 from .schemas import sha256_text
 
 
@@ -68,6 +67,68 @@ def _cached_wiki_page(
         page_id=record.page_id,
         revision_id=record.revision_id,
     )
+
+
+def raw_doc_from_docrecord(record: DocRecord) -> RawDoc:
+    """Reconstruct RawDoc from a cached DocRecord in DocStore."""
+    doc_key = record.page_id or sha256_text(record.title or "")
+    return RawDoc(
+        doc_key=doc_key,
+        title=record.title,
+        url=record.url,
+        html=record.html,
+        anchors=record.anchors,
+        source=record.source,
+        dataset_origin=record.dataset_origin,
+        page_id=record.page_id,
+        revision_id=record.revision_id,
+    )
+
+
+def supporting_titles_from_2wiki_sample(sample: dict) -> List[str]:
+    supporting_facts = sample.get("supporting_facts") or {}
+    raw_titles = supporting_facts.get("title")
+    if not isinstance(raw_titles, list):
+        return []
+    return list(dict.fromkeys(str(t).strip() for t in raw_titles if str(t).strip()))
+
+
+def load_2wiki_docs_from_docstore(
+    sample: dict,
+    docstore: DocStore,
+    *,
+    wiki: Optional[WikipediaClient] = None,
+    fetch_missing: bool = False,
+) -> Tuple[List[RawDoc], List[str]]:
+    """
+    Resolve 2Wiki supporting articles from DocStore (``title:{title}`` keys).
+
+    Returns ``(docs, missing_titles)``. If ``fetch_missing`` and ``wiki`` are set,
+    missing titles are fetched and stored before building docs.
+
+    ``missing_titles`` is empty when every title resolved to HTML.
+    """
+    source = "2wiki"
+    dataset_origin = "2wiki"
+    titles = supporting_titles_from_2wiki_sample(sample)
+    if not titles:
+        return [], []
+
+    missing: List[str] = []
+    docs: List[RawDoc] = []
+    for title in titles:
+        key = f"title:{title}"
+        rec = docstore.get(key)
+        if rec is not None and rec.html:
+            docs.append(raw_doc_from_docrecord(rec))
+            continue
+        if fetch_missing and wiki is not None:
+            docs.append(
+                _cached_wiki_page(title, source, dataset_origin, docstore, wiki)
+            )
+            continue
+        missing.append(title)
+    return _dedupe_docs(docs), missing
 
 
 def _dedupe_docs(docs: Iterable[RawDoc]) -> List[RawDoc]:
