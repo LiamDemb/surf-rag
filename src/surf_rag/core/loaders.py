@@ -6,8 +6,9 @@ from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from surf_rag.benchmark import (
-    extract_2wiki_support_sentences,
+    extract_2wiki_support_lines,
     extract_nq_support_sentences,
+    nq_document_title,
 )
 from surf_rag.benchmark.sentence_utils import build_sentencizer
 
@@ -280,12 +281,16 @@ def load_nq(
         if not answers or not _has_nq_document_context(row) or not support_sentences:
             continue
 
+        doc_title = nq_document_title(row)
+        n_sup = len(support_sentences)
         yield BenchmarkItem(
             question_id=sha256_text(question),
             question=question,
             gold_answers=answers,
             dataset_source=source,
             gold_support_sentences=support_sentences,
+            gold_support_titles=[doc_title] * n_sup,
+            gold_support_sent_ids=[-1] * n_sup,
             dataset_version=dataset_version,
         )
         count += 1
@@ -310,7 +315,8 @@ def load_2wiki(
         supporting_facts = row.get("supporting_facts")
         if not supporting_facts:
             continue
-        support_sentences = extract_2wiki_support_sentences(row)
+        lines = extract_2wiki_support_lines(row)
+        support_sentences = [t[2] for t in lines]
         if not support_sentences:
             continue
 
@@ -320,6 +326,8 @@ def load_2wiki(
             gold_answers=answers,
             dataset_source=source,
             gold_support_sentences=support_sentences,
+            gold_support_titles=[t[0] for t in lines],
+            gold_support_sent_ids=[t[1] for t in lines],
             dataset_version=dataset_version,
         )
         count += 1

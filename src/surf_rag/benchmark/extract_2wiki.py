@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
-
-from .sentence_utils import dedupe_preserve_order
+from typing import Any, Dict, List, Tuple
 
 
-def extract_2wiki_support_sentences(row: Dict[str, Any]) -> List[str]:
+def extract_2wiki_support_lines(row: Dict[str, Any]) -> List[Tuple[str, int, str]]:
+    """
+    Extract ordered (title, sent_id, sentence) tuples from a 2Wiki row.
+
+    Sentences are deduplicated in order (same behavior as legacy string extraction).
+    """
     supporting_facts = row.get("supporting_facts") or {}
     context = row.get("context") or {}
     sf_titles = supporting_facts.get("title")
@@ -24,7 +27,7 @@ def extract_2wiki_support_sentences(row: Dict[str, Any]) -> List[str]:
             continue
         title_to_indices.setdefault(key, []).append(idx)
 
-    extracted: List[str] = []
+    extracted: List[Tuple[str, int, str]] = []
     for raw_title, raw_sent_id in zip(sf_titles, sf_sent_ids):
         title = str(raw_title).strip()
         if not title:
@@ -46,7 +49,19 @@ def extract_2wiki_support_sentences(row: Dict[str, Any]) -> List[str]:
                 continue
             sentence = str(article_sentences[sent_id]).strip()
             if sentence:
-                extracted.append(sentence)
+                extracted.append((title, sent_id, sentence))
                 break
 
-    return dedupe_preserve_order(extracted)
+    seen: set[str] = set()
+    unique: List[Tuple[str, int, str]] = []
+    for title, sent_id, sentence in extracted:
+        if sentence in seen:
+            continue
+        seen.add(sentence)
+        unique.append((title, sent_id, sentence))
+    return unique
+
+
+def extract_2wiki_support_sentences(row: Dict[str, Any]) -> List[str]:
+    """Sentence strings only, deduped (same order as :func:`extract_2wiki_support_lines`)."""
+    return [t[2] for t in extract_2wiki_support_lines(row)]

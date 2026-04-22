@@ -45,6 +45,8 @@ def test_load_2wiki_extracts_support_sentences_from_large_candidate_context(tmp_
         "The film was directed by Ning Hao.",
         "Ning studied at the Taiyuan Film School, where he majored in scenic design.",
     ]
+    assert item.gold_support_titles == ["Breakup Buddies", "Ning Hao"]
+    assert item.gold_support_sent_ids == [1, 2]
 
 
 def test_load_nq_extracts_support_sentence_from_short_answer_span(tmp_path):
@@ -111,6 +113,8 @@ def test_load_nq_extracts_support_sentence_from_short_answer_span(tmp_path):
     item = items[0]
     assert item.gold_answers == ["Paris"]
     assert item.gold_support_sentences == ["The capital of France is Paris."]
+    assert item.gold_support_titles == ["France"]
+    assert item.gold_support_sent_ids == [-1]
 
 
 def test_load_nq_prefers_clean_sentence_over_noisy_preface(tmp_path):
@@ -175,6 +179,8 @@ def test_load_nq_prefers_clean_sentence_over_noisy_preface(tmp_path):
     assert items[0].gold_support_sentences == [
         "In Greek mythology, Persephone, also called Kore, is the daughter of Zeus and Demeter."
     ]
+    assert items[0].gold_support_titles == ["Persephone"]
+    assert items[0].gold_support_sent_ids == [-1]
 
 
 def test_load_nq_disambiguates_repeated_date_with_context(tmp_path):
@@ -245,3 +251,5 @@ def test_load_nq_disambiguates_repeated_date_with_context(tmp_path):
     assert items[0].gold_support_sentences == [
         "The finale was released on March 18, 2018 and drew high ratings."
     ]
+    assert items[0].gold_support_titles == ["Example Episode List"]
+    assert items[0].gold_support_sent_ids == [-1]

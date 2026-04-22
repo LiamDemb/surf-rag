@@ -3,7 +3,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from surf_rag.benchmark.corpus_filter import filter_benchmark_rows
+from surf_rag.benchmark.corpus_filter import filter_benchmark_rows, normalize_for_matching
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
@@ -57,6 +57,20 @@ def test_filter_rules_nq_and_2wiki():
     assert stats.kept == 2
     assert stats.dropped == 2
     assert stats.dropped_by_source == {"nq": 1, "2wiki": 1}
+
+
+def test_normalize_for_matching_cleans_bracket_spacing():
+    left = (
+        "He was the fourth (but third surviving) son of Ernest I, Prince of Anhalt-Dessau, "
+        "by his wife Margarete, daughter of Henry I, Duke of Münsterberg-Oels and "
+        "granddaughter of George of Poděbrady, King of Bohemia."
+    )
+    right = (
+        "He was the fourth ( but third surviving ) son of Ernest I, Prince of Anhalt-Dessau , "
+        "by his wife Margarete, daughter of Henry I, Duke of Münsterberg-Oels and "
+        "granddaughter of George of Poděbrady , King of Bohemia."
+    )
+    assert normalize_for_matching(left) == normalize_for_matching(right)
 
 
 def test_filter_script_replaces_benchmark_and_keeps_backup(tmp_path):
