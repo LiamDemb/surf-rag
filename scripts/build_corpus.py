@@ -21,6 +21,12 @@ from surf_rag.core.alias_map import (
     build_alias_map_from_redirects,
     normalize_alias_map,
 )
+from surf_rag.core.benchmark_samples import (
+    build_samples,
+    iter_jsonl,
+    load_benchmark_by_source,
+    resolve_raw_paths_for_benchmark_sources,
+)
 from surf_rag.core.canonical_clean import (
     clean_html_to_structured_doc,
     normalize_text_for_extraction,
@@ -28,8 +34,8 @@ from surf_rag.core.canonical_clean import (
 from surf_rag.core.chunking import chunk_blocks
 from surf_rag.core.corpus_acquisition import (
     Budgets,
-    ingest_2wiki,
     ingest_nq,
+    load_2wiki_docs_from_docstore,
 )
 from surf_rag.core.corpus_schemas import CorpusChunk
 from surf_rag.core.docstore import DocStore
@@ -38,99 +44,8 @@ from surf_rag.core.entity_lexicon import build_entity_lexicon
 from surf_rag.core.quality_gates import run_quality_gates
 from surf_rag.core.schemas import sha256_text
 from surf_rag.core.wikipedia_client import WikipediaClient
-from surf_rag.core.wikidata_client import WikidataClient
 
 logger = logging.getLogger(__name__)
-
-
-def _iter_jsonl(path: str):
-    with open(path, "r", encoding="utf-8") as handle:
-        for line in handle:
-            line = line.strip()
-            if not line:
-                continue
-            yield json.loads(line)
-
-
-def _load_benchmark(path: str) -> Dict[str, Dict[str, dict]]:
-    """Load benchmark and group by dataset_source. Only sources with items are included."""
-    by_source: Dict[str, Dict[str, dict]] = {}
-    for item in _iter_jsonl(path):
-        source = item["dataset_source"]
-        by_source.setdefault(source, {})[item["question_id"]] = item
-    return by_source
-
-
-def _question_text_from_row(row: dict, source: str) -> str | None:
-    if source == "nq":
-        question_block = row.get("question")
-        return (
-            row.get("question_text")
-            or row.get("questionText")
-            or (
-                question_block.get("text") if isinstance(question_block, dict) else None
-            )
-            or (question_block if isinstance(question_block, str) else None)
-        )
-    return row.get("question") or row.get("query")
-
-
-def _build_samples(
-    benchmark_by_source: Dict[str, Dict[str, dict]],
-    paths_by_source: Dict[str, str],
-) -> List[dict]:
-    """Build samples from benchmark and raw dataset files. Only processes sources with paths."""
-    samples: List[dict] = []
-
-    nq_path = paths_by_source.get("nq")
-    if nq_path:
-        for row in _iter_jsonl(nq_path):
-            question = _question_text_from_row(row, "nq")
-            if not question:
-                continue
-            qid = sha256_text(question)
-            bench = benchmark_by_source.get("nq", {}).get(qid)
-            if not bench:
-                continue
-            samples.append(
-                {
-                    "source": "nq",
-                    "question_id": qid,
-                    "question": question,
-                    "gold_answers": bench.get("gold_answers", []),
-                    "gold_support_sentences": bench.get("gold_support_sentences", []),
-                    "document": row.get("document"),
-                    "document_html": row.get("document_html"),
-                    "document_title": row.get("document_title"),
-                    "title": row.get("title"),
-                }
-            )
-
-    twowiki_path = paths_by_source.get("2wiki")
-    if twowiki_path:
-        for row in _iter_jsonl(twowiki_path):
-            question = _question_text_from_row(row, "2wiki")
-            if not question:
-                continue
-            qid = sha256_text(question)
-            bench = benchmark_by_source.get("2wiki", {}).get(qid)
-            if not bench:
-                continue
-            supporting_facts = row.get("supporting_facts") or {}
-            if not supporting_facts:
-                continue
-            samples.append(
-                {
-                    "source": "2wiki",
-                    "question_id": qid,
-                    "question": question,
-                    "gold_answers": bench.get("gold_answers", []),
-                    "gold_support_sentences": bench.get("gold_support_sentences", []),
-                    "supporting_facts": supporting_facts,
-                }
-            )
-
-    return samples
 
 
 def _write_jsonl(path: Path, items: List[dict]) -> None:
@@ -183,6 +98,14 @@ def main() -> int:
         type=int,
         default=int(os.getenv("CHUNK_OVERLAP_TOKENS", "100")),
     )
+    parser.add_argument(
+        "--fetch-missing",
+        action="store_true",
+        help=(
+            "If a 2Wiki title is missing from DocStore, fetch it now (default: require "
+            "make fetch-wikipedia-articles first)."
+        ),
+    )
     args = parser.parse_args()
 
     if not args.benchmark or not str(args.benchmark).strip():
@@ -194,21 +117,14 @@ def main() -> int:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    benchmark_by_source = _load_benchmark(args.benchmark)
+    benchmark_by_source = load_benchmark_by_source(args.benchmark)
     sources_in_benchmark = set(benchmark_by_source.keys())
 
-    path_env_map = {
-        "nq": ("NQ_PATH", args.nq),
-        "2wiki": ("2WIKI_PATH", args.wiki2),
-    }
-    paths_by_source: Dict[str, str] = {}
-    missing = []
-    for source in sources_in_benchmark:
-        env_name, path = path_env_map.get(source, (None, None))
-        if path and str(path).strip():
-            paths_by_source[source] = path.strip()
-        else:
-            missing.append(env_name or source)
+    paths_by_source, missing = resolve_raw_paths_for_benchmark_sources(
+        sources_in_benchmark,
+        nq_path=args.nq,
+        wiki2_path=args.wiki2,
+    )
 
     if missing:
         raise ValueError(
@@ -220,7 +136,7 @@ def main() -> int:
         "Building corpus from datasets: %s", ", ".join(sorted(paths_by_source.keys()))
     )
 
-    samples = _build_samples(benchmark_by_source, paths_by_source)
+    samples = build_samples(benchmark_by_source, paths_by_source)
 
     budgets = Budgets(
         max_pages_per_question=args.max_pages,
@@ -239,28 +155,37 @@ def main() -> int:
             "WIKIMEDIA_OAUTH2_ACCESS_TOKEN is not set; unauthenticated Wikipedia API "
             "limits are low and large 2Wiki corpus builds may hit 429 errors"
         )
-    wikidata = WikidataClient()
-
     logger.info(
-        "Ingesting %d benchmark questions (docstore + Wikipedia fetch)...",
+        "Loading %d benchmark questions from DocStore (2Wiki) + NQ raw HTML...",
         len(samples),
     )
     all_docs = {}
     for sample in tqdm(
         samples,
-        desc="Ingest questions",
+        desc="Load docs",
         unit="question",
         dynamic_ncols=True,
     ):
         if sample["source"] == "2wiki":
-            docs = ingest_2wiki(sample, budgets, docstore, wiki)
+            docs, missing_titles = load_2wiki_docs_from_docstore(
+                sample,
+                docstore,
+                wiki=wiki,
+                fetch_missing=args.fetch_missing,
+            )
+            if missing_titles:
+                raise ValueError(
+                    f"DocStore missing HTML for titles {missing_titles} "
+                    f"(question_id={sample['question_id']}). "
+                    "Run `make fetch-wikipedia-articles` or pass --fetch-missing."
+                )
         else:
             docs = ingest_nq(sample, budgets, docstore, wiki)
         for doc in docs:
             all_docs[doc.doc_key] = doc
 
     logger.info(
-        "Ingest finished: %d questions → %d unique docs",
+        "Docs ready: %d questions → %d unique HTML docs",
         len(samples),
         len(all_docs),
     )
@@ -293,7 +218,7 @@ def main() -> int:
     corpus_path = output_dir / "corpus.jsonl"
     chunk_cache: Dict[str, dict] = {}
     if corpus_path.is_file():
-        for cached in _iter_jsonl(str(corpus_path)):
+        for cached in iter_jsonl(str(corpus_path)):
             cid = cached.get("chunk_id")
             if cid:
                 chunk_cache[cid] = cached
@@ -418,7 +343,7 @@ def main() -> int:
                 "IE batch pipeline failed with exit code %d", result.returncode
             )
             return result.returncode
-        chunks = list(_iter_jsonl(str(corpus_path)))
+        chunks = list(iter_jsonl(str(corpus_path)))
     else:
         logger.error("IE batch script not found: %s", ie_script)
         return 1

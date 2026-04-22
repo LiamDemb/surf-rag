@@ -6,7 +6,6 @@ from typing import List
 from bs4 import BeautifulSoup
 
 from .corpus_schemas import Block, StructuredDoc
-from .infobox_rewrite import is_infobox_table, linearize_infobox_table
 
 
 def normalize_text_for_extraction(text: str) -> str:
@@ -61,18 +60,6 @@ NOISE_LINK_SELECTORS = [
 ]
 
 
-def _table_to_text(table, max_rows: int = 30, max_cols: int = 8) -> str:
-    """Extract table text, handling table > tbody > tr structure."""
-    # Get top-level rows only (exclude nested table rows)
-    all_tr = [tr for tr in table.find_all("tr") if tr.find_parent("table") == table]
-    rows = []
-    for row in all_tr[:max_rows]:
-        cells = row.find_all(["th", "td"], recursive=False)[:max_cols]
-        if cells:
-            rows.append(" | ".join(cell.get_text(" ", strip=True) for cell in cells))
-    return "\n".join(rows)
-
-
 def _update_section_path(path: List[str], heading: str, level: str) -> List[str]:
     try:
         depth = int(level.replace("h", ""))
@@ -112,6 +99,8 @@ def clean_html_to_structured_doc(
     root = soup.find("div", class_="mw-parser-output")
     if root is None:
         root = soup.body if soup.body else soup
+    for table in list(root.find_all("table")):
+        table.decompose()
     for node in root.descendants:
         if not getattr(node, "name", None):
             continue
@@ -139,9 +128,6 @@ def clean_html_to_structured_doc(
                     )
                 )
         elif node.name in ["ul", "ol"]:
-            # Skip lists nested inside tables (infobox plainlists, etc.)
-            if node.find_parent("table") is not None:
-                continue
             items = [
                 li.get_text(" ", strip=True)
                 for li in node.find_all("li", recursive=False)
@@ -150,17 +136,6 @@ def clean_html_to_structured_doc(
                 text = "\n".join(f"- {item}" for item in items)
                 blocks.append(
                     Block(text=text, section_path=list(current_path), block_type="list")
-                )
-        elif node.name == "table":
-            if is_infobox_table(node):
-                text = linearize_infobox_table(node, title)
-            else:
-                text = _table_to_text(node)
-            if text:
-                blocks.append(
-                    Block(
-                        text=text, section_path=list(current_path), block_type="table"
-                    )
                 )
 
     return StructuredDoc(

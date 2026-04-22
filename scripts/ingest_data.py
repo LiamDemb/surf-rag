@@ -3,16 +3,19 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import random
 import os
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List
 
 from dotenv import load_dotenv
 from surf_rag.core.loaders import load_2wiki, load_nq
-from surf_rag.core.schemas import BenchmarkItem, sha256_text
+from surf_rag.core.schemas import (
+    BenchmarkItem,
+    parse_benchmark_support_fields,
+    sha256_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,13 +69,16 @@ def _load_existing_benchmark(path: Path) -> List[BenchmarkItem]:
             if not line:
                 continue
             row = json.loads(line)
+            sentences, titles, sent_ids = parse_benchmark_support_fields(row)
             items.append(
                 BenchmarkItem(
                     question_id=row["question_id"],
                     question=row["question"],
                     gold_answers=row["gold_answers"],
                     dataset_source=row["dataset_source"],
-                    gold_support_sentences=row.get("gold_support_sentences", []),
+                    gold_support_sentences=sentences,
+                    gold_support_titles=titles,
+                    gold_support_sent_ids=sent_ids,
                     dataset_version=row.get("dataset_version"),
                 )
             )
@@ -167,6 +173,8 @@ def main() -> int:
                     gold_answers=item.gold_answers,
                     dataset_source=item.dataset_source,
                     gold_support_sentences=item.gold_support_sentences,
+                    gold_support_titles=item.gold_support_titles,
+                    gold_support_sent_ids=item.gold_support_sent_ids,
                     dataset_version=item.dataset_version,
                 )
             )

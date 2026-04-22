@@ -69,6 +69,20 @@ def _nq_token_arrays(
     return token_vals, is_html
 
 
+def nq_document_title(row: Dict[str, Any]) -> str:
+    """Wikipedia page title from HF NQ ``document.title`` (or legacy top-level fallbacks)."""
+    document = row.get("document")
+    if isinstance(document, dict):
+        t = document.get("title")
+        if t is not None and str(t).strip():
+            return str(t).strip()
+    for key in ("document_title", "title"):
+        v = row.get(key)
+        if v is not None and str(v).strip():
+            return str(v).strip()
+    return ""
+
+
 def _iter_short_answer_spans(row: Dict[str, Any]) -> List[Tuple[int, int]]:
     spans: List[Tuple[int, int]] = []
     ann = row.get("annotations")

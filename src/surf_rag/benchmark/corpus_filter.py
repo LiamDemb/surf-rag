@@ -8,14 +8,36 @@ from typing import Dict, Iterable, List, Sequence, Tuple
 
 _WS_RE = re.compile(r"\s+")
 _SPACE_BEFORE_PUNCT_RE = re.compile(r"\s+([,.;:!?%])")
+_SPACE_AFTER_OPEN_BRACKET_RE = re.compile(r"([(\[{])\s+")
+_SPACE_BEFORE_CLOSE_BRACKET_RE = re.compile(r"\s+([)\]}])")
 
 
 def normalize_for_matching(text: str) -> str:
     s = str(text or "").casefold()
     s = s.replace("|", " ")
     s = _SPACE_BEFORE_PUNCT_RE.sub(r"\1", s)
+    s = _SPACE_AFTER_OPEN_BRACKET_RE.sub(r"\1", s)
+    s = _SPACE_BEFORE_CLOSE_BRACKET_RE.sub(r"\1", s)
     s = _WS_RE.sub(" ", s).strip()
     return s
+
+
+def normalize_for_matching_compact(text: str) -> str:
+    """Whitespace-insensitive normalized form for fallback containment checks."""
+    return _WS_RE.sub("", normalize_for_matching(text))
+
+
+def contains_normalized(haystack: str, needle: str) -> bool:
+    """Two-stage containment: normalized, then whitespace-insensitive fallback."""
+    norm_h = normalize_for_matching(haystack)
+    norm_n = normalize_for_matching(needle)
+    if not norm_h or not norm_n:
+        return False
+    if norm_n in norm_h:
+        return True
+    compact_h = normalize_for_matching_compact(norm_h)
+    compact_n = normalize_for_matching_compact(norm_n)
+    return bool(compact_h and compact_n and compact_n in compact_h)
 
 
 def iter_jsonl(path: Path) -> Iterable[dict]:

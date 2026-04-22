@@ -43,6 +43,8 @@ def test_load_nq_parses_minimal_jsonl(tmp_path):
     assert item.dataset_source == "nq"
     assert item.gold_answers == ["Tolkien"]
     assert item.gold_support_sentences == ["The Hobbit is a novel by Tolkien."]
+    assert item.gold_support_titles == ["The Hobbit"]
+    assert item.gold_support_sent_ids == [-1]
 
 
 def test_load_nq_parses_nested_document(tmp_path):
@@ -86,6 +88,8 @@ def test_load_nq_parses_nested_document(tmp_path):
     assert item.gold_support_sentences == [
         "Google was founded by Larry Page and Sergey Brin."
     ]
+    assert item.gold_support_titles == ["Google"]
+    assert item.gold_support_sent_ids == [-1]
 
 
 def test_load_nq_parses_annotations_dict(tmp_path):
@@ -114,6 +118,8 @@ def test_load_nq_parses_annotations_dict(tmp_path):
     item = items[0]
     assert item.gold_answers == ["Larry Page"]
     assert item.gold_support_sentences == ["Google was founded by Larry Page."]
+    assert item.gold_support_titles == ["Google"]
+    assert item.gold_support_sent_ids == [-1]
 
 
 def test_load_nq_short_answer_text_as_list_like_hf_jsonl(tmp_path):
@@ -138,6 +144,8 @@ def test_load_nq_short_answer_text_as_list_like_hf_jsonl(tmp_path):
     items = list(load_nq(str(path), dataset_version="v1", max_rows=5))
     assert len(items) == 1
     assert items[0].gold_answers == ["March 18, 2018"]
+    assert items[0].gold_support_titles == [""]
+    assert items[0].gold_support_sent_ids == [-1]
 
 
 def test_load_nq_short_answer_empty_text_without_clean_match_is_dropped(tmp_path):

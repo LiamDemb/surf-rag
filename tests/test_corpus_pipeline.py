@@ -33,7 +33,8 @@ def test_clean_html_to_structured_doc_parses_blocks():
     assert len(doc.blocks) >= 3
     assert any(block.block_type == "paragraph" for block in doc.blocks)
     assert any(block.block_type == "list" for block in doc.blocks)
-    assert any(block.block_type == "table" for block in doc.blocks)
+    assert all(block.block_type != "table" for block in doc.blocks)
+    assert not any("1999" in block.text for block in doc.blocks)
 
 
 def test_clean_html_removes_citation_markup_but_keeps_plain_brackets():
