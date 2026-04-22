@@ -11,7 +11,11 @@ from typing import Dict, Iterable, List
 
 from dotenv import load_dotenv
 from surf_rag.core.loaders import load_2wiki, load_nq
-from surf_rag.core.schemas import BenchmarkItem, parse_benchmark_support_fields, sha256_text
+from surf_rag.core.schemas import (
+    BenchmarkItem,
+    parse_benchmark_support_fields,
+    sha256_text,
+)
 
 logger = logging.getLogger(__name__)
 

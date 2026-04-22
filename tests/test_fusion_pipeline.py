@@ -34,7 +34,9 @@ def _mk_result(
     )
 
 
-def _chunk(chunk_id: str, score: float, text: str = "", metadata=None) -> RetrievedChunk:
+def _chunk(
+    chunk_id: str, score: float, text: str = "", metadata=None
+) -> RetrievedChunk:
     return RetrievedChunk(
         chunk_id=chunk_id,
         text=text or f"text-{chunk_id}",
@@ -72,12 +74,8 @@ def test_min_max_normalize_tied_pool_maps_to_one():
 
 def test_missing_branch_score_is_zero_and_fusion_uses_weights():
     """Chunks retrieved by only one branch get a 0.0 score for the missing branch."""
-    dense = _mk_result(
-        "Dense", "OK", [_chunk("a", 1.0), _chunk("b", 0.0)]
-    )
-    graph = _mk_result(
-        "Graph", "OK", [_chunk("c", 0.5)]
-    )
+    dense = _mk_result("Dense", "OK", [_chunk("a", 1.0), _chunk("b", 0.0)])
+    graph = _mk_result("Graph", "OK", [_chunk("c", 0.5)])
     # dense_weight=1.0 -> pure dense; 'c' has dense_norm=0.0.
     cands_dense = fuse_branch_results(dense, graph, dense_weight=1.0, fusion_keep_k=10)
     by_id = {c.chunk_id: c for c in cands_dense}
@@ -169,9 +167,7 @@ def test_one_error_branch_does_not_poison_fusion():
 
 
 def test_fused_chunk_metadata_is_complete():
-    dense = _mk_result(
-        "Dense", "OK", [_chunk("a", 0.8, metadata={"branch": "dense"})]
-    )
+    dense = _mk_result("Dense", "OK", [_chunk("a", 0.8, metadata={"branch": "dense"})])
     graph = _mk_result(
         "Graph",
         "OK",
@@ -240,9 +236,7 @@ def test_fusion_pipeline_can_reuse_provided_branch_results():
     g = _StaticRetriever("Graph", _mk_result("Graph", "NO_CONTEXT", []))
     pipeline = FusionPipeline(d, g, dense_weight=0.5, fusion_keep_k=5)
 
-    res = pipeline.run(
-        "q", dense_result=dense, graph_result=graph, dense_weight=0.7
-    )
+    res = pipeline.run("q", dense_result=dense, graph_result=graph, dense_weight=0.7)
 
     assert d.calls == 0 and g.calls == 0
     md = res.chunks[0].metadata

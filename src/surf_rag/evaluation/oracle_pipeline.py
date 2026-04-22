@@ -201,16 +201,17 @@ def sweep_weights_for_question(
                 ndcg_primary=float(primary_ndcg),
                 diagnostic_ndcg={k: by_k[k].ndcg for k in diagnostic_metric_ks},
                 diagnostic_hit={k: by_k[k].hit for k in diagnostic_metric_ks},
-                diagnostic_recall={
-                    k: by_k[k].recall for k in diagnostic_metric_ks
-                },
+                diagnostic_recall={k: by_k[k].recall for k in diagnostic_metric_ks},
                 fused_chunk_ids=[c.chunk_id for c in fused.chunks],
             )
         )
 
     best_idx = max(
         range(len(bin_scores)),
-        key=lambda i: (bin_scores[i].ndcg_primary, -abs(bin_scores[i].dense_weight - 0.5)),
+        key=lambda i: (
+            bin_scores[i].ndcg_primary,
+            -abs(bin_scores[i].dense_weight - 0.5),
+        ),
         default=0,
     )
     best = bin_scores[best_idx] if bin_scores else None
@@ -262,8 +263,7 @@ def sweep_missing_oracle_scores(
         graph = graph_cache.get(qid)
         if dense is None or graph is None:
             logger.warning(
-                "Skipping oracle sweep for qid=%s: "
-                "dense_cached=%s, graph_cached=%s",
+                "Skipping oracle sweep for qid=%s: " "dense_cached=%s, graph_cached=%s",
                 qid,
                 dense is not None,
                 graph is not None,

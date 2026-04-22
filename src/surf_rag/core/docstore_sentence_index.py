@@ -43,7 +43,9 @@ def corpus_chunk_shaped_rows_from_raw_doc(
     return rows
 
 
-def collect_raw_docs_for_titles(titles: Iterable[str], docstore: DocStore) -> List[RawDoc]:
+def collect_raw_docs_for_titles(
+    titles: Iterable[str], docstore: DocStore
+) -> List[RawDoc]:
     """Load cached Wikipedia pages from DocStore (``title:{title}`` keys). Skips missing or empty HTML."""
     seen: set[str] = set()
     out: List[RawDoc] = []

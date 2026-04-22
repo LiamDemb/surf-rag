@@ -121,7 +121,11 @@ def test_questions_snapshot_round_trips_rows(tmp_path):
 def _retrieval_result(retriever_name: str, qid_chunks: dict) -> RetrievalResult:
     chunks = [
         RetrievedChunk(
-            chunk_id=cid, text=txt, score=score, rank=0, metadata={"branch": retriever_name.lower()}
+            chunk_id=cid,
+            text=txt,
+            score=score,
+            rank=0,
+            metadata={"branch": retriever_name.lower()},
         )
         for cid, (txt, score) in qid_chunks.items()
     ]

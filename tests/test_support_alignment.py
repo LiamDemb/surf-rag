@@ -160,10 +160,14 @@ def test_benchmark_item_roundtrip_gold_support_metadata() -> None:
     assert sentences == ["hello"] and titles == ["A"] and sids == [1]
 
 
-def test_parse_benchmark_support_fields_migrates_legacy_two_wiki_support_facts() -> None:
+def test_parse_benchmark_support_fields_migrates_legacy_two_wiki_support_facts() -> (
+    None
+):
     row = {
         "gold_support_sentences": ["hello"],
-        "two_wiki_support_facts": [{"title": "Legacy", "sent_id": 3, "sentence": "hello"}],
+        "two_wiki_support_facts": [
+            {"title": "Legacy", "sent_id": 3, "sentence": "hello"}
+        ],
     }
     sentences, titles, sids = parse_benchmark_support_fields(row)
     assert sentences == ["hello"]
@@ -236,7 +240,7 @@ def test_run_alignment_full_report_has_per_line_sections(tmp_path: Path) -> None
         encoding="utf-8",
     )
     html = (
-        "<html><body><div class=\"mw-parser-output\">"
+        '<html><body><div class="mw-parser-output">'
         "<p>Exact match sentence. Other.</p>"
         "</div></body></html>"
     )

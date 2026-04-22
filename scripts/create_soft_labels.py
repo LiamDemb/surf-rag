@@ -44,7 +44,9 @@ logger = logging.getLogger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Materialize soft labels from an oracle run.")
+    parser = argparse.ArgumentParser(
+        description="Materialize soft labels from an oracle run."
+    )
     parser.add_argument("--benchmark", required=True)
     parser.add_argument("--split", required=True)
     parser.add_argument("--oracle-run-id", required=True)
@@ -103,7 +105,9 @@ def main() -> int:
         logger.info("beta=%s -> wrote %d labels to %s", beta, n, out)
         written.append({"beta": float(beta), "path": out.name, "count": n})
 
-    selected_beta = args.selected_beta if args.selected_beta is not None else args.beta[0]
+    selected_beta = (
+        args.selected_beta if args.selected_beta is not None else args.beta[0]
+    )
     selected_src = paths.labels_for_beta(selected_beta)
     if not selected_src.is_file():
         logger.error(
@@ -113,7 +117,9 @@ def main() -> int:
         return 2
 
     shutil.copyfile(selected_src, paths.labels_selected)
-    logger.info("labels/selected.jsonl <- %s (beta=%s)", selected_src.name, selected_beta)
+    logger.info(
+        "labels/selected.jsonl <- %s (beta=%s)", selected_src.name, selected_beta
+    )
 
     update_manifest(
         paths,

@@ -71,9 +71,15 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Prepare (or resume) an oracle labeling run."
     )
-    parser.add_argument("--benchmark", required=True, help="Benchmark name, e.g. 'nq' or 'mix'.")
-    parser.add_argument("--split", required=True, help="Benchmark split tag, e.g. 'dev'.")
-    parser.add_argument("--oracle-run-id", required=True, help="Run identifier (free-form).")
+    parser.add_argument(
+        "--benchmark", required=True, help="Benchmark name, e.g. 'nq' or 'mix'."
+    )
+    parser.add_argument(
+        "--split", required=True, help="Benchmark split tag, e.g. 'dev'."
+    )
+    parser.add_argument(
+        "--oracle-run-id", required=True, help="Run identifier (free-form)."
+    )
     parser.add_argument(
         "--benchmark-path",
         required=True,

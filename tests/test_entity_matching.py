@@ -152,5 +152,7 @@ def test_pipeline_no_match(tmp_path: Path):
             {"norm": "alpha only", "surface_forms": ["alpha only"], "df": 1},
         ],
     )
-    pl = LexiconAliasEntityPipeline.from_artifacts(odir, max_df=8, max_entities_per_query=5)
+    pl = LexiconAliasEntityPipeline.from_artifacts(
+        odir, max_df=8, max_entities_per_query=5
+    )
     assert pl.extract("no known entities here please") == []

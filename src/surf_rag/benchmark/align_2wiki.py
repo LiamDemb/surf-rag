@@ -330,7 +330,9 @@ def run_2wiki_support_alignment(
         item = row_to_benchmark_item(row)
         anchors = _anchors_from_item(item)
 
-        def _drop(detail: str, decisions: Optional[List[SupportAlignmentDecision]] = None) -> None:
+        def _drop(
+            detail: str, decisions: Optional[List[SupportAlignmentDecision]] = None
+        ) -> None:
             stats["two_wiki_dropped"] += 1
             dropped_rows.append(
                 {

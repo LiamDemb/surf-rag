@@ -148,7 +148,9 @@ def test_materialize_soft_labels_writes_expected_jsonl(tmp_path: Path):
     n = materialize_soft_labels(rows, beta=2.0, output_path=out)
     assert n == 2
 
-    records = [json.loads(line) for line in out.read_text().splitlines() if line.strip()]
+    records = [
+        json.loads(line) for line in out.read_text().splitlines() if line.strip()
+    ]
     assert [r["question_id"] for r in records] == ["q1", "q2"]
     for rec in records:
         assert rec["beta"] == 2.0

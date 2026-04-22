@@ -41,7 +41,9 @@ logger = logging.getLogger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Sweep beta values and report aggregate label stats.")
+    parser = argparse.ArgumentParser(
+        description="Sweep beta values and report aggregate label stats."
+    )
     parser.add_argument("--benchmark", required=True)
     parser.add_argument("--split", required=True)
     parser.add_argument("--oracle-run-id", required=True)
@@ -129,7 +131,11 @@ def main() -> int:
     )
 
     logger.info("beta sweep -> %s", paths.beta_sweep)
-    logger.info("recommended beta=%s (mean_entropy=%.4f)", recommended.beta, recommended.mean_entropy)
+    logger.info(
+        "recommended beta=%s (mean_entropy=%.4f)",
+        recommended.beta,
+        recommended.mean_entropy,
+    )
 
     update_manifest(
         paths,

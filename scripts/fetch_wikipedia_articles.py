@@ -96,9 +96,7 @@ def main() -> int:
     for sample in tqdm(samples, desc="Fetch Wikipedia", unit="question"):
         if sample["source"] == "2wiki":
             titles = supporting_titles_from_2wiki_sample(sample)
-            cached_before = [
-                docstore.get(f"title:{t}") is not None for t in titles
-            ]
+            cached_before = [docstore.get(f"title:{t}") is not None for t in titles]
             ingest_2wiki(sample, budgets, docstore, wiki)
             for was_cached in cached_before:
                 if was_cached:

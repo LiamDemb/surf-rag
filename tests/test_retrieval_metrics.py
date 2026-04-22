@@ -48,9 +48,7 @@ def test_dcg_at_k_basic():
 
 def test_dcg_at_k_truncates_to_k():
     rels = [1, 1, 1, 1]
-    assert dcg_at_k(rels, k=2) == pytest.approx(
-        1 / math.log2(2) + 1 / math.log2(3)
-    )
+    assert dcg_at_k(rels, k=2) == pytest.approx(1 / math.log2(2) + 1 / math.log2(3))
 
 
 def test_ideal_dcg_or_mode_is_one_when_gold_present():
@@ -226,9 +224,7 @@ def test_2wiki_and_mode_uses_compact_fallback_for_both_facts():
 def test_compute_metric_suite_shape():
     golds = ["x"]
     chunks = _ranked([_chunk("c1", "x"), _chunk("c2", "y")])
-    suite = compute_metric_suite(
-        chunks, golds, dataset_source="nq", ks=(5, 10, 20)
-    )
+    suite = compute_metric_suite(chunks, golds, dataset_source="nq", ks=(5, 10, 20))
     assert [m.k for m in suite] == [5, 10, 20]
     assert all(isinstance(m, RankedMetricSuite) for m in suite)
     assert all(0.0 <= m.ndcg <= 1.0 for m in suite)
@@ -256,7 +252,5 @@ def test_score_retrieval_result_handles_ok_result():
         status="OK",
         chunks=[_chunk("c1", "target"), _chunk("c2", "other", score=0.5)],
     )
-    suite = score_retrieval_result(
-        res, ["target"], dataset_source="nq", ks=(5,)
-    )
+    suite = score_retrieval_result(res, ["target"], dataset_source="nq", ks=(5,))
     assert suite[0].ndcg == pytest.approx(1.0)

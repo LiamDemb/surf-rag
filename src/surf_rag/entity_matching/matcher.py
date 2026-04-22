@@ -134,7 +134,11 @@ def build_phrase_records(
         _register(by_key, mk, rec)
 
     for k, v in normalize_alias_map(CURATED_ALIASES).items():
-        mk = normalize_for_query_match(k) if not isinstance(k, str) else normalize_for_query_match(k)
+        mk = (
+            normalize_for_query_match(k)
+            if not isinstance(k, str)
+            else normalize_for_query_match(k)
+        )
         if not mk:
             continue
         rec = PhraseRecord(

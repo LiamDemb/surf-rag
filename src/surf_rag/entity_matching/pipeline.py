@@ -52,9 +52,7 @@ class LexiconAliasEntityPipeline:
             resolver=resolver,
             matcher=matcher,
             max_df=int(
-                max_df
-                if max_df is not None
-                else os.getenv("ENTITY_MATCH_MAX_DF", "8")
+                max_df if max_df is not None else os.getenv("ENTITY_MATCH_MAX_DF", "8")
             ),
             max_entities_per_query=int(
                 max_entities_per_query
@@ -79,6 +77,4 @@ class LexiconAliasEntityPipeline:
             max_df=self.max_df,
             min_match_key_len=self.min_match_key_len,
         )
-        return rank_and_cap(
-            filtered, max_count=self.max_entities_per_query
-        )
+        return rank_and_cap(filtered, max_count=self.max_entities_per_query)

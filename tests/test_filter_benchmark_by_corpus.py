@@ -3,7 +3,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-from surf_rag.benchmark.corpus_filter import filter_benchmark_rows, normalize_for_matching
+from surf_rag.benchmark.corpus_filter import (
+    filter_benchmark_rows,
+    normalize_for_matching,
+)
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:

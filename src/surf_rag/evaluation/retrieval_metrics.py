@@ -73,9 +73,7 @@ def stateful_relevances(
             if nq_already_credited:
                 relevances.append(0)
                 continue
-            matched = any(
-                contains_normalized(chunk_raw, raw) for _, raw in gold_pairs
-            )
+            matched = any(contains_normalized(chunk_raw, raw) for _, raw in gold_pairs)
             if matched:
                 relevances.append(1)
                 nq_already_credited = True

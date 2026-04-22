@@ -143,5 +143,9 @@ def test_align_drops_unresolved_2wiki_row(tmp_path: Path) -> None:
         tau_lex=0.99,
         drop_unresolved=True,
     )
-    out = [json.loads(l) for l in bench.read_text(encoding="utf-8").splitlines() if l.strip()]
+    out = [
+        json.loads(l)
+        for l in bench.read_text(encoding="utf-8").splitlines()
+        if l.strip()
+    ]
     assert out == []

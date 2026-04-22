@@ -45,9 +45,7 @@ def _chunk(cid: str, text: str, score: float) -> RetrievedChunk:
     )
 
 
-def _make_benchmark(
-    tmp_path: Path, rows: List[dict]
-) -> Path:
+def _make_benchmark(tmp_path: Path, rows: List[dict]) -> Path:
     p = tmp_path / "bench.jsonl"
     with p.open("w", encoding="utf-8") as f:
         for r in rows:
