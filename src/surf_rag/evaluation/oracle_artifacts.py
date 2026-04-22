@@ -36,7 +36,6 @@ from typing import Any, Dict, Iterable, Iterator, List, Optional
 from surf_rag.evaluation.retrieval_jsonl import retrieval_result_to_dict
 from surf_rag.retrieval.types import RetrievalResult, RetrievedChunk
 
-
 # Fixed 11-bin dense-weight grid used by the oracle sweep. Dense weight is
 # the learned quantity; graph weight is always ``1 - dense_weight``.
 DEFAULT_DENSE_WEIGHT_GRID: tuple[float, ...] = tuple(
