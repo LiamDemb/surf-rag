@@ -29,13 +29,13 @@ def build_dense_retriever(output_dir: str):
 
 def build_graph_retriever(output_dir: str):
     """Build GraphRetriever with corpus, graph, entity resolution."""
-    from surf_rag.core.entity_alias_resolver import EntityAliasResolver
     from surf_rag.core.entity_index_store import EntityIndexStore
     from surf_rag.core.mapping import JsonCorpusLoader
+    from surf_rag.entity_matching.pipeline import LexiconAliasEntityPipeline
     from surf_rag.graph.graph_store import NetworkXGraphStore
     from surf_rag.strategies.graph import (
         GraphRetriever,
-        _default_query_entity_extractor,
+        # Revert: add `from surf_rag.strategies.graph import _default_query_entity_extractor`
     )
 
     corpus_path = f"{output_dir}/corpus.jsonl"
@@ -47,7 +47,9 @@ def build_graph_retriever(output_dir: str):
             f"Required artifact missing: {alias_map_path}. Rebuild corpus with Phase 1 pipeline."
         )
 
-    alias_resolver = EntityAliasResolver.from_artifacts(output_dir=output_dir)
+    # When reverting to the LLM query entity extractor, restore:
+    #   alias_resolver = EntityAliasResolver.from_artifacts(output_dir=output_dir)
+    #   and pass entity_extractor=_default_query_entity_extractor(alias_resolver).
 
     entity_index_store = None
     if os.path.exists(f"{output_dir}/entity_index.faiss") and os.path.exists(
@@ -58,10 +60,15 @@ def build_graph_retriever(output_dir: str):
             f"{output_dir}/entity_index_meta.parquet",
         )
 
+    # Lexicon + alias exact phrase matching for query seeds (no per-query LLM call).
+    # To revert to LLM-based seeds, replace the line below with:
+    #   entity_extractor=_default_query_entity_extractor(alias_resolver),
+    entity_extractor = LexiconAliasEntityPipeline.from_artifacts(str(output_dir))
+
     return GraphRetriever(
         graph_store=NetworkXGraphStore(graph_path=graph_path),
         corpus=JsonCorpusLoader(jsonl_path=corpus_path),
-        entity_extractor=_default_query_entity_extractor(alias_resolver),
+        entity_extractor=entity_extractor,
         top_k=int(os.getenv("GRAPH_TOP_K", "10")),
         max_hops=int(os.getenv("GRAPH_MAX_HOPS", "1")),
         entity_index_store=entity_index_store,
