@@ -3,17 +3,16 @@
 Example::
 
     python -m scripts.router.build_router_dataset \\
-        --router-benchmark mybench \\
-        --router-dataset-id ds1 \\
-        --benchmark-path data/processed/benchmark.jsonl \\
-        --retrieval-asset-dir data/processed \\
-        --oracle-benchmark mybench --oracle-split dev --oracle-run-id run1
+        --router-id v01 \\
+        --benchmark-name mix \\
+        --benchmark-id v01 \\
+        --benchmark-path data/mix/v01/benchmark/benchmark.jsonl \\
+        --retrieval-asset-dir data/mix/v01/corpus
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 from pathlib import Path
@@ -24,14 +23,15 @@ from dotenv import load_dotenv
 from surf_rag.evaluation.oracle_artifacts import (
     OracleRunPaths,
     build_oracle_run_root,
-    default_oracle_base,
     read_jsonl,
 )
+from surf_rag.evaluation.artifact_paths import default_router_base
 from surf_rag.evaluation.router_dataset_artifacts import (
-    default_router_dataset_base,
+    build_split_question_ids_dict,
     make_router_dataset_paths_for_cli,
     write_feature_stats,
     write_router_dataset_manifest,
+    write_split_question_ids,
     write_split_summary,
     write_parquet,
 )
@@ -71,14 +71,19 @@ def parse_args() -> argparse.Namespace:
         description="Build router Parquet dataset from oracle labels."
     )
     p.add_argument(
-        "--router-benchmark",
+        "--router-id",
         required=True,
-        help="Benchmark tag for data/router/... path.",
+        help="Router bundle id (same as oracle + dataset directory).",
     )
     p.add_argument(
-        "--router-dataset-id",
+        "--benchmark-name",
         required=True,
-        help="Dataset run id (directory under benchmark).",
+        help="Source benchmark family (provenance).",
+    )
+    p.add_argument(
+        "--benchmark-id",
+        required=True,
+        help="Source benchmark bundle id (provenance).",
     )
     p.add_argument(
         "--benchmark-path",
@@ -93,27 +98,16 @@ def parse_args() -> argparse.Namespace:
         help="Corpus/alias dir for Graph entity pipeline (optional but recommended).",
     )
     p.add_argument(
-        "--oracle-benchmark", required=True, help="Oracle run benchmark tag."
-    )
-    p.add_argument("--oracle-split", required=True, help="Oracle split tag, e.g. dev.")
-    p.add_argument("--oracle-run-id", required=True, help="Oracle run id folder.")
-    p.add_argument(
         "--selected-beta",
         type=float,
         default=None,
-        help="Beta used in labels/selected.jsonl; if omitted, read from run manifest/labels file.",
+        help="Beta used in labels/selected.jsonl; if omitted, read from label rows.",
     )
     p.add_argument(
         "--router-base",
         type=Path,
         default=None,
-        help="Override router dataset base (else ROUTER_DATASET_BASE or data/router).",
-    )
-    p.add_argument(
-        "--oracle-base",
-        type=Path,
-        default=None,
-        help="Override oracle base (else ORACLE_BASE or data/oracle).",
+        help="Override router bundle base (else $ROUTER_BASE, then $DATA_BASE/router).",
     )
     p.add_argument(
         "--embedding-model",
@@ -148,17 +142,9 @@ def main() -> int:
     logging.basicConfig(level=args.log_level, format="%(levelname)s: %(message)s")
     logger = logging.getLogger(__name__)
 
-    router_base = (
-        args.router_base if args.router_base else default_router_dataset_base()
-    )
-    oracle_base = args.oracle_base if args.oracle_base else default_oracle_base()
+    router_base = args.router_base if args.router_base else default_router_base()
     o_paths = OracleRunPaths(
-        run_root=build_oracle_run_root(
-            oracle_base,
-            args.oracle_benchmark,
-            args.oracle_split,
-            args.oracle_run_id,
-        )
+        run_root=build_oracle_run_root(router_base, args.router_id)
     )
     if not o_paths.labels_selected.is_file():
         logger.error(
@@ -179,7 +165,7 @@ def main() -> int:
     bench = _load_benchmark(args.benchmark_path)
 
     r_paths = make_router_dataset_paths_for_cli(
-        args.router_benchmark, args.router_dataset_id, router_base=router_base
+        args.router_id, router_base=router_base
     )
     r_paths.ensure_dirs()
 
@@ -205,17 +191,17 @@ def main() -> int:
     tr = (
         float(args.train_ratio)
         if args.train_ratio is not None
-        else float(os.getenv("TRAIN_RATIO", "0.8"))
+        else float(os.getenv("TRAIN_RATIO", "0.6"))
     )
     dv = (
         float(args.dev_ratio)
         if args.dev_ratio is not None
-        else float(os.getenv("DEV_RATIO", "0.1"))
+        else float(os.getenv("DEV_RATIO", "0.2"))
     )
     te = (
         float(args.test_ratio)
         if args.test_ratio is not None
-        else float(os.getenv("TEST_RATIO", "0.1"))
+        else float(os.getenv("TEST_RATIO", "0.2"))
     )
     s = tr + dv + te
     if s <= 0:
@@ -232,25 +218,31 @@ def main() -> int:
         test_ratio=te,
         split_seed=split_seed,
         selected_beta=selected_beta,
-        oracle_run_id=args.oracle_run_id,
+        router_id=args.router_id,
     )
 
     write_parquet(r_paths.router_dataset_parquet, df)
     write_feature_stats(r_paths.feature_stats, normalizer.to_json())
     write_split_summary(r_paths.split_summary, sum_meta, run_root=r_paths.run_root)
+    split_payload = build_split_question_ids_dict(
+        df,
+        router_id=args.router_id,
+        source_benchmark_name=args.benchmark_name,
+        source_benchmark_id=args.benchmark_id,
+        split_seed=split_seed,
+    )
+    write_split_question_ids(r_paths.split_question_ids, split_payload)
     write_router_dataset_manifest(
         r_paths,
-        dataset_id=args.router_dataset_id,
-        benchmark=args.router_benchmark,
+        router_id=args.router_id,
+        source_benchmark_name=args.benchmark_name,
+        source_benchmark_id=args.benchmark_id,
         benchmark_path=str(args.benchmark_path.resolve()),
-        oracle_base=(
-            str(oracle_base.resolve())
-            if isinstance(oracle_base, Path)
-            else str(oracle_base)
+        retrieval_asset_dir=(
+            str(args.retrieval_asset_dir.resolve())
+            if args.retrieval_asset_dir
+            else ""
         ),
-        oracle_benchmark=args.oracle_benchmark,
-        oracle_split=args.oracle_split,
-        oracle_run_id=args.oracle_run_id,
         oracle_run_root=str(o_paths.run_root.resolve()),
         labels_selected_path=str(o_paths.labels_selected.resolve()),
         selected_beta=selected_beta,

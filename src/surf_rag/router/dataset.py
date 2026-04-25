@@ -47,10 +47,9 @@ def build_router_dataframe(
     test_ratio: float,
     split_seed: int,
     selected_beta: float,
-    oracle_run_id: str,
+    router_id: str,
 ) -> Tuple[pd.DataFrame, FeatureNormalizerV1, Dict[str, Any]]:
     """Assemble a single dataframe with raw + norm features, embeddings, and splits.
-
     Skips benchmark rows with no matching label row.
     """
     by_q: Dict[str, Dict[str, Any]] = {}
@@ -137,7 +136,8 @@ def build_router_dataframe(
             "argmax_index": int(lab.get("argmax_index", 0)),
             "soft_label_scores": [float(s) for s in (lab.get("scores", []) or [])],
             "beta": float(lab.get("beta", selected_beta)),
-            "oracle_run_id": oracle_run_id,
+            "router_id": router_id,
+            "oracle_run_id": router_id,
             "selected_beta": float(selected_beta),
             "feature_set_version": FEATURE_SET_VERSION,
             "embedding_model": embedding_model,

@@ -34,6 +34,7 @@ from surf_rag.evaluation.oracle_artifacts import (
     read_question_ids,
     read_retrieval_cache,
     write_manifest,
+    write_provenance,
     write_questions_snapshot,
     write_summary,
 )
@@ -56,11 +57,12 @@ ProgressFn = Optional[Callable[[str, int, int], None]]
 class OracleRunConfig:
     """Configuration for one oracle run."""
 
-    benchmark: str
-    split: str
-    oracle_run_id: str
+    router_id: str
+    benchmark_name: str
+    benchmark_id: str
     benchmark_path: Path
     retrieval_asset_dir: Path
+    source_split: Optional[str] = None
     branch_top_k: int = 25
     fusion_keep_k: int = 25
     weight_grid: Tuple[float, ...] = DEFAULT_DENSE_WEIGHT_GRID
@@ -301,9 +303,12 @@ def build_summary(
     graph_qids = read_question_ids(paths.retrieval_graph)
     score_qids = read_question_ids(paths.oracle_scores)
     return {
-        "oracle_run_id": cfg.oracle_run_id,
-        "benchmark": cfg.benchmark,
-        "split": cfg.split,
+        "router_id": cfg.router_id,
+        "benchmark_name": cfg.benchmark_name,
+        "benchmark_id": cfg.benchmark_id,
+        "source_split": cfg.source_split,
+        "oracle_run_id": cfg.router_id,
+        "benchmark": cfg.benchmark_name,
         "questions_snapshot": snapshot_count,
         "dense_cached": len(dense_qids),
         "graph_cached": len(graph_qids),
@@ -319,6 +324,7 @@ def build_summary(
         "diagnostic_metric_ks": list(cfg.diagnostic_metric_ks),
         "artifacts": {
             "manifest": paths.manifest.name,
+            "provenance": paths.provenance.name,
             "questions_snapshot": paths.questions_snapshot.name,
             "retrieval_dense": paths.retrieval_dense.name,
             "retrieval_graph": paths.retrieval_graph.name,
@@ -346,9 +352,9 @@ def prepare_oracle_run(
 
     write_manifest(
         paths,
-        oracle_run_id=cfg.oracle_run_id,
-        benchmark=cfg.benchmark,
-        split=cfg.split,
+        router_id=cfg.router_id,
+        benchmark_name=cfg.benchmark_name,
+        benchmark_id=cfg.benchmark_id,
         benchmark_path=str(cfg.benchmark_path),
         retrieval_asset_dir=str(cfg.retrieval_asset_dir),
         weight_grid=cfg.weight_grid,
@@ -357,6 +363,15 @@ def prepare_oracle_run(
         oracle_metric=cfg.oracle_metric,
         oracle_metric_k=cfg.oracle_metric_k,
         diagnostic_metric_ks=cfg.diagnostic_metric_ks,
+        source_split=cfg.source_split,
+    )
+    write_provenance(
+        paths,
+        router_id=cfg.router_id,
+        benchmark_name=cfg.benchmark_name,
+        benchmark_id=cfg.benchmark_id,
+        benchmark_path=str(cfg.benchmark_path.resolve()),
+        retrieval_asset_dir=str(cfg.retrieval_asset_dir.resolve()),
     )
 
     rows = _load_benchmark_rows(cfg.benchmark_path, limit=limit)

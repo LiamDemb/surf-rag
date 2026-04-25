@@ -5,42 +5,44 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
+from surf_rag.evaluation.artifact_paths import default_router_base
 from surf_rag.evaluation.router_dataset_artifacts import (
     RouterDatasetPaths,
     build_router_dataset_root,
-    default_router_dataset_base,
+    build_split_question_ids_dict,
     make_router_dataset_paths_for_cli,
     read_jsonl_dict,
     write_router_dataset_manifest,
+    write_split_question_ids,
 )
 
 
 def test_default_router_base(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
-    assert default_router_dataset_base() == Path("data/router")
+    assert default_router_base() == Path("data/router")
 
 
 def test_run_root_layout() -> None:
-    p = make_router_dataset_paths_for_cli("mix", "ds1", router_base=Path("/base"))
-    assert p.run_root == Path("/base") / "mix" / "ds1"
+    p = make_router_dataset_paths_for_cli("ds1", router_base=Path("/base"))
+    assert p.run_root == Path("/base") / "ds1" / "dataset"
     assert p.router_dataset_parquet == p.run_root / "router_dataset.parquet"
+    assert p.split_question_ids == p.run_root / "split_question_ids.json"
 
 
 def test_write_manifest_roundtrip(tmp_path: Path) -> None:
-    paths = RouterDatasetPaths(run_root=build_router_dataset_root(tmp_path, "b", "d1"))
+    paths = RouterDatasetPaths(run_root=build_router_dataset_root(tmp_path, "d1"))
     write_router_dataset_manifest(
         paths,
-        dataset_id="d1",
-        benchmark="b",
+        router_id="d1",
+        source_benchmark_name="b",
+        source_benchmark_id="v01",
         benchmark_path="/x/b.jsonl",
-        oracle_base="/o",
-        oracle_benchmark="b",
-        oracle_split="dev",
-        oracle_run_id="r1",
-        oracle_run_root="/o/b/dev/r1",
-        labels_selected_path="/o/b/dev/r1/labels/selected.jsonl",
+        retrieval_asset_dir="/x/corpus",
+        oracle_run_root="/base/d1/oracle",
+        labels_selected_path="/base/d1/oracle/labels/selected.jsonl",
         selected_beta=2.0,
         feature_set_version="1",
         embedding_model="m",
@@ -50,9 +52,32 @@ def test_write_manifest_roundtrip(tmp_path: Path) -> None:
         test_ratio=0.1,
     )
     m = json.loads(paths.manifest.read_text())
-    assert m["dataset_id"] == "d1"
-    assert m["oracle"]["oracle_run_id"] == "r1"
+    assert m["router_id"] == "d1"
+    assert m["oracle"]["run_root"] == "/base/d1/oracle"
     assert m["oracle"]["selected_beta"] == 2.0
+
+
+def test_build_split_question_ids_dict_matches_df(tmp_path: Path) -> None:
+    df = pd.DataFrame(
+        {
+            "question_id": ["a", "b", "c", "d"],
+            "split": ["train", "train", "dev", "test"],
+        }
+    )
+    d = build_split_question_ids_dict(
+        df,
+        router_id="r1",
+        source_benchmark_name="mix",
+        source_benchmark_id="v01",
+        split_seed=7,
+    )
+    assert d["counts"] == {"train": 2, "dev": 1, "test": 1}
+    assert set(d["train"]) == {"a", "b"}
+    assert d["canonical_question_hash_available"] is False
+
+    out = Path(tmp_path) / "sqi.json"
+    write_split_question_ids(out, d)
+    assert json.loads(out.read_text())["router_id"] == "r1"
 
 
 def test_read_jsonl_dict(tmp_path: Path) -> None:

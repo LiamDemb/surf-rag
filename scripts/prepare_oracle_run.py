@@ -1,32 +1,4 @@
-"""Run (or resume) an oracle labeling run end-to-end.
-
-This CLI is the canonical entrypoint for:
-
-1. Snapshotting benchmark rows for a given oracle run id.
-2. Populating dense and graph retrieval caches, skipping any
-   ``question_id`` already cached.
-3. Sweeping the fixed 11-bin dense-weight grid and scoring each fused
-   shortlist with stateful NDCG@10 (plus diagnostic NDCG/Hit/Recall at 5,
-   10, 20).
-4. Writing a ``summary.json`` overview.
-
-The oracle run root lives at
-``data/oracle/<benchmark>/<split>/<oracle_run_id>/`` (override via the
-``ORACLE_BASE`` env var). Labels (soft and hard) are materialized in a
-separate stage by :mod:`scripts.create_soft_labels` so changing ``beta``
-never retriggers retrieval.
-
-Example:
-
-    python -m scripts.prepare_oracle_run \\
-        --benchmark mix \\
-        --split dev \\
-        --oracle-run-id run1 \\
-        --benchmark-path data/processed/benchmark.jsonl \\
-        --retrieval-asset-dir data/processed \\
-        --branch-top-k 25 \\
-        --fusion-keep-k 25
-"""
+"""Produce raw oracle weight scores."""
 
 from __future__ import annotations
 
@@ -72,13 +44,22 @@ def parse_args() -> argparse.Namespace:
         description="Prepare (or resume) an oracle labeling run."
     )
     parser.add_argument(
-        "--benchmark", required=True, help="Benchmark name, e.g. 'nq' or 'mix'."
+        "--router-id", required=True, help="Router bundle id, e.g. v01 (oracle path key)."
     )
     parser.add_argument(
-        "--split", required=True, help="Benchmark split tag, e.g. 'dev'."
+        "--benchmark-name",
+        required=True,
+        help="Source benchmark family name, e.g. 'mix' or 'hotpotqa'.",
     )
     parser.add_argument(
-        "--oracle-run-id", required=True, help="Run identifier (free-form)."
+        "--benchmark-id",
+        required=True,
+        help="Source benchmark bundle id, e.g. v01 (for provenance).",
+    )
+    parser.add_argument(
+        "--source-split",
+        default=None,
+        help="Optional upstream split label (metadata only; not used in paths).",
     )
     parser.add_argument(
         "--benchmark-path",
@@ -111,10 +92,10 @@ def parse_args() -> argparse.Namespace:
         help="Optional cap on benchmark rows for quick smoke runs.",
     )
     parser.add_argument(
-        "--oracle-base",
+        "--router-base",
         type=Path,
         default=None,
-        help="Override oracle run root (falls back to $ORACLE_BASE, then data/oracle).",
+        help="Override router bundle root (else $ROUTER_BASE, then $DATA_BASE/router).",
     )
     parser.add_argument(
         "--log-level",
@@ -128,23 +109,18 @@ def main() -> int:
     args = parse_args()
     logging.basicConfig(level=args.log_level, format="%(levelname)s: %(message)s")
 
-    # Force the retriever factories to use the CLI-specified top_k values.
-    os.environ["DENSE_TOP_K"] = str(args.branch_top_k)
-    os.environ["GRAPH_TOP_K"] = str(args.branch_top_k)
-
-    base = args.oracle_base if args.oracle_base else default_oracle_base()
+    router_base = args.router_base if args.router_base else default_oracle_base()
     paths = OracleRunPaths(
-        run_root=build_oracle_run_root(
-            base, args.benchmark, args.split, args.oracle_run_id
-        )
+        run_root=build_oracle_run_root(router_base, args.router_id)
     )
 
     cfg = OracleRunConfig(
-        benchmark=args.benchmark,
-        split=args.split,
-        oracle_run_id=args.oracle_run_id,
+        router_id=args.router_id,
+        benchmark_name=args.benchmark_name,
+        benchmark_id=args.benchmark_id,
         benchmark_path=args.benchmark_path,
         retrieval_asset_dir=args.retrieval_asset_dir,
+        source_split=args.source_split,
         branch_top_k=args.branch_top_k,
         fusion_keep_k=args.fusion_keep_k,
         weight_grid=DEFAULT_DENSE_WEIGHT_GRID,
@@ -158,10 +134,12 @@ def main() -> int:
         cfg,
         paths,
         dense_retriever_factory=lambda: build_dense_retriever(
-            str(args.retrieval_asset_dir)
+            str(args.retrieval_asset_dir),
+            top_k=args.branch_top_k,
         ),
         graph_retriever_factory=lambda: build_graph_retriever(
-            str(args.retrieval_asset_dir)
+            str(args.retrieval_asset_dir),
+            top_k=args.branch_top_k,
         ),
         limit=args.limit,
         progress=_progress,

@@ -1,22 +1,8 @@
-"""Router dataset run directories, manifests, and parquet/JSONL helpers.
-
-Router dataset builds live under a shallow root parallel to oracle runs:
-
-    data/router/<benchmark>/<dataset_id>/
-        manifest.json
-        router_dataset.parquet
-        split_summary.json
-        feature_stats.json
-        reports/   (optional)
-
-The base directory is overridable via ``ROUTER_DATASET_BASE`` (defaults to
-``data/router``).
-"""
+"""Router dataset run directories, manifests, and parquet/JSONL helpers."""
 
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,24 +10,17 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
+from surf_rag.evaluation.artifact_paths import default_router_base
 from surf_rag.evaluation.oracle_artifacts import read_jsonl, utc_now_iso
 
 
-def default_router_dataset_base() -> Path:
-    return Path(os.getenv("ROUTER_DATASET_BASE", "data/router"))
-
-
-def build_router_dataset_root(
-    router_base: Path,
-    benchmark: str,
-    dataset_id: str,
-) -> Path:
-    return router_base / benchmark / dataset_id
+def build_router_dataset_root(router_base: Path, router_id: str) -> Path:
+    return router_base / router_id / "dataset"
 
 
 @dataclass(frozen=True)
 class RouterDatasetPaths:
-    """Standard subpaths inside one router dataset run root."""
+    """Standard subpaths inside one router's dataset directory."""
 
     run_root: Path
 
@@ -58,6 +37,10 @@ class RouterDatasetPaths:
         return self.run_root / "split_summary.json"
 
     @property
+    def split_question_ids(self) -> Path:
+        return self.run_root / "split_question_ids.json"
+
+    @property
     def feature_stats(self) -> Path:
         return self.run_root / "feature_stats.json"
 
@@ -71,26 +54,58 @@ class RouterDatasetPaths:
 
 
 def make_router_dataset_paths_for_cli(
-    benchmark: str,
-    dataset_id: str,
+    router_id: str,
     router_base: Optional[Path] = None,
 ) -> RouterDatasetPaths:
-    base = router_base if router_base is not None else default_router_dataset_base()
-    return RouterDatasetPaths(
-        run_root=build_router_dataset_root(base, benchmark, dataset_id)
+    base = router_base if router_base is not None else default_router_base()
+    return RouterDatasetPaths(run_root=build_router_dataset_root(base, router_id))
+
+
+def build_split_question_ids_dict(
+    df: pd.DataFrame,
+    *,
+    router_id: str,
+    source_benchmark_name: str,
+    source_benchmark_id: str,
+    split_seed: int,
+) -> Dict[str, Any]:
+    """Shape written to ``split_question_ids.json`` (audit + overlap reporting)."""
+    out: dict[str, list[str]] = {"train": [], "dev": [], "test": []}
+    for _, row in df.iterrows():
+        sp = str(row.get("split", "") or "")
+        qid = str(row.get("question_id", "") or "")
+        if sp in out and qid:
+            out[sp].append(qid)
+    counts = {k: len(v) for k, v in out.items()}
+    return {
+        "router_id": router_id,
+        "source_benchmark_name": source_benchmark_name,
+        "source_benchmark_id": source_benchmark_id,
+        "split_seed": int(split_seed),
+        "train": out["train"],
+        "dev": out["dev"],
+        "test": out["test"],
+        "counts": counts,
+        "canonical_question_hash_available": False,
+    }
+
+
+def write_split_question_ids(path: Path, payload: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
     )
 
 
 def write_router_dataset_manifest(
     paths: RouterDatasetPaths,
     *,
-    dataset_id: str,
-    benchmark: str,
+    router_id: str,
+    source_benchmark_name: str,
+    source_benchmark_id: str,
     benchmark_path: str,
-    oracle_base: str,
-    oracle_benchmark: str,
-    oracle_split: str,
-    oracle_run_id: str,
+    retrieval_asset_dir: str,
     oracle_run_root: str,
     labels_selected_path: str,
     selected_beta: float,
@@ -102,19 +117,23 @@ def write_router_dataset_manifest(
     test_ratio: float,
     extra: Optional[Dict[str, Any]] = None,
 ) -> None:
-    """Write ``manifest.json`` for a router dataset build."""
+    """Write ``manifest.json`` for a router dataset build (schema v2)."""
     paths.ensure_dirs()
     data: Dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "created_at": utc_now_iso(),
-        "dataset_id": dataset_id,
-        "benchmark": benchmark,
-        "benchmark_path": benchmark_path,
+        "router_id": router_id,
+        "dataset_id": router_id,
+        "source_benchmark": {
+            "name": source_benchmark_name,
+            "id": source_benchmark_id,
+            "benchmark_path": benchmark_path,
+        },
+        "source_corpus": {
+            "retrieval_asset_dir": retrieval_asset_dir,
+        },
         "oracle": {
-            "oracle_base": oracle_base,
-            "benchmark": oracle_benchmark,
-            "split": oracle_split,
-            "oracle_run_id": oracle_run_id,
+            "router_id": router_id,
             "run_root": oracle_run_root,
             "labels_selected": labels_selected_path,
             "selected_beta": float(selected_beta),
@@ -130,6 +149,7 @@ def write_router_dataset_manifest(
         "artifacts": {
             "router_dataset": paths.router_dataset_parquet.name,
             "split_summary": paths.split_summary.name,
+            "split_question_ids": paths.split_question_ids.name,
             "feature_stats": paths.feature_stats.name,
             "reports_dir": paths.reports_dir.name,
         },

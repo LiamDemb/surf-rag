@@ -70,7 +70,7 @@ def test_build_dataframe_shape(monkeypatch: pytest.MonkeyPatch) -> None:
         test_ratio=0.25,
         split_seed=0,
         selected_beta=2.0,
-        oracle_run_id="t1",
+        router_id="t1",
     )
     assert len(df) == 2
     assert "feature_raw__content_token_len" in df.columns

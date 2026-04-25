@@ -1,26 +1,8 @@
-"""Sweep beta values against an oracle run and write beta_sweep diagnostics.
-
-Given an oracle run's ``oracle_scores.jsonl``, this computes per-question
-soft labels for each candidate beta and aggregates entropy / expected
-weight / argmax weight statistics into ``beta_sweep.jsonl``. A
-recommended beta is selected heuristically (lowest entropy above a
-configurable floor) and written to ``recommended_beta.json``. You are
-always free to override the recommendation by passing
-``--selected-beta`` to :mod:`scripts.create_soft_labels`.
-
-Example:
-
-    python -m scripts.sweep_beta \\
-        --benchmark mix --split dev --oracle-run-id run1 \\
-        --betas 0.5 1.0 2.0 5.0 10.0
-"""
-
 from __future__ import annotations
 
 import argparse
 import json
 import logging
-import math
 import sys
 from pathlib import Path
 from typing import List
@@ -44,9 +26,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Sweep beta values and report aggregate label stats."
     )
-    parser.add_argument("--benchmark", required=True)
-    parser.add_argument("--split", required=True)
-    parser.add_argument("--oracle-run-id", required=True)
+    parser.add_argument(
+        "--router-id", required=True, help="Router bundle id (oracle directory key)."
+    )
     parser.add_argument(
         "--betas",
         nargs="+",
@@ -64,7 +46,7 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--oracle-base",
+        "--router-base",
         type=Path,
         default=None,
     )
@@ -73,11 +55,9 @@ def parse_args() -> argparse.Namespace:
 
 
 def _resolve_paths(args: argparse.Namespace) -> OracleRunPaths:
-    base = args.oracle_base if args.oracle_base else default_oracle_base()
+    base = args.router_base if args.router_base else default_oracle_base()
     return OracleRunPaths(
-        run_root=build_oracle_run_root(
-            base, args.benchmark, args.split, args.oracle_run_id
-        )
+        run_root=build_oracle_run_root(base, args.router_id)
     )
 
 

@@ -1,23 +1,4 @@
-"""Materialize soft labels from an oracle run's saved score vectors.
-
-Inputs:
-  - An oracle run root created by :mod:`scripts.prepare_oracle_run`.
-  - One or more ``--beta`` values.
-
-Outputs (under ``<oracle_run_root>/labels/``):
-  - ``beta_<value>.jsonl`` for each ``--beta``.
-  - ``selected.jsonl`` as a symlink-like canonical pointer (copy of the
-    ``--selected-beta`` value, or the first if not specified).
-
-Changing ``beta`` never retriggers retrieval or the metric sweep - it
-only re-reads ``oracle_scores.jsonl`` and writes new label files.
-
-Example:
-
-    python -m scripts.create_soft_labels \\
-        --benchmark mix --split dev --oracle-run-id run1 \\
-        --beta 1.0 --beta 2.0 --beta 5.0 --selected-beta 2.0
-"""
+"""Materialize soft labels from an oracle run's saved score vectors."""
 
 from __future__ import annotations
 
@@ -47,9 +28,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Materialize soft labels from an oracle run."
     )
-    parser.add_argument("--benchmark", required=True)
-    parser.add_argument("--split", required=True)
-    parser.add_argument("--oracle-run-id", required=True)
+    parser.add_argument(
+        "--router-id", required=True, help="Router bundle id (oracle directory key)."
+    )
     parser.add_argument(
         "--beta",
         action="append",
@@ -64,21 +45,19 @@ def parse_args() -> argparse.Namespace:
         help="Beta whose label file becomes labels/selected.jsonl. Defaults to the first --beta.",
     )
     parser.add_argument(
-        "--oracle-base",
+        "--router-base",
         type=Path,
         default=None,
-        help="Override oracle run root base (falls back to $ORACLE_BASE, then data/oracle).",
+        help="Override router bundle root (falls back to $ROUTER_BASE, then $DATA_BASE/router).",
     )
     parser.add_argument("--log-level", default="INFO")
     return parser.parse_args()
 
 
 def _resolve_paths(args: argparse.Namespace) -> OracleRunPaths:
-    base = args.oracle_base if args.oracle_base else default_oracle_base()
+    base = args.router_base if args.router_base else default_oracle_base()
     return OracleRunPaths(
-        run_root=build_oracle_run_root(
-            base, args.benchmark, args.split, args.oracle_run_id
-        )
+        run_root=build_oracle_run_root(base, args.router_id)
     )
 
 

@@ -1,5 +1,21 @@
 """Evaluation run directories, manifests, and artifact paths."""
 
+from surf_rag.evaluation.artifact_paths import (
+    benchmark_bundle_dir,
+    default_data_base,
+    default_router_base,
+    evaluation_policy_dir,
+    evaluations_root,
+    hard_router_policy_id,
+    POLICY_50_50,
+    POLICY_DENSE_ONLY,
+    POLICY_GRAPH_ONLY,
+    router_bundle_dir,
+    router_dataset_dir,
+    router_model_dir,
+    router_oracle_dir,
+    trained_router_policy_id,
+)
 from surf_rag.evaluation.oracle_artifacts import (
     DEFAULT_DENSE_WEIGHT_GRID,
     OracleRunPaths,
@@ -8,11 +24,13 @@ from surf_rag.evaluation.oracle_artifacts import (
     build_oracle_run_root,
     default_oracle_base,
     make_run_paths_for_cli as make_oracle_run_paths_for_cli,
+    make_run_paths_for_legacy,
     read_manifest as read_oracle_manifest,
     read_oracle_score_rows,
     read_retrieval_cache,
     read_summary as read_oracle_summary,
     write_manifest as write_oracle_manifest,
+    write_provenance,
     write_questions_snapshot,
     write_summary as write_oracle_summary,
 )
@@ -25,6 +43,12 @@ from surf_rag.evaluation.retrieval_metrics import (
     score_retrieval_result,
     stateful_relevances,
 )
+from surf_rag.evaluation.router_overlap import (
+    RouterOverlapSplit,
+    RouterSplitSets,
+    overlap_category_counts,
+    router_overlap_split,
+)
 from surf_rag.evaluation.run_artifacts import (
     RunArtifactPaths,
     build_run_root,
@@ -34,6 +58,26 @@ from surf_rag.evaluation.run_artifacts import (
 )
 
 __all__ = [
+    # Benchmark / router / evaluation layout
+    "default_data_base",
+    "default_router_base",
+    "benchmark_bundle_dir",
+    "router_bundle_dir",
+    "router_oracle_dir",
+    "router_dataset_dir",
+    "router_model_dir",
+    "evaluations_root",
+    "evaluation_policy_dir",
+    "trained_router_policy_id",
+    "hard_router_policy_id",
+    "POLICY_50_50",
+    "POLICY_GRAPH_ONLY",
+    "POLICY_DENSE_ONLY",
+    # Router overlap (evaluation reporting)
+    "RouterSplitSets",
+    "RouterOverlapSplit",
+    "router_overlap_split",
+    "overlap_category_counts",
     # Generation-run artifacts
     "RunArtifactPaths",
     "build_run_root",
@@ -48,6 +92,8 @@ __all__ = [
     "build_oracle_run_root",
     "default_oracle_base",
     "make_oracle_run_paths_for_cli",
+    "make_run_paths_for_legacy",
+    "write_provenance",
     "write_oracle_manifest",
     "read_oracle_manifest",
     "write_oracle_summary",

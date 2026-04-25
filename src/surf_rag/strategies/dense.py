@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional
@@ -23,7 +22,7 @@ class DenseRetriever(BranchRetriever):
     meta: RowIdToChunkId = None  # type: ignore[assignment]
     embedder: Embedder = None  # type: ignore[assignment]
     corpus: ChunkIdToText = None  # type: ignore[assignment]
-    top_k: int = int(os.getenv("DENSE_TOP_K", 5))
+    top_k: int = 10
 
     _index: Optional[object] = None
 
