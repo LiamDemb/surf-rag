@@ -32,8 +32,8 @@ from surf_rag.retrieval.types import RetrievalResult, RetrievedChunk
 
 
 def _paths(tmp_path: Path) -> OracleRunPaths:
-    base = tmp_path / "data" / "oracle"
-    run_root = build_oracle_run_root(base, "nq", "dev", "runA")
+    base = tmp_path / "data" / "router"
+    run_root = build_oracle_run_root(base, "runA")
     return OracleRunPaths(run_root=run_root)
 
 
@@ -44,10 +44,11 @@ def test_dense_weight_grid_has_11_bins_from_zero_to_one():
     assert all(0.0 <= w <= 1.0 for w in DEFAULT_DENSE_WEIGHT_GRID)
 
 
-def test_default_oracle_base_respects_env(monkeypatch):
-    monkeypatch.delenv("ORACLE_BASE", raising=False)
-    assert default_oracle_base() == Path("data/oracle")
-    monkeypatch.setenv("ORACLE_BASE", "/tmp/something")
+def test_default_oracle_base_matches_router_base(monkeypatch):
+    monkeypatch.delenv("ROUTER_BASE", raising=False)
+    monkeypatch.delenv("DATA_BASE", raising=False)
+    assert default_oracle_base() == Path("data/router")
+    monkeypatch.setenv("ROUTER_BASE", "/tmp/something")
     assert default_oracle_base() == Path("/tmp/something")
 
 
@@ -59,10 +60,11 @@ def test_format_beta_filename_component_is_stable():
 
 
 def test_make_run_paths_for_cli_builds_expected_layout(tmp_path, monkeypatch):
-    monkeypatch.setenv("ORACLE_BASE", str(tmp_path))
-    paths = make_run_paths_for_cli("nq", "dev", "runA")
-    assert paths.run_root == tmp_path / "nq" / "dev" / "runA"
+    monkeypatch.setenv("ROUTER_BASE", str(tmp_path))
+    paths = make_run_paths_for_cli("runA")
+    assert paths.run_root == tmp_path / "runA" / "oracle"
     assert paths.manifest == paths.run_root / "manifest.json"
+    assert paths.provenance == paths.run_root / "provenance.json"
     assert paths.oracle_scores == paths.run_root / "oracle_scores.jsonl"
     assert paths.labels_selected == paths.run_root / "labels" / "selected.jsonl"
 
@@ -71,11 +73,11 @@ def test_write_and_read_manifest_round_trip(tmp_path):
     paths = _paths(tmp_path)
     write_manifest(
         paths,
-        oracle_run_id="runA",
-        benchmark="nq",
-        split="dev",
-        benchmark_path="data/benchmarks/nq_dev.jsonl",
-        retrieval_asset_dir="data/processed/nq_dev",
+        router_id="runA",
+        benchmark_name="nq",
+        benchmark_id="v01",
+        benchmark_path="data/benchmarks/nq.jsonl",
+        retrieval_asset_dir="data/mix/v01/corpus",
         weight_grid=DEFAULT_DENSE_WEIGHT_GRID,
         branch_top_k=25,
         fusion_keep_k=25,
@@ -84,8 +86,10 @@ def test_write_and_read_manifest_round_trip(tmp_path):
         diagnostic_metric_ks=(5, 10, 20),
     )
     data = read_manifest(paths)
+    assert data["router_id"] == "runA"
     assert data["oracle_run_id"] == "runA"
-    assert data["benchmark"] == "nq"
+    assert data["benchmark_name"] == "nq"
+    assert data["schema_version"] == 2
     assert data["branch_top_k"] == 25
     assert data["oracle_metric_k"] == 10
     assert data["weight_grid"][0] == 0.0

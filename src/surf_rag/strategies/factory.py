@@ -8,7 +8,7 @@ from surf_rag.core.embedder import SentenceTransformersEmbedder
 from surf_rag.core.scoring_config import DEFAULT_SCORING_CONFIG
 
 
-def build_dense_retriever(output_dir: str):
+def build_dense_retriever(output_dir: str, top_k: int = 10):
     """Build DenseRetriever with corpus, index, embedder."""
     from surf_rag.core.index_store import FaissIndexStore
     from surf_rag.core.mapping import JsonCorpusLoader, VectorMetaMapper
@@ -23,11 +23,11 @@ def build_dense_retriever(output_dir: str):
         meta=VectorMetaMapper(parquet_path=meta_path),
         embedder=SentenceTransformersEmbedder(model_name="all-MiniLM-L6-v2"),
         corpus=JsonCorpusLoader(jsonl_path=corpus_path),
-        top_k=int(os.getenv("DENSE_TOP_K", "10")),
+        top_k=top_k,
     )
 
 
-def build_graph_retriever(output_dir: str):
+def build_graph_retriever(output_dir: str, top_k: int = 10):
     """Build GraphRetriever with corpus, graph, entity resolution."""
     from surf_rag.core.entity_index_store import EntityIndexStore
     from surf_rag.core.mapping import JsonCorpusLoader
@@ -69,7 +69,7 @@ def build_graph_retriever(output_dir: str):
         graph_store=NetworkXGraphStore(graph_path=graph_path),
         corpus=JsonCorpusLoader(jsonl_path=corpus_path),
         entity_extractor=entity_extractor,
-        top_k=int(os.getenv("GRAPH_TOP_K", "10")),
+        top_k=top_k,
         max_hops=int(os.getenv("GRAPH_MAX_HOPS", "1")),
         entity_index_store=entity_index_store,
         embedder=SentenceTransformersEmbedder(model_name="all-MiniLM-L6-v2"),

@@ -1,38 +1,16 @@
-"""Oracle run directories, manifests, and JSONL helpers.
-
-Oracle runs live under a separate, intentionally shallow root from the
-single-branch evaluation runs in :mod:`surf_rag.evaluation.run_artifacts`:
-
-    data/oracle/<benchmark>/<split>/<oracle_run_id>/
-        manifest.json
-        summary.json
-        questions_snapshot.jsonl
-        retrieval_dense.jsonl
-        retrieval_graph.jsonl
-        oracle_scores.jsonl
-        beta_sweep.jsonl
-        recommended_beta.json
-        labels/
-            beta_<value>.jsonl
-            selected.jsonl
-
-The override environment variable is ``ORACLE_BASE`` (defaults to
-``data/oracle``).
-
-Everything in this module is I/O + path logic only. Metric scoring lives
-in :mod:`surf_rag.evaluation.retrieval_metrics` and fusion lives in
-:mod:`surf_rag.retrieval.fusion`.
-"""
+"""Oracle run directories, manifests, and JSONL helpers."""
 
 from __future__ import annotations
 
 import json
 import os
+import warnings
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Optional
 
+from surf_rag.evaluation.artifact_paths import default_data_base, default_router_base
 from surf_rag.evaluation.retrieval_jsonl import retrieval_result_to_dict
 from surf_rag.retrieval.types import RetrievalResult, RetrievedChunk
 
@@ -44,16 +22,12 @@ DEFAULT_DENSE_WEIGHT_GRID: tuple[float, ...] = tuple(
 
 
 def default_oracle_base() -> Path:
-    return Path(os.getenv("ORACLE_BASE", "data/oracle"))
+    """Return the base directory for router bundles."""
+    return default_router_base()
 
 
-def build_oracle_run_root(
-    oracle_base: Path,
-    benchmark: str,
-    split: str,
-    oracle_run_id: str,
-) -> Path:
-    return oracle_base / benchmark / split / oracle_run_id
+def build_oracle_run_root(router_base: Path, router_id: str) -> Path:
+    return router_base / router_id / "oracle"
 
 
 @dataclass(frozen=True)
@@ -65,6 +39,10 @@ class OracleRunPaths:
     @property
     def manifest(self) -> Path:
         return self.run_root / "manifest.json"
+
+    @property
+    def provenance(self) -> Path:
+        return self.run_root / "provenance.json"
 
     @property
     def summary(self) -> Path:
@@ -125,23 +103,64 @@ def utc_now_iso() -> str:
 
 
 def make_run_paths_for_cli(
+    router_id: str, *, router_base: Optional[Path] = None
+) -> OracleRunPaths:
+    base = router_base if router_base is not None else default_oracle_base()
+    return OracleRunPaths(run_root=build_oracle_run_root(base, router_id))
+
+
+def make_run_paths_for_legacy(
     benchmark: str,
     split: str,
     oracle_run_id: str,
     oracle_base: Optional[Path] = None,
 ) -> OracleRunPaths:
-    base = oracle_base if oracle_base is not None else default_oracle_base()
-    return OracleRunPaths(
-        run_root=build_oracle_run_root(base, benchmark, split, oracle_run_id)
+    warnings.warn(
+        "make_run_paths_for_legacy and data/oracle/.../split/.../ paths are "
+        "deprecated. Use data/router/<router_id>/oracle/ via make_run_paths_for_cli().",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    base = oracle_base if oracle_base is not None else default_data_base() / "oracle"
+    return OracleRunPaths(run_root=base / benchmark / split / oracle_run_id)
+
+
+def write_provenance(
+    paths: OracleRunPaths,
+    *,
+    router_id: str,
+    benchmark_name: str,
+    benchmark_id: str,
+    benchmark_path: str,
+    retrieval_asset_dir: str,
+) -> None:
+    """Write machine-readable source bundle/corpus references for the oracle run."""
+    paths.ensure_dirs()
+    data: Dict[str, Any] = {
+        "schema_version": 1,
+        "created_at": utc_now_iso(),
+        "router_id": router_id,
+        "source_benchmark_bundle": {
+            "name": benchmark_name,
+            "id": benchmark_id,
+            "benchmark_jsonl": benchmark_path,
+        },
+        "source_corpus": {
+            "retrieval_asset_dir": retrieval_asset_dir,
+        },
+    }
+    paths.provenance.write_text(
+        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
     )
 
 
 def write_manifest(
     paths: OracleRunPaths,
     *,
-    oracle_run_id: str,
-    benchmark: str,
-    split: str,
+    router_id: str,
+    benchmark_name: str,
+    benchmark_id: str,
     benchmark_path: str,
     retrieval_asset_dir: str,
     weight_grid: Iterable[float],
@@ -150,15 +169,20 @@ def write_manifest(
     oracle_metric: str,
     oracle_metric_k: int,
     diagnostic_metric_ks: Iterable[int],
+    source_split: Optional[str] = None,
     extra: Optional[Dict[str, Any]] = None,
 ) -> None:
+    """Write ``manifest.json`` for a router-scoped oracle run."""
     paths.ensure_dirs()
     data: Dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "created_at": utc_now_iso(),
-        "oracle_run_id": oracle_run_id,
-        "benchmark": benchmark,
-        "split": split,
+        "router_id": router_id,
+        "benchmark_name": benchmark_name,
+        "benchmark_id": benchmark_id,
+        # Back-compat aliases
+        "oracle_run_id": router_id,
+        "benchmark": benchmark_name,
         "benchmark_path": benchmark_path,
         "retrieval_asset_dir": retrieval_asset_dir,
         "weight_grid": [float(w) for w in weight_grid],
@@ -168,6 +192,7 @@ def write_manifest(
         "oracle_metric_k": int(oracle_metric_k),
         "diagnostic_metric_ks": [int(k) for k in diagnostic_metric_ks],
         "artifacts": {
+            "provenance": paths.provenance.name,
             "questions_snapshot": paths.questions_snapshot.name,
             "retrieval_dense": paths.retrieval_dense.name,
             "retrieval_graph": paths.retrieval_graph.name,
@@ -179,6 +204,8 @@ def write_manifest(
             "reports_dir": paths.reports_dir.name,
         },
     }
+    if source_split is not None:
+        data["source_split"] = source_split
     if extra:
         data.update(extra)
     paths.manifest.write_text(

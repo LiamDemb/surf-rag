@@ -198,9 +198,9 @@ def test_prepare_oracle_run_end_to_end(tmp_path):
 
     paths = _paths(tmp_path)
     cfg = OracleRunConfig(
-        benchmark="mix",
-        split="dev",
-        oracle_run_id="run1",
+        router_id="run1",
+        benchmark_name="mix",
+        benchmark_id="v01",
         benchmark_path=bench,
         retrieval_asset_dir=tmp_path / "assets",
         branch_top_k=25,
@@ -277,9 +277,9 @@ def test_prepare_oracle_run_handles_retriever_error_gracefully(tmp_path):
 
     paths = _paths(tmp_path)
     cfg = OracleRunConfig(
-        benchmark="nq",
-        split="dev",
-        oracle_run_id="run1",
+        router_id="run1",
+        benchmark_name="nq",
+        benchmark_id="v01",
         benchmark_path=bench,
         retrieval_asset_dir=tmp_path / "assets",
     )

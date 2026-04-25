@@ -51,7 +51,7 @@ class GraphRetriever(BranchRetriever):
     alias_resolver: Optional[EntityAliasResolver] = None
     entity_index_store: Optional[EntityIndexStore] = None
 
-    top_k: int = int(os.getenv("GRAPH_TOP_K", "10"))
+    top_k: int = 10
     max_hops: int = int(os.getenv("GRAPH_MAX_HOPS", "2"))
     max_paths_per_start: int = int(os.getenv("GRAPH_MAX_PATHS_PER_START", "50"))
 
