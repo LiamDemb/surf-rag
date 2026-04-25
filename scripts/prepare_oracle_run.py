@@ -44,7 +44,9 @@ def parse_args() -> argparse.Namespace:
         description="Prepare (or resume) an oracle labeling run."
     )
     parser.add_argument(
-        "--router-id", required=True, help="Router bundle id, e.g. v01 (oracle path key)."
+        "--router-id",
+        required=True,
+        help="Router bundle id, e.g. v01 (oracle path key).",
     )
     parser.add_argument(
         "--benchmark-name",
@@ -110,9 +112,7 @@ def main() -> int:
     logging.basicConfig(level=args.log_level, format="%(levelname)s: %(message)s")
 
     router_base = args.router_base if args.router_base else default_oracle_base()
-    paths = OracleRunPaths(
-        run_root=build_oracle_run_root(router_base, args.router_id)
-    )
+    paths = OracleRunPaths(run_root=build_oracle_run_root(router_base, args.router_id))
 
     cfg = OracleRunConfig(
         router_id=args.router_id,

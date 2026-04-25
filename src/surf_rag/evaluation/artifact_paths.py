@@ -53,12 +53,8 @@ def router_model_dir(router_base: Path, router_id: str) -> Path:
     return router_bundle_dir(router_base, router_id) / "model"
 
 
-def evaluations_root(
-    data_base: Path, benchmark_name: str, benchmark_id: str
-) -> Path:
-    return benchmark_subdir(
-        data_base, benchmark_name, benchmark_id, "evaluations"
-    )
+def evaluations_root(data_base: Path, benchmark_name: str, benchmark_id: str) -> Path:
+    return benchmark_subdir(data_base, benchmark_name, benchmark_id, "evaluations")
 
 
 def evaluation_policy_dir(

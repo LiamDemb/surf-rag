@@ -56,9 +56,7 @@ def parse_args() -> argparse.Namespace:
 
 def _resolve_paths(args: argparse.Namespace) -> OracleRunPaths:
     base = args.router_base if args.router_base else default_oracle_base()
-    return OracleRunPaths(
-        run_root=build_oracle_run_root(base, args.router_id)
-    )
+    return OracleRunPaths(run_root=build_oracle_run_root(base, args.router_id))
 
 
 def main() -> int:

@@ -122,9 +122,7 @@ def make_run_paths_for_legacy(
         stacklevel=2,
     )
     base = oracle_base if oracle_base is not None else default_data_base() / "oracle"
-    return OracleRunPaths(
-        run_root=base / benchmark / split / oracle_run_id
-    )
+    return OracleRunPaths(run_root=base / benchmark / split / oracle_run_id)
 
 
 def write_provenance(

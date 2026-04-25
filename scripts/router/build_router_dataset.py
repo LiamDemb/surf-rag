@@ -164,9 +164,7 @@ def main() -> int:
     )
     bench = _load_benchmark(args.benchmark_path)
 
-    r_paths = make_router_dataset_paths_for_cli(
-        args.router_id, router_base=router_base
-    )
+    r_paths = make_router_dataset_paths_for_cli(args.router_id, router_base=router_base)
     r_paths.ensure_dirs()
 
     ent_pipe = _resolve_entity_pipeline(
@@ -239,9 +237,7 @@ def main() -> int:
         source_benchmark_id=args.benchmark_id,
         benchmark_path=str(args.benchmark_path.resolve()),
         retrieval_asset_dir=(
-            str(args.retrieval_asset_dir.resolve())
-            if args.retrieval_asset_dir
-            else ""
+            str(args.retrieval_asset_dir.resolve()) if args.retrieval_asset_dir else ""
         ),
         oracle_run_root=str(o_paths.run_root.resolve()),
         labels_selected_path=str(o_paths.labels_selected.resolve()),

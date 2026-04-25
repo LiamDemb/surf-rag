@@ -24,7 +24,10 @@ def test_benchmark_bundle_and_eval_paths() -> None:
     b = default_data_base() / "mix" / "v01"
     assert benchmark_bundle_dir(Path("data"), "mix", "v01") == b
     assert evaluations_root(Path("data"), "mix", "v01") == b / "evaluations"
-    assert evaluation_policy_dir(Path("data"), "mix", "v01", "50-50") == b / "evaluations" / "50-50"
+    assert (
+        evaluation_policy_dir(Path("data"), "mix", "v01", "50-50")
+        == b / "evaluations" / "50-50"
+    )
 
 
 def test_router_subdirs() -> None:
