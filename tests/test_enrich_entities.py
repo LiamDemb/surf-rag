@@ -34,12 +34,15 @@ def test_extract_entities_spacy_no_entities_returns_empty():
 
 def test_extract_entities_spacy_respects_allowed_types():
     doc = _Doc(ents=[_Span(text="Acme", label_="MISC")])
-    assert extract_entities_spacy(
-        text="dummy",
-        nlp=_NlpStub(doc),
-        alias_map={},
-        allowed_types={"ORG"},
-    ) == []
+    assert (
+        extract_entities_spacy(
+            text="dummy",
+            nlp=_NlpStub(doc),
+            alias_map={},
+            allowed_types={"ORG"},
+        )
+        == []
+    )
 
 
 def test_extract_entities_spacy_dedupes_by_norm_and_sorts():

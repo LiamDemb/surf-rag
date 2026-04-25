@@ -152,4 +152,3 @@ def extract_entities_spacy(
         }
 
     return [ents[key] for key in sorted(ents)]
-

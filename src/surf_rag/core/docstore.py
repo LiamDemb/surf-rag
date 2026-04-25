@@ -25,7 +25,8 @@ class DocStore:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(self.path.as_posix())
-        self._conn.execute("""
+        self._conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS docstore (
                 cache_key TEXT PRIMARY KEY,
                 title TEXT,
@@ -38,7 +39,8 @@ class DocStore:
                 source TEXT,
                 dataset_origin TEXT
             )
-            """)
+            """
+        )
         self._conn.commit()
 
     def close(self) -> None:
