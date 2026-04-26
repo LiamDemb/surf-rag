@@ -5,7 +5,12 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List
 
-from surf_rag.core.answer_prefix import strip_answer_prefix
+from surf_rag.generation.generator_tool import (
+    FORMAT_ANSWER_TOOL,
+    TOOL_CHOICE_FORCED,
+    GenerationParseResult,
+    parse_generation_output_line,
+)
 
 
 def build_completion_body(
@@ -31,6 +36,9 @@ def build_completion_body(
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
+        "tools": [FORMAT_ANSWER_TOOL],
+        "tool_choice": TOOL_CHOICE_FORCED,
+        "parallel_tool_calls": False,
     }
 
 
@@ -44,23 +52,6 @@ def build_batch_line(custom_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def parse_generation_output(line: Dict[str, Any]) -> tuple[str, str]:
-    """Parse a Batch API output line into (custom_id, answer_text)."""
-    custom_id = line.get("custom_id") or ""
-
-    if line.get("error"):
-        return (custom_id, "")
-
-    response = line.get("response")
-    if not response or response.get("status_code") != 200:
-        return (custom_id, "")
-
-    body = response.get("body") or {}
-    choices = body.get("choices") or []
-    if not choices:
-        return (custom_id, "")
-
-    msg = choices[0].get("message") or {}
-    content = msg.get("content") or ""
-    content = strip_answer_prefix(content)
-    return (custom_id, content)
+def parse_generation_output(line: Dict[str, Any]) -> GenerationParseResult:
+    """Parse a Batch API output line into structured generation fields."""
+    return parse_generation_output_line(line)

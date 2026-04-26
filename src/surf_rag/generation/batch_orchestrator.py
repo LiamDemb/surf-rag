@@ -27,6 +27,7 @@ from surf_rag.generation.batch import (
     build_completion_body,
     parse_generation_output,
 )
+from surf_rag.generation.generator_tool import GenerationParseResult
 from surf_rag.generation.batch_compiler import BatchRequestRecord
 from surf_rag.generation.prompt_renderer import PromptRenderer
 from surf_rag.strategies.factory import build_dense_retriever, build_graph_retriever
@@ -79,7 +80,11 @@ def load_question_ids_from_labeled_jsonl(path: Path) -> set[str]:
 
 
 def _load_completed_question_ids_from_answers(answers_path: Path) -> Set[str]:
-    """Question IDs that already have a collected generation row (resume)."""
+    """Question IDs that already have a successful collected generation row (resume).
+
+    Rows with ``generation_parse_error`` set are not considered complete and will
+    be re-submitted on a new batch prep.
+    """
     done: Set[str] = set()
     if not answers_path.is_file():
         return done
@@ -93,8 +98,11 @@ def _load_completed_question_ids_from_answers(answers_path: Path) -> Set[str]:
             except json.JSONDecodeError:
                 continue
             qid = str(row.get("question_id", "")).strip()
-            if qid and "answer" in row:
-                done.add(qid)
+            if not qid or "answer" not in row:
+                continue
+            if row.get("generation_parse_error"):
+                continue
+            done.add(qid)
     return done
 
 
@@ -521,7 +529,7 @@ def collect_batches(
                 answers_path,
             )
 
-    answers_by_cid: Dict[str, str] = {}
+    answers_by_cid: Dict[str, GenerationParseResult] = {}
     errors_by_cid: Dict[str, Any] = {}
     completed = 0
     failed = 0
@@ -566,17 +574,25 @@ def collect_batches(
             obj = json.loads(ln)
         except json.JSONDecodeError:
             continue
-        cid, answer = parse_generation_output(obj)
-        answers_by_cid[cid] = answer
+        result = parse_generation_output(obj)
+        cid = str(obj.get("custom_id", "") or result.custom_id or "")
+        if cid:
+            answers_by_cid[cid] = result
         if obj.get("error"):
             failed += 1
-            errors_by_cid[cid] = obj.get("error")
+            if cid:
+                errors_by_cid[cid] = obj.get("error")
+        elif result.generation_parse_error:
+            failed += 1
         else:
             completed += 1
         parsed_rows.append(
             {
-                "custom_id": cid,
-                "answer": answer,
+                "custom_id": cid or result.custom_id,
+                "answer": result.answer,
+                "generation_reasoning": result.reasoning,
+                "generation_output_format": result.generation_output_format,
+                "generation_parse_error": result.generation_parse_error,
                 "error": obj.get("error"),
                 "raw_status_code": (obj.get("response") or {}).get("status_code"),
             }
@@ -587,14 +603,17 @@ def collect_batches(
             pf.write(json.dumps(pr, ensure_ascii=False) + "\n")
 
     by_qid: Dict[str, Dict[str, Any]] = {}
-    for cid, answer in answers_by_cid.items():
+    for cid, result in answers_by_cid.items():
         meta = parse_generation_custom_id(cid)
         if not meta:
             logger.warning("Unparseable custom_id (skipped): %s", cid)
             continue
         qid = meta["question_id"]
         by_qid[qid] = {
-            "answer": answer,
+            "answer": result.answer,
+            "generation_reasoning": result.reasoning,
+            "generation_output_format": result.generation_output_format,
+            "generation_parse_error": result.generation_parse_error,
             "custom_id": cid,
             "batch_error": errors_by_cid.get(cid),
         }

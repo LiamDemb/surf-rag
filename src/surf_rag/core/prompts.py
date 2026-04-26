@@ -7,30 +7,29 @@ from pathlib import Path
 
 # Generator Prompt
 GENERATOR_SYSTEM_MESSAGE = (
-    "You are a strict QA system. Answer based ONLY on the provided context."
+    "You are a strict QA system. Answer based ONLY on the provided context. "
+    "You must call the format_answer tool with reasoning and a short final answer."
 )
 
 BASE_PROMPT = (
     "You are a strict QA system. Answer based ONLY on the provided context."
     "\n\n"
-    "EXAMPLES:"
+    "You must call the function format_answer with:\n"
+    "- reasoning: concise rationale grounded in the context only.\n"
+    "- answer: the final short answer only (suitable for exact-match evaluation).\n\n"
+    "EXAMPLES:\n"
     "Context: 'Toy Story features a boy named Andy who has a younger sister named Molly.'\n"
     "Question: what is andy's sisters name in toy story\n"
-    "Answer: Molly\n\n"
-    "Context: 'The PUMA 560 was the first robot used in a surgery, assisting in a biopsy in 1983.'\n"
+    "→ reasoning: The context states Andy's younger sister is named Molly.\n"
+    "→ answer: Molly\n\n"
+    "Context: 'The PUMA 560 was the first robot used in a surgery in 1983.'\n"
     "Question: when was the first robot used in surgery\n"
-    "Answer: 1983\n\n"
-    "Context: 'Donovan Mitchell was selected with the 13th overall pick in the 2017 NBA draft.'\n"
-    "Question: where was donovan mitchell picked in the draft\n"
-    "Answer: 13th\n\n"
-    "Context: 'Gabriela Mistral was a Chilean poet. G. K. Chesterton was an English writer and philosopher.'\n"
-    "Question: Were both Gabriela Mistral and G. K. Chesterton authors?\n"
-    "Answer: yes"
-    "\n\n"
-    "YOUR TASK:"
+    "→ reasoning: The context gives 1983 for the first surgical robot.\n"
+    "→ answer: 1983\n\n"
+    "YOUR TASK:\n"
     "Context: {context}\n"
-    "Question: {question}\n"
-    "Answer:"
+    "Question: {question}\n\n"
+    "Call format_answer with your reasoning and short final answer."
 )
 
 

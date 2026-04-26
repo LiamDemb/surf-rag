@@ -75,9 +75,9 @@ class OpenAIBatchManager:
                 obj = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            cid, ans = parse_generation_output(obj)
-            if cid:
-                answers[cid] = ans
+            result = parse_generation_output(obj)
+            if result.custom_id:
+                answers[result.custom_id] = result.answer
         return answers
 
 

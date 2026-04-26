@@ -77,7 +77,7 @@ class PromptRenderer:
             prompt = (
                 f"{base}\n\n"
                 "Context:\n" + joined + f"\n\nQuestion: {query}\n\n"
-                "Answer:"
+                "Call the format_answer tool with your reasoning and a short final answer."
             )
             system = base
 
