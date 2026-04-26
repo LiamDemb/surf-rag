@@ -43,6 +43,12 @@ from surf_rag.evaluation.retrieval_metrics import (
     score_retrieval_result,
     stateful_relevances,
 )
+from surf_rag.evaluation.router_model_artifacts import (
+    RouterModelPaths,
+    build_router_model_root,
+    make_router_model_paths_for_cli,
+    read_router_model_manifest,
+)
 from surf_rag.evaluation.router_overlap import (
     RouterOverlapSplit,
     RouterSplitSets,
@@ -66,6 +72,10 @@ __all__ = [
     "router_oracle_dir",
     "router_dataset_dir",
     "router_model_dir",
+    "RouterModelPaths",
+    "build_router_model_root",
+    "make_router_model_paths_for_cli",
+    "read_router_model_manifest",
     "evaluations_root",
     "evaluation_policy_dir",
     "trained_router_policy_id",

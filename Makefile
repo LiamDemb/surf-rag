@@ -1,7 +1,9 @@
 .PHONY: install install-hooks setup-models lock test ingest fetch-wikipedia-articles build-corpus align-2wiki-support align-2wiki-support-full filter-benchmark pipeline \
 	oracle-prepare oracle-sweep-beta oracle-create-soft-labels oracle-labels \
 	router-build-dataset router-pipeline \
-	print-oracle-config print-router-config print-paths validate-oracle-config validate-router-config
+	router-train router-eval \
+	print-oracle-config print-router-config print-paths validate-oracle-config validate-router-config \
+	validate-router-train
 
 -include .env
 
@@ -52,6 +54,12 @@ SELECTED_BETA ?=
 
 EMBEDDING_MODEL_FOR_ROUTER ?= $(EMBEDDING_MODEL)
 
+# Router MLP training
+ROUTER_EPOCHS ?= 100
+ROUTER_BATCH_SIZE ?= 32
+ROUTER_LEARNING_RATE ?= 0.001
+ROUTER_TRAIN_DEVICE ?= cpu
+
 # Poetry Python for consistent CLI
 PY = poetry run python
 
@@ -74,11 +82,11 @@ print-paths:
 	@echo "DATA_BASE=$(DATA_BASE) BENCHMARK_NAME=$(BENCHMARK_NAME) BENCHMARK_ID=$(BENCHMARK_ID)"
 	@echo "BUNDLE=$(BENCHMARK_BUNDLE_DIR) BENCHMARK_DIR=$(BENCHMARK_DIR) CORPUS_DIR=$(CORPUS_DIR)"
 	@echo "BENCHMARK_PATH=$(BENCHMARK_PATH) ORACLE_RETRIEVAL_ASSET_DIR=$(ORACLE_RETRIEVAL_ASSET_DIR)"
-	@echo "ROUTER_ID=$(ROUTER_ID) ROUTER_ORACLE_DIR=$(ROUTER_ORACLE_DIR) ROUTER_DATASET_DIR=$(ROUTER_DATASET_DIR)"
+	@echo "ROUTER_ID=$(ROUTER_ID) ROUTER_ORACLE_DIR=$(ROUTER_ORACLE_DIR) ROUTER_DATASET_DIR=$(ROUTER_DATASET_DIR) ROUTER_MODEL_DIR=$(ROUTER_MODEL_DIR)"
 
 ingest:
 	poetry run python scripts/ingest_data.py \
-		--nq "$(NQ_PATH)" \ 
+		--nq "$(NQ_PATH)" \
 		--2wiki "$(2WIKI_PATH)" \
 		--output-dir "$(BENCHMARK_DIR)"
 
@@ -192,3 +200,23 @@ router-build-dataset: validate-router-config
 		--test-ratio $(TEST_RATIO)
 
 router-pipeline: oracle-labels router-build-dataset
+
+# Router MLP: requires Parquet at $(ROUTER_DATASET_DIR)/router_dataset.parquet
+
+validate-router-train:
+	@test -n "$(ROUTER_ID)" && test -f "$(ROUTER_DATASET_DIR)/router_dataset.parquet" || (echo "Missing $(ROUTER_DATASET_DIR)/router_dataset.parquet — run make router-build-dataset first"; exit 1)
+
+router-train: validate-router-train
+	$(PY) -m scripts.router.train_router \
+		--router-id "$(ROUTER_ID)" \
+		--router-base "$(ROUTER_BASE)" \
+		--epochs $(ROUTER_EPOCHS) \
+		--batch-size $(ROUTER_BATCH_SIZE) \
+		--learning-rate $(ROUTER_LEARNING_RATE) \
+		--device "$(ROUTER_TRAIN_DEVICE)"
+
+router-eval: validate-router-train
+	$(PY) -m scripts.router.evaluate_router \
+		--router-id "$(ROUTER_ID)" \
+		--router-base "$(ROUTER_BASE)" \
+		--device "$(ROUTER_TRAIN_DEVICE)"
