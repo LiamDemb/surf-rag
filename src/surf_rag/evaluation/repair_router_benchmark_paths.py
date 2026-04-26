@@ -109,18 +109,17 @@ def repair_router_bundle_metadata(
                 o_paths.provenance.write_text(new_json, encoding="utf-8")
             summary["updated_files"].append(str(o_paths.provenance))
 
-    d_paths = RouterDatasetPaths(
-        run_root=build_router_dataset_root(rb, router_id)
-    )
+    d_paths = RouterDatasetPaths(run_root=build_router_dataset_root(rb, router_id))
     if d_paths.manifest.is_file():
         dm = dict(read_router_dataset_manifest(d_paths))
         sb = dict(dm.get("source_benchmark") or {})
         sc = dict(dm.get("source_corpus") or {})
         want_bench = str(bench_path.resolve())
         want_corpus = str(corpus_dir.resolve())
-        needs_ds = sb.get("benchmark_path") != want_bench or sc.get(
-            "retrieval_asset_dir"
-        ) != want_corpus
+        needs_ds = (
+            sb.get("benchmark_path") != want_bench
+            or sc.get("retrieval_asset_dir") != want_corpus
+        )
         sb["name"] = benchmark_name
         sb["id"] = benchmark_id
         sb["benchmark_path"] = want_bench

@@ -97,6 +97,7 @@ def e2e_policy_run_dir(
 ) -> Path:
     """One e2e run: ``.../evaluations/<policy>/<run_id>/``."""
     safe = policy.replace("/", "-").replace(" ", "_")
-    return evaluation_policy_dir(
-        benchmark_base, benchmark_name, benchmark_id, safe
-    ) / run_id
+    return (
+        evaluation_policy_dir(benchmark_base, benchmark_name, benchmark_id, safe)
+        / run_id
+    )
