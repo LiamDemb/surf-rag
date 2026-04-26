@@ -39,3 +39,7 @@ $DATA_BASE/router/$ROUTER_ID/
 - `--input-mode` or env `ROUTER_INPUT_MODE` selects the output folder and architecture.
 
 To compare runs, use `metrics.json` (and optional `predictions_*.jsonl`) under each `model/<input_mode>/` for the same `ROUTER_ID`.
+
+## End-to-end benchmark & evaluation
+
+Benchmark bundles live under **`BENCHMARK_BASE`/`BENCHMARK_NAME`/`BENCHMARK_ID`** (default `data/benchmarks/...`). Routed retrieval, optional cross-encoder reranking, OpenAI Batch generation, and overlap-split metrics are documented in **[docs/dev/end-to-end-system-and-evaluation.md](docs/dev/end-to-end-system-and-evaluation.md)**. Make targets: `e2e-prepare`, `e2e-submit`, `e2e-collect`, `e2e-evaluate`, `e2e-smoke-test-v01`.

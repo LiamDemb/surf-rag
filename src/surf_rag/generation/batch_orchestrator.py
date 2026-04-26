@@ -257,7 +257,39 @@ def submit_batches(
             len(samples) - skipped,
         )
 
-    # Always (re)write full batch input JSONL for this submit attempt
+    return finalize_batch_submission(
+        records,
+        samples,
+        benchmark_path=benchmark_path,
+        paths=paths,
+        benchmark=benchmark,
+        split=split,
+        pipeline_name=pipeline,
+        run_id=run_id,
+        retrieval_asset_dir=asset_dir,
+        completion_window=completion_window,
+        dry_run=dry_run,
+    )
+
+
+def finalize_batch_submission(
+    records: List[BatchRequestRecord],
+    samples: list[dict],
+    *,
+    benchmark_path: Path,
+    paths: RunArtifactPaths,
+    benchmark: str,
+    split: str,
+    pipeline_name: str,
+    run_id: str,
+    retrieval_asset_dir: Path,
+    completion_window: str,
+    dry_run: bool,
+) -> int:
+    """Write ``batch_input.jsonl``, shard, optionally upload, write ``batch_state.json``."""
+    run_root = paths.run_root.resolve()
+    asset_dir = retrieval_asset_dir.resolve()
+
     batch_input_path = paths.batch_input_jsonl()
     with batch_input_path.open("w", encoding="utf-8") as bf:
         for rec in records:
@@ -274,7 +306,7 @@ def submit_batches(
             retrieval_asset_dir=asset_dir,
             benchmark=benchmark,
             split=split,
-            pipeline_name=pipeline,
+            pipeline_name=pipeline_name,
             run_id=run_id,
         )
         paths.batch_state_json().write_text(
@@ -322,7 +354,7 @@ def submit_batches(
                 endpoint="/v1/chat/completions",
                 completion_window=completion_window,
                 metadata={
-                    "description": f"Generation ({pipeline})",
+                    "description": f"Generation ({pipeline_name})",
                     "benchmark": benchmark,
                     "split": split,
                     "run_id": run_id,
@@ -371,7 +403,7 @@ def submit_batches(
         retrieval_asset_dir=asset_dir,
         benchmark=benchmark,
         split=split,
-        pipeline_name=pipeline,
+        pipeline_name=pipeline_name,
         run_id=run_id,
     )
     paths.batch_state_json().write_text(

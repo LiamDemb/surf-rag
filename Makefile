@@ -3,12 +3,16 @@
 	router-build-dataset router-pipeline \
 	router-train router-eval router-train-ablations router-evaluate-ablations \
 	print-oracle-config print-router-config print-paths validate-oracle-config validate-router-config \
-	validate-router-train
+	validate-router-train \
+	e2e-print-config e2e-prepare e2e-submit e2e-collect e2e-evaluate e2e-run e2e-run-all-policies e2e-smoke-test-v01
 
 -include .env
+export OPENAI_API_KEY
 
 # Data storage organisation
 DATA_BASE ?= data
+# Benchmark bundles live under $BENCHMARK_BASE/$BENCHMARK_NAME/$BENCHMARK_ID
+BENCHMARK_BASE ?= $(DATA_BASE)/benchmarks
 BENCHMARK_NAME ?= benchmark-name
 BENCHMARK_ID ?= v01
 ROUTER_ID ?= v01
@@ -25,7 +29,7 @@ DEV_RATIO ?= 0.2
 TEST_RATIO ?= 0.2
 
 # Derived paths
-BENCHMARK_BUNDLE_DIR := $(DATA_BASE)/$(BENCHMARK_NAME)/$(BENCHMARK_ID)
+BENCHMARK_BUNDLE_DIR := $(BENCHMARK_BASE)/$(BENCHMARK_NAME)/$(BENCHMARK_ID)
 BENCHMARK_DIR := $(BENCHMARK_BUNDLE_DIR)/benchmark
 CORPUS_DIR := $(BENCHMARK_BUNDLE_DIR)/corpus
 EVALUATIONS_DIR := $(BENCHMARK_BUNDLE_DIR)/evaluations
@@ -64,6 +68,16 @@ ROUTER_INPUT_MODE ?= both
 # space-separated; used by router-train-ablations / router-evaluate-ablations
 ROUTER_INPUT_MODES ?= both query-features embedding
 
+# End-to-end SuRF-RAG eval (routed retrieval → batch gen → metrics)
+E2E_SPLIT ?= test
+E2E_RUN_ID ?= e2e-$(shell date +%Y%m%d-%H%M%S)
+E2E_POLICY ?= learned-soft
+E2E_POLICIES ?= dense-only graph-only 50-50 learned-soft learned-hard
+E2E_FUSION_KEEP_K ?= $(ORACLE_FUSION_KEEP_K)
+E2E_RERANKER ?= none
+E2E_RERANK_TOP_K ?= 10
+E2E_ROUTER_DEVICE ?= cpu
+
 # Poetry Python for consistent CLI
 PY = poetry run python
 
@@ -83,7 +97,7 @@ test:
 	poetry run pytest
 
 print-paths:
-	@echo "DATA_BASE=$(DATA_BASE) BENCHMARK_NAME=$(BENCHMARK_NAME) BENCHMARK_ID=$(BENCHMARK_ID)"
+	@echo "DATA_BASE=$(DATA_BASE) BENCHMARK_BASE=$(BENCHMARK_BASE) BENCHMARK_NAME=$(BENCHMARK_NAME) BENCHMARK_ID=$(BENCHMARK_ID)"
 	@echo "BUNDLE=$(BENCHMARK_BUNDLE_DIR) BENCHMARK_DIR=$(BENCHMARK_DIR) CORPUS_DIR=$(CORPUS_DIR)"
 	@echo "BENCHMARK_PATH=$(BENCHMARK_PATH) ORACLE_RETRIEVAL_ASSET_DIR=$(ORACLE_RETRIEVAL_ASSET_DIR)"
 	@echo "ROUTER_ID=$(ROUTER_ID) ROUTER_ORACLE_DIR=$(ROUTER_ORACLE_DIR) ROUTER_DATASET_DIR=$(ROUTER_DATASET_DIR) ROUTER_MODEL_DIR=$(ROUTER_MODEL_DIR)"
@@ -251,3 +265,102 @@ router-evaluate-ablations: validate-router-train
 			--device "$(ROUTER_TRAIN_DEVICE)" \
 			--input-mode "$$m" || exit 1; \
 	done
+
+# --- E2E benchmark (see docs/dev/end-to-end-system-and-evaluation.md)
+
+e2e-print-config:
+	$(PY) -m scripts.e2e_benchmark print-config \
+		--benchmark-base "$(BENCHMARK_BASE)" \
+		--benchmark-name "$(BENCHMARK_NAME)" \
+		--benchmark-id "$(BENCHMARK_ID)" \
+		--benchmark-path "$(BENCHMARK_PATH)" \
+		--split "$(E2E_SPLIT)" \
+		--run-id "$(E2E_RUN_ID)" \
+		--policy "$(E2E_POLICY)" \
+		--retrieval-asset-dir "$(CORPUS_DIR)"
+
+e2e-prepare:
+	$(PY) -m scripts.e2e_benchmark prepare \
+		--benchmark-base "$(BENCHMARK_BASE)" \
+		--benchmark-name "$(BENCHMARK_NAME)" \
+		--benchmark-id "$(BENCHMARK_ID)" \
+		--benchmark-path "$(BENCHMARK_PATH)" \
+		--split "$(E2E_SPLIT)" \
+		--run-id "$(E2E_RUN_ID)" \
+		--policy "$(E2E_POLICY)" \
+		--retrieval-asset-dir "$(CORPUS_DIR)" \
+		--router-id "$(ROUTER_ID)" \
+		--router-base "$(ROUTER_BASE)" \
+		--fusion-keep-k $(E2E_FUSION_KEEP_K) \
+		--reranker "$(E2E_RERANKER)" \
+		--rerank-top-k $(E2E_RERANK_TOP_K) \
+		--router-device "$(E2E_ROUTER_DEVICE)" \
+		--router-input-mode "$(ROUTER_INPUT_MODE)" \
+		--dry-run
+
+e2e-submit:
+	$(PY) -m scripts.e2e_benchmark prepare \
+		--benchmark-base "$(BENCHMARK_BASE)" \
+		--benchmark-name "$(BENCHMARK_NAME)" \
+		--benchmark-id "$(BENCHMARK_ID)" \
+		--benchmark-path "$(BENCHMARK_PATH)" \
+		--split "$(E2E_SPLIT)" \
+		--run-id "$(E2E_RUN_ID)" \
+		--policy "$(E2E_POLICY)" \
+		--retrieval-asset-dir "$(CORPUS_DIR)" \
+		--router-id "$(ROUTER_ID)" \
+		--router-base "$(ROUTER_BASE)" \
+		--fusion-keep-k $(E2E_FUSION_KEEP_K) \
+		--reranker "$(E2E_RERANKER)" \
+		--rerank-top-k $(E2E_RERANK_TOP_K) \
+		--router-device "$(E2E_ROUTER_DEVICE)" \
+		--router-input-mode "$(ROUTER_INPUT_MODE)"
+
+e2e-collect:
+	$(PY) -m scripts.e2e_benchmark collect \
+		--benchmark-base "$(BENCHMARK_BASE)" \
+		--benchmark-name "$(BENCHMARK_NAME)" \
+		--benchmark-id "$(BENCHMARK_ID)" \
+		--benchmark-path "$(BENCHMARK_PATH)" \
+		--split "$(E2E_SPLIT)" \
+		--run-id "$(E2E_RUN_ID)" \
+		--policy "$(E2E_POLICY)" \
+		--retrieval-asset-dir "$(CORPUS_DIR)"
+
+e2e-evaluate:
+	$(PY) -m scripts.e2e_benchmark evaluate \
+		--benchmark-base "$(BENCHMARK_BASE)" \
+		--benchmark-name "$(BENCHMARK_NAME)" \
+		--benchmark-id "$(BENCHMARK_ID)" \
+		--benchmark-path "$(BENCHMARK_PATH)" \
+		--split "$(E2E_SPLIT)" \
+		--run-id "$(E2E_RUN_ID)" \
+		--policy "$(E2E_POLICY)" \
+		--retrieval-asset-dir "$(CORPUS_DIR)" \
+		--router-id "$(ROUTER_ID)" \
+		--router-base "$(ROUTER_BASE)"
+
+e2e-run:
+	@echo "1) make e2e-submit   (or e2e-prepare for local dry-run)"
+	@echo "2) Wait for OpenAI batch(es) to complete."
+	@echo "3) make e2e-collect && make e2e-evaluate"
+
+e2e-run-all-policies:
+	@for pol in $(E2E_POLICIES); do \
+		echo "=== E2E policy=$$pol run=$(E2E_RUN_ID)-$$pol ==="; \
+		$(MAKE) e2e-submit E2E_POLICY=$$pol E2E_RUN_ID="$(E2E_RUN_ID)-$$pol" || exit 1; \
+	done
+
+e2e-smoke-test-v01: E2E_RUN_ID := smoke-$(shell date +%Y%m%d-%H%M%S)
+e2e-smoke-test-v01:
+	$(PY) -m scripts.e2e_benchmark prepare \
+		--benchmark-base "$(BENCHMARK_BASE)" \
+		--benchmark-name "$(BENCHMARK_NAME)" \
+		--benchmark-id "$(BENCHMARK_ID)" \
+		--benchmark-path "$(BENCHMARK_PATH)" \
+		--split "$(E2E_SPLIT)" \
+		--run-id "$(E2E_RUN_ID)" \
+		--policy dense-only \
+		--retrieval-asset-dir "$(CORPUS_DIR)" \
+		--limit 1 \
+		--dry-run

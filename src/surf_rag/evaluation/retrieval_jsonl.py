@@ -8,6 +8,32 @@ from typing import Any, Dict
 from surf_rag.retrieval.types import RetrievedChunk, RetrievalResult
 
 
+def dict_to_retrieval_result(row: dict) -> RetrievalResult:
+    """Rebuild :class:`RetrievalResult` from :func:`retrieval_result_to_dict` JSON."""
+    chunks: list[RetrievedChunk] = []
+    for c in row.get("chunks") or []:
+        if not isinstance(c, dict):
+            continue
+        chunks.append(
+            RetrievedChunk(
+                chunk_id=str(c.get("chunk_id", "") or ""),
+                text=str(c.get("text", "") or ""),
+                score=float(c.get("score", 0.0) or 0.0),
+                rank=int(c.get("rank", 0) or 0),
+                metadata=dict(c.get("metadata") or {}),
+            )
+        )
+    return RetrievalResult(
+        query=str(row.get("query", "") or ""),
+        retriever_name=str(row.get("retriever_name", "") or ""),
+        status=str(row.get("status", "") or ""),
+        chunks=chunks,
+        latency_ms=dict(row.get("latency_ms") or {}),
+        error=row.get("error"),
+        debug_info=row.get("debug_info"),
+    )
+
+
 def retrieval_result_to_dict(
     result: RetrievalResult, question_id: str, extra: Dict[str, Any] | None = None
 ) -> Dict[str, Any]:
