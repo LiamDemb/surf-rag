@@ -62,7 +62,9 @@ def make_router_model_paths_for_cli(
     input_mode: str = "both",
 ) -> RouterModelPaths:
     base = router_base if router_base is not None else default_router_base()
-    return RouterModelPaths(run_root=build_router_model_root(base, router_id, input_mode))
+    return RouterModelPaths(
+        run_root=build_router_model_root(base, router_id, input_mode)
+    )
 
 
 def write_json(path: Path, data: Dict[str, Any]) -> None:

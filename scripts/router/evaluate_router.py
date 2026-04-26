@@ -53,9 +53,7 @@ def main() -> int:
     ds_paths = make_router_dataset_paths_for_cli(
         args.router_id, router_base=args.router_base
     )
-    raw_mode = (args.input_mode or "").strip() or os.getenv(
-        "ROUTER_INPUT_MODE", "both"
-    )
+    raw_mode = (args.input_mode or "").strip() or os.getenv("ROUTER_INPUT_MODE", "both")
     input_mode = parse_router_input_mode(str(raw_mode))
     m_paths = make_router_model_paths_for_cli(
         args.router_id, router_base=args.router_base, input_mode=input_mode

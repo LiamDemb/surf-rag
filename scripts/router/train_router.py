@@ -70,9 +70,7 @@ def main() -> int:
     read_router_dataset_manifest(ds_paths)
     parquet_path = ds_paths.router_dataset_parquet
 
-    raw_mode = (args.input_mode or "").strip() or os.getenv(
-        "ROUTER_INPUT_MODE", "both"
-    )
+    raw_mode = (args.input_mode or "").strip() or os.getenv("ROUTER_INPUT_MODE", "both")
     input_mode = parse_router_input_mode(str(raw_mode))
 
     out_paths = make_router_model_paths_for_cli(

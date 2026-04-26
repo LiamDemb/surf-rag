@@ -71,7 +71,9 @@ def test_train_smoke(tmp_path: Path) -> None:
         dev_ratio=0.2,
         test_ratio=0.2,
     )
-    out_model = make_router_model_paths_for_cli("t", router_base=tmp_path, input_mode="both")
+    out_model = make_router_model_paths_for_cli(
+        "t", router_base=tmp_path, input_mode="both"
+    )
     out_model.ensure_dirs()
     cfg = RouterTrainConfig(
         parquet_path=pq,
