@@ -17,6 +17,14 @@ def default_data_base() -> Path:
     return Path(os.getenv("DATA_BASE", "data"))
 
 
+def default_benchmark_base() -> Path:
+    """Root for benchmark bundles: ``$BENCHMARK_BASE`` or ``$DATA_BASE/benchmarks``."""
+    bb = os.getenv("BENCHMARK_BASE")
+    if bb and str(bb).strip():
+        return Path(bb)
+    return default_data_base() / "benchmarks"
+
+
 def default_router_base() -> Path:
     """Directory containing ``<router_id>/`` router bundles (override ``ROUTER_BASE``)."""
     rb = os.getenv("ROUTER_BASE")
@@ -26,15 +34,16 @@ def default_router_base() -> Path:
 
 
 def benchmark_bundle_dir(
-    data_base: Path, benchmark_name: str, benchmark_id: str
+    benchmark_base: Path, benchmark_name: str, benchmark_id: str
 ) -> Path:
-    return data_base / benchmark_name / benchmark_id
+    """``benchmark_base`` should be ``default_benchmark_base()`` (not raw ``DATA_BASE``)."""
+    return benchmark_base / benchmark_name / benchmark_id
 
 
 def benchmark_subdir(
-    data_base: Path, benchmark_name: str, benchmark_id: str, name: str
+    benchmark_base: Path, benchmark_name: str, benchmark_id: str, name: str
 ) -> Path:
-    return benchmark_bundle_dir(data_base, benchmark_name, benchmark_id) / name
+    return benchmark_bundle_dir(benchmark_base, benchmark_name, benchmark_id) / name
 
 
 def router_bundle_dir(router_base: Path, router_id: str) -> Path:
@@ -53,17 +62,22 @@ def router_model_dir(router_base: Path, router_id: str) -> Path:
     return router_bundle_dir(router_base, router_id) / "model"
 
 
-def evaluations_root(data_base: Path, benchmark_name: str, benchmark_id: str) -> Path:
-    return benchmark_subdir(data_base, benchmark_name, benchmark_id, "evaluations")
+def evaluations_root(
+    benchmark_base: Path, benchmark_name: str, benchmark_id: str
+) -> Path:
+    return benchmark_subdir(benchmark_base, benchmark_name, benchmark_id, "evaluations")
 
 
 def evaluation_policy_dir(
-    data_base: Path,
+    benchmark_base: Path,
     benchmark_name: str,
     benchmark_id: str,
     policy_identifier: str,
 ) -> Path:
-    return evaluations_root(data_base, benchmark_name, benchmark_id) / policy_identifier
+    return (
+        evaluations_root(benchmark_base, benchmark_name, benchmark_id)
+        / policy_identifier
+    )
 
 
 def trained_router_policy_id(router_id: str) -> str:
@@ -72,3 +86,17 @@ def trained_router_policy_id(router_id: str) -> str:
 
 def hard_router_policy_id(router_id: str) -> str:
     return f"hard-router-{router_id}"
+
+
+def e2e_policy_run_dir(
+    benchmark_base: Path,
+    benchmark_name: str,
+    benchmark_id: str,
+    policy: str,
+    run_id: str,
+) -> Path:
+    """One e2e run: ``.../evaluations/<policy>/<run_id>/``."""
+    safe = policy.replace("/", "-").replace(" ", "_")
+    return evaluation_policy_dir(
+        benchmark_base, benchmark_name, benchmark_id, safe
+    ) / run_id
