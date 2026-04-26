@@ -12,6 +12,7 @@ from typing import Any, Dict, Iterable, Iterator, List, Optional
 
 from surf_rag.evaluation.artifact_paths import default_data_base, default_router_base
 from surf_rag.evaluation.retrieval_jsonl import retrieval_result_to_dict
+from surf_rag.evaluation.run_artifacts import as_resolved_path
 from surf_rag.evaluation.weight_grid import DEFAULT_DENSE_WEIGHT_GRID
 from surf_rag.retrieval.types import RetrievedChunk, RetrievalResult
 
@@ -30,6 +31,9 @@ class OracleRunPaths:
     """Standard subpaths inside one oracle run root."""
 
     run_root: Path
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "run_root", as_resolved_path(self.run_root))
 
     @property
     def manifest(self) -> Path:

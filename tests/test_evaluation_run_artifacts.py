@@ -33,8 +33,20 @@ def test_build_run_root_and_paths():
     root = build_run_root(Path("/tmp/eval"), "nq", "test", "dense", "run-001")
     assert str(root).endswith("nq/test/dense/run-001")
     p = RunArtifactPaths(root)
+    assert p.run_root.is_absolute()
     assert p.retrieval_results_jsonl().name == "retrieval_results.jsonl"
     assert p.generation_answers_jsonl().parts[-2:] == ("generation", "answers.jsonl")
+    assert p.retrieval_results_jsonl().is_relative_to(p.run_root)
+
+
+def test_run_artifact_paths_resolves_relative_root(tmp_path):
+    rel = tmp_path / "nested" / "run1"
+    p = RunArtifactPaths(rel)
+    assert p.run_root.is_absolute()
+    assert p.run_root == rel.resolve()
+    assert p.retrieval_results_jsonl().relative_to(p.run_root).as_posix() == (
+        "retrieval/retrieval_results.jsonl"
+    )
 
 
 def test_default_evaluation_base_is_relative():

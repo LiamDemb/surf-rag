@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from surf_rag.evaluation.artifact_paths import default_router_base
 from surf_rag.evaluation.oracle_artifacts import utc_now_iso
+from surf_rag.evaluation.run_artifacts import as_resolved_path
 from surf_rag.router.model import (
     active_inputs_for_mode,
     parse_router_input_mode,
@@ -27,6 +28,9 @@ class RouterModelPaths:
     """Standard paths under one router's ``model`` directory."""
 
     run_root: Path
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "run_root", as_resolved_path(self.run_root))
 
     @property
     def manifest(self) -> Path:
