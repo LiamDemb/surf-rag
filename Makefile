@@ -1,7 +1,7 @@
 .PHONY: install install-hooks setup-models lock test ingest fetch-wikipedia-articles build-corpus align-2wiki-support align-2wiki-support-full filter-benchmark pipeline \
 	oracle-prepare oracle-sweep-beta oracle-create-soft-labels oracle-labels \
 	router-build-dataset router-pipeline \
-	router-train router-eval \
+	router-train router-eval router-train-ablations router-evaluate-ablations \
 	print-oracle-config print-router-config print-paths validate-oracle-config validate-router-config \
 	validate-router-train
 
@@ -59,6 +59,10 @@ ROUTER_EPOCHS ?= 100
 ROUTER_BATCH_SIZE ?= 32
 ROUTER_LEARNING_RATE ?= 0.001
 ROUTER_TRAIN_DEVICE ?= cpu
+# one of: both | query-features | embedding
+ROUTER_INPUT_MODE ?= both
+# space-separated; used by router-train-ablations / router-evaluate-ablations
+ROUTER_INPUT_MODES ?= both query-features embedding
 
 # Poetry Python for consistent CLI
 PY = poetry run python
@@ -213,10 +217,37 @@ router-train: validate-router-train
 		--epochs $(ROUTER_EPOCHS) \
 		--batch-size $(ROUTER_BATCH_SIZE) \
 		--learning-rate $(ROUTER_LEARNING_RATE) \
-		--device "$(ROUTER_TRAIN_DEVICE)"
+		--device "$(ROUTER_TRAIN_DEVICE)" \
+		--input-mode "$(ROUTER_INPUT_MODE)"
+
+# Train all input ablations; each run writes to $(ROUTER_MODEL_DIR)/<input_mode>/
+router-train-ablations: validate-router-train
+	@for m in $(ROUTER_INPUT_MODES); do \
+		echo "=== router-train --input-mode $$m ==="; \
+		$(PY) -m scripts.router.train_router \
+			--router-id "$(ROUTER_ID)" \
+			--router-base "$(ROUTER_BASE)" \
+			--epochs $(ROUTER_EPOCHS) \
+			--batch-size $(ROUTER_BATCH_SIZE) \
+			--learning-rate $(ROUTER_LEARNING_RATE) \
+			--device "$(ROUTER_TRAIN_DEVICE)" \
+			--input-mode "$$m" || exit 1; \
+	done
 
 router-eval: validate-router-train
 	$(PY) -m scripts.router.evaluate_router \
 		--router-id "$(ROUTER_ID)" \
 		--router-base "$(ROUTER_BASE)" \
-		--device "$(ROUTER_TRAIN_DEVICE)"
+		--device "$(ROUTER_TRAIN_DEVICE)" \
+		--input-mode "$(ROUTER_INPUT_MODE)"
+
+# Re-eval each ablation variant (requires checkpoints under each $(ROUTER_MODEL_DIR)/<input_mode>/)
+router-evaluate-ablations: validate-router-train
+	@for m in $(ROUTER_INPUT_MODES); do \
+		echo "=== router-eval --input-mode $$m ==="; \
+		$(PY) -m scripts.router.evaluate_router \
+			--router-id "$(ROUTER_ID)" \
+			--router-base "$(ROUTER_BASE)" \
+			--device "$(ROUTER_TRAIN_DEVICE)" \
+			--input-mode "$$m" || exit 1; \
+	done

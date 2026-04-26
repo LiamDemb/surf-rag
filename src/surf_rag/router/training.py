@@ -14,7 +14,11 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from surf_rag.evaluation.oracle_artifacts import DEFAULT_DENSE_WEIGHT_GRID
-from surf_rag.router.model import RouterMLP, RouterMLPConfig
+from surf_rag.router.model import (
+    RouterMLP,
+    RouterMLPConfig,
+    parse_router_input_mode,
+)
 from surf_rag.router.router_metrics import aggregate_router_metrics, kl_divergence_torch
 
 
@@ -38,6 +42,7 @@ class RouterTrainConfig:
     feat_proj_dim: int = 16
     dropout: float = 0.1
     num_workers: int = 0
+    input_mode: str = "both"
 
 
 def _seq_floats(val: object) -> List[float]:
@@ -89,6 +94,7 @@ def build_model_config_from_df(
     return RouterMLPConfig(
         embedding_dim=emb_dim,
         feature_dim=feat_dim,
+        input_mode=parse_router_input_mode(cfg.input_mode),
         embed_proj_dim=cfg.embed_proj_dim,
         feat_proj_dim=cfg.feat_proj_dim,
         hidden_dim=cfg.hidden_dim,

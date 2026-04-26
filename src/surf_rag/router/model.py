@@ -1,13 +1,50 @@
-"""Compact MLP router: query embedding projection, feature branch, 11-bin logits."""
+"""Compact MLP router: embedding and/or feature branch, 11-bin logits."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+# Folder names and checkpoint values for input ablations
+ROUTER_INPUT_MODE_BOTH: str = "both"
+ROUTER_INPUT_MODE_QUERY_FEATURES: str = "query-features"
+ROUTER_INPUT_MODE_EMBEDDING: str = "embedding"
+
+ALLOWED_ROUTER_INPUT_MODES: Tuple[str, ...] = (
+    ROUTER_INPUT_MODE_BOTH,
+    ROUTER_INPUT_MODE_QUERY_FEATURES,
+    ROUTER_INPUT_MODE_EMBEDDING,
+)
+
+
+def parse_router_input_mode(value: str) -> str:
+    s = (value or "").strip().lower().replace("_", "-")
+    aliases = {
+        "both": ROUTER_INPUT_MODE_BOTH,
+        "query-features": ROUTER_INPUT_MODE_QUERY_FEATURES,
+        "query_features": ROUTER_INPUT_MODE_QUERY_FEATURES,
+        "features": ROUTER_INPUT_MODE_QUERY_FEATURES,
+        "embedding": ROUTER_INPUT_MODE_EMBEDDING,
+        "embed": ROUTER_INPUT_MODE_EMBEDDING,
+    }
+    if s not in aliases:
+        raise ValueError(
+            f"input_mode must be one of {list(aliases.keys())!r}, got {value!r}"
+        )
+    return aliases[s]
+
+
+def active_inputs_for_mode(input_mode: str) -> List[str]:
+    m = parse_router_input_mode(input_mode)
+    if m == ROUTER_INPUT_MODE_BOTH:
+        return ["query_embedding", "feature_vector_norm"]
+    if m == ROUTER_INPUT_MODE_QUERY_FEATURES:
+        return ["feature_vector_norm"]
+    return ["query_embedding"]
 
 
 @dataclass(frozen=True)
@@ -16,6 +53,7 @@ class RouterMLPConfig:
 
     embedding_dim: int = 384
     feature_dim: int = 14
+    input_mode: str = ROUTER_INPUT_MODE_BOTH
     embed_proj_dim: int = 16
     feat_proj_dim: int = 16
     hidden_dim: int = 32
@@ -26,6 +64,7 @@ class RouterMLPConfig:
         return {
             "embedding_dim": self.embedding_dim,
             "feature_dim": self.feature_dim,
+            "input_mode": self.input_mode,
             "embed_proj_dim": self.embed_proj_dim,
             "feat_proj_dim": self.feat_proj_dim,
             "hidden_dim": self.hidden_dim,
@@ -35,9 +74,18 @@ class RouterMLPConfig:
 
     @classmethod
     def from_json(cls, d: Dict[str, Any]) -> "RouterMLPConfig":
+        raw_mode = d.get("input_mode", ROUTER_INPUT_MODE_BOTH)
+        if raw_mode is None or not isinstance(raw_mode, str):
+            input_mode = ROUTER_INPUT_MODE_BOTH
+        else:
+            try:
+                input_mode = parse_router_input_mode(raw_mode)
+            except ValueError:
+                input_mode = ROUTER_INPUT_MODE_BOTH
         return cls(
             embedding_dim=int(d.get("embedding_dim", 384)),
             feature_dim=int(d.get("feature_dim", 14)),
+            input_mode=input_mode,
             embed_proj_dim=int(d.get("embed_proj_dim", 16)),
             feat_proj_dim=int(d.get("feat_proj_dim", 16)),
             hidden_dim=int(d.get("hidden_dim", 32)),
@@ -47,16 +95,37 @@ class RouterMLPConfig:
 
 
 class RouterMLP(nn.Module):
-    """Projects embedding and features, then classifies over the weight grid."""
+    """Classifies over the weight grid; uses one or both input branches by ``input_mode``."""
 
     def __init__(self, config: RouterMLPConfig) -> None:
         super().__init__()
-        self.config = config
         d = config
-        self.embed_ln = nn.LayerNorm(d.embedding_dim)
-        self.embed_proj = nn.Linear(d.embedding_dim, d.embed_proj_dim)
-        self.feat_proj = nn.Linear(d.feature_dim, d.feat_proj_dim)
-        in_h = d.embed_proj_dim + d.feat_proj_dim
+        self.config = d
+        mode = parse_router_input_mode(d.input_mode)
+
+        self.embed_ln: Optional[nn.Module]
+        self.embed_proj: Optional[nn.Module]
+        self.feat_proj: Optional[nn.Module]
+
+        if mode in (ROUTER_INPUT_MODE_BOTH, ROUTER_INPUT_MODE_EMBEDDING):
+            self.embed_ln = nn.LayerNorm(d.embedding_dim)
+            self.embed_proj = nn.Linear(d.embedding_dim, d.embed_proj_dim)
+        else:
+            self.embed_ln = None
+            self.embed_proj = None
+
+        if mode in (ROUTER_INPUT_MODE_BOTH, ROUTER_INPUT_MODE_QUERY_FEATURES):
+            self.feat_proj = nn.Linear(d.feature_dim, d.feat_proj_dim)
+        else:
+            self.feat_proj = None
+
+        if mode == ROUTER_INPUT_MODE_BOTH:
+            in_h = d.embed_proj_dim + d.feat_proj_dim
+        elif mode == ROUTER_INPUT_MODE_QUERY_FEATURES:
+            in_h = d.feat_proj_dim
+        else:
+            in_h = d.embed_proj_dim
+
         self.head = nn.Sequential(
             nn.Linear(in_h, d.hidden_dim),
             nn.GELU(),
@@ -69,11 +138,21 @@ class RouterMLP(nn.Module):
         query_embedding: torch.Tensor,
         feature_vector: torch.Tensor,
     ) -> torch.Tensor:
-        """Return logits of shape (batch, num_bins)."""
-        z = self.embed_ln(query_embedding)
-        e = F.gelu(self.embed_proj(z))
-        f = F.gelu(self.feat_proj(feature_vector))
-        h = torch.cat([e, f], dim=-1)
+        mode = parse_router_input_mode(self.config.input_mode)
+        if mode == ROUTER_INPUT_MODE_BOTH:
+            assert self.embed_ln is not None and self.embed_proj is not None
+            assert self.feat_proj is not None
+            z = self.embed_ln(query_embedding)
+            e = F.gelu(self.embed_proj(z))
+            f = F.gelu(self.feat_proj(feature_vector))
+            h = torch.cat([e, f], dim=-1)
+        elif mode == ROUTER_INPUT_MODE_QUERY_FEATURES:
+            assert self.feat_proj is not None
+            h = F.gelu(self.feat_proj(feature_vector))
+        else:
+            assert self.embed_ln is not None and self.embed_proj is not None
+            z = self.embed_ln(query_embedding)
+            h = F.gelu(self.embed_proj(z))
         return self.head(h)
 
     def predict_distribution(
@@ -81,7 +160,6 @@ class RouterMLP(nn.Module):
         query_embedding: torch.Tensor,
         feature_vector: torch.Tensor,
     ) -> torch.Tensor:
-        """Return probability distribution of shape (batch, num_bins)."""
         return F.softmax(self(query_embedding, feature_vector), dim=-1)
 
 

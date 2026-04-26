@@ -1,4 +1,4 @@
-"""Evaluate a trained router checkpoint on the Parquet dataset (no training)."""
+"""Evaluate a trained router checkpoint; reads ``.../model/<input_mode>/model.pt``."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from surf_rag.evaluation.router_model_artifacts import (
     write_json,
     write_predictions_jsonl,
 )
-from surf_rag.router.model import RouterMLP, RouterMLPConfig
+from surf_rag.router.model import RouterMLP, RouterMLPConfig, parse_router_input_mode
 from surf_rag.router.training import (
     _eval_splits,
     _weight_grid_from_df,
@@ -33,6 +33,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--router-id", required=True)
     p.add_argument("--router-base", type=Path, default=None)
     p.add_argument("--device", default=None)
+    p.add_argument(
+        "--input-mode",
+        default=None,
+        help="both | query-features | embedding (default: ROUTER_INPUT_MODE or both)",
+    )
     p.add_argument("--log-level", default="INFO")
     return p.parse_args()
 
@@ -48,8 +53,12 @@ def main() -> int:
     ds_paths = make_router_dataset_paths_for_cli(
         args.router_id, router_base=args.router_base
     )
+    raw_mode = (args.input_mode or "").strip() or os.getenv(
+        "ROUTER_INPUT_MODE", "both"
+    )
+    input_mode = parse_router_input_mode(str(raw_mode))
     m_paths = make_router_model_paths_for_cli(
-        args.router_id, router_base=args.router_base
+        args.router_id, router_base=args.router_base, input_mode=input_mode
     )
     if not ds_paths.router_dataset_parquet.is_file():
         log.error("Missing %s", ds_paths.router_dataset_parquet)
@@ -71,7 +80,10 @@ def main() -> int:
     df = pd.read_parquet(ds_paths.router_dataset_parquet)
     wg = _weight_grid_from_df(df)
     metrics = _eval_splits(model, df, wg, device, mcfg)
-    write_json(m_paths.metrics, {"router_id": args.router_id, "splits": metrics})
+    write_json(
+        m_paths.metrics,
+        {"router_id": args.router_id, "input_mode": input_mode, "splits": metrics},
+    )
 
     for split in ("train", "dev", "test"):
         rows = export_split_predictions(model, df, split, device, wg)

@@ -17,23 +17,27 @@ from surf_rag.evaluation.router_model_artifacts import (
 
 def test_model_root() -> None:
     assert build_router_model_root(Path("data/router"), "v01") == Path(
-        "data/router/v01/model"
+        "data/router/v01/model/both"
     )
+    assert build_router_model_root(
+        Path("data/router"), "v01", "query-features"
+    ) == Path("data/router/v01/model/query-features")
 
 
 def test_paths() -> None:
     p = make_router_model_paths_for_cli("r1", router_base=Path("/b"))
-    assert p.run_root == Path("/b/r1/model")
-    assert p.checkpoint == Path("/b/r1/model/model.pt")
-    assert p.predictions("test") == Path("/b/r1/model/predictions_test.jsonl")
+    assert p.run_root == Path("/b/r1/model/both")
+    assert p.checkpoint == Path("/b/r1/model/both/model.pt")
+    assert p.predictions("test") == Path("/b/r1/model/both/predictions_test.jsonl")
 
 
 def test_manifest_roundtrip(tmp_path: Path) -> None:
-    paths = RouterModelPaths(run_root=build_router_model_root(tmp_path, "m1"))
+    paths = RouterModelPaths(run_root=build_router_model_root(tmp_path, "m1", "both"))
     paths.ensure_dirs()
     write_router_model_manifest(
         paths,
         router_id="m1",
+        input_mode="both",
         dataset_manifest_path="/x/dataset/manifest.json",
         model_config={"hidden_dim": 32},
         training_config={"epochs": 10},
@@ -42,6 +46,12 @@ def test_manifest_roundtrip(tmp_path: Path) -> None:
         weight_grid=[0.0, 0.5, 1.0],
     )
     m = read_router_model_manifest(paths)
+    assert m["model_id"] == "m1:both"
+    assert m["model"]["input_mode"] == "both"
+    assert m["model"]["active_inputs"] == [
+        "query_embedding",
+        "feature_vector_norm",
+    ]
     assert m["model"]["weight_grid"] == [0.0, 0.5, 1.0]
     assert m["artifacts"]["checkpoint"] == "model.pt"
     update_router_model_manifest(paths, {"note": "x"})

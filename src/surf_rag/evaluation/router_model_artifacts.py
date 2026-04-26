@@ -1,4 +1,4 @@
-"""Trained router bundle under ``data/router/<router_id>/model/``."""
+"""Trained router bundle under ``data/router/<router_id>/model/<input_mode>/``."""
 
 from __future__ import annotations
 
@@ -9,10 +9,17 @@ from typing import Any, Dict, List, Optional
 
 from surf_rag.evaluation.artifact_paths import default_router_base
 from surf_rag.evaluation.oracle_artifacts import utc_now_iso
+from surf_rag.router.model import (
+    active_inputs_for_mode,
+    parse_router_input_mode,
+)
 
 
-def build_router_model_root(router_base: Path, router_id: str) -> Path:
-    return router_base / router_id / "model"
+def build_router_model_root(
+    router_base: Path, router_id: str, input_mode: str = "both"
+) -> Path:
+    mode = parse_router_input_mode(input_mode)
+    return router_base / router_id / "model" / mode
 
 
 @dataclass(frozen=True)
@@ -52,9 +59,10 @@ class RouterModelPaths:
 def make_router_model_paths_for_cli(
     router_id: str,
     router_base: Optional[Path] = None,
+    input_mode: str = "both",
 ) -> RouterModelPaths:
     base = router_base if router_base is not None else default_router_base()
-    return RouterModelPaths(run_root=build_router_model_root(base, router_id))
+    return RouterModelPaths(run_root=build_router_model_root(base, router_id, input_mode))
 
 
 def write_json(path: Path, data: Dict[str, Any]) -> None:
@@ -86,6 +94,7 @@ def write_router_model_manifest(
     paths: RouterModelPaths,
     *,
     router_id: str,
+    input_mode: str = "both",
     dataset_manifest_path: str,
     model_config: Dict[str, Any],
     training_config: Dict[str, Any],
@@ -96,15 +105,18 @@ def write_router_model_manifest(
 ) -> None:
     """Write ``manifest.json`` for a trained router (schema v1)."""
     paths.ensure_dirs()
+    mode = parse_router_input_mode(input_mode)
     data: Dict[str, Any] = {
         "schema_version": 1,
         "created_at": utc_now_iso(),
         "router_id": router_id,
-        "model_id": router_id,
+        "model_id": f"{router_id}:{mode}",
         "source": {
             "router_dataset_manifest": dataset_manifest_path,
         },
         "model": {
+            "input_mode": mode,
+            "active_inputs": active_inputs_for_mode(mode),
             "feature_set_version": feature_set_version,
             "embedding_model": embedding_model,
             "weight_grid": [float(x) for x in weight_grid],

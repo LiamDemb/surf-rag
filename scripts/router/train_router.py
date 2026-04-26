@@ -1,4 +1,4 @@
-"""Train the router MLP from ``data/router/<router_id>/dataset/router_dataset.parquet``."""
+"""Train the router MLP; artifacts under ``.../model/<input_mode>/``."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from surf_rag.evaluation.router_model_artifacts import (
     write_router_model_manifest,
     write_predictions_jsonl,
 )
+from surf_rag.router.model import parse_router_input_mode
 from surf_rag.router.training import (
     RouterTrainConfig,
     export_split_predictions,
@@ -39,6 +40,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--batch-size", type=int, default=None)
     p.add_argument("--learning-rate", type=float, default=None)
     p.add_argument("--device", default=None, help="cpu or cuda")
+    p.add_argument(
+        "--input-mode",
+        default=None,
+        help="both | query-features | embedding (default: ROUTER_INPUT_MODE or both)",
+    )
     p.add_argument("--log-level", default="INFO")
     return p.parse_args()
 
@@ -64,8 +70,13 @@ def main() -> int:
     read_router_dataset_manifest(ds_paths)
     parquet_path = ds_paths.router_dataset_parquet
 
+    raw_mode = (args.input_mode or "").strip() or os.getenv(
+        "ROUTER_INPUT_MODE", "both"
+    )
+    input_mode = parse_router_input_mode(str(raw_mode))
+
     out_paths = make_router_model_paths_for_cli(
-        args.router_id, router_base=args.router_base
+        args.router_id, router_base=args.router_base, input_mode=input_mode
     )
     out_paths.ensure_dirs()
 
@@ -81,6 +92,7 @@ def main() -> int:
         ),
         seed=int(os.getenv("SEED", "42")),
         device=device,
+        input_mode=input_mode,
     )
 
     result = train_router(cfg)
@@ -94,6 +106,7 @@ def main() -> int:
         out_paths.metrics,
         {
             "router_id": args.router_id,
+            "input_mode": input_mode,
             "best_epoch": result.best_epoch,
             "splits": result.metrics,
         },
@@ -103,6 +116,7 @@ def main() -> int:
     write_router_model_manifest(
         out_paths,
         router_id=args.router_id,
+        input_mode=input_mode,
         dataset_manifest_path=str(ds_paths.manifest.resolve()),
         model_config=mcfg.to_json(),
         training_config={
