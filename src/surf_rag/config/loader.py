@@ -117,6 +117,11 @@ def pipeline_config_from_dict(raw: dict[str, Any]) -> PipelineConfig:
             out,
             e2e=replace(out.e2e, fusion_keep_k=out.oracle.fusion_keep_k),
         )
+    if not raw_e2e or "branch_top_k" not in raw_e2e:
+        out = replace(
+            out,
+            e2e=replace(out.e2e, branch_top_k=out.oracle.branch_top_k),
+        )
     return _coerce_yaml_scalar_types(out)
 
 
