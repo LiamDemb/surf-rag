@@ -6,7 +6,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
@@ -17,6 +17,9 @@ from surf_rag.entity_matching.normalization import normalize_for_query_match
 from surf_rag.entity_matching.types import PhraseRecord, PhraseSource, RawPhraseMatch
 
 logger = logging.getLogger(__name__)
+
+# Flat pickle format: never serialize nested ``_TrieNode`` chains (deep keys exceed pickle recursion).
+PHRASE_MATCHER_PICKLE_VERSION = 1
 
 # Stronger (lower int) = higher priority for tie-breaks after ``df`` and span length
 _SOURCE_RANK: Dict[PhraseSource, int] = {
@@ -39,6 +42,57 @@ class PhraseMatcher:
     """Aho-style forward trie over match-normalized lowercase strings (character-wise)."""
 
     root: _TrieNode = field(default_factory=_TrieNode)
+
+    def __getstate__(self) -> dict[str, Any]:
+        """Pickle as a flat record list; rebuild trie on unpickle (avoids recursion on deep keys)."""
+        recs = _matcher_records_for_pickle(self)
+        return {
+            "v": PHRASE_MATCHER_PICKLE_VERSION,
+            "records": [
+                (r.match_key, r.canonical_norm, r.source.value, r.df) for r in recs
+            ],
+        }
+
+    def __setstate__(self, state: object) -> None:
+        if not isinstance(state, dict):
+            raise TypeError(
+                f"PhraseMatcher.__setstate__ expected dict, got {type(state)}"
+            )
+        v = state.get("v")
+        if v == PHRASE_MATCHER_PICKLE_VERSION:
+            raw = state.get("records")
+            if not isinstance(raw, list):
+                raise TypeError("PhraseMatcher pickle state missing list 'records'")
+            records: List[PhraseRecord] = []
+            for item in raw:
+                if (
+                    not isinstance(item, tuple)
+                    or len(item) != 4
+                    or not isinstance(item[0], str)
+                    or not isinstance(item[1], str)
+                    or not isinstance(item[2], str)
+                ):
+                    raise TypeError(f"Malformed PhraseMatcher record tuple: {item!r}")
+                mk, cn, src_s, df_raw = item
+                records.append(
+                    PhraseRecord(
+                        match_key=mk,
+                        canonical_norm=cn,
+                        source=PhraseSource(src_s),
+                        df=int(df_raw),
+                    )
+                )
+            rebuilt = records_to_matcher(records)
+            self.root = rebuilt.root
+            return
+        # Legacy: nested ``_TrieNode`` graph from pickles written before flat format.
+        root = state.get("root")
+        if isinstance(root, _TrieNode):
+            self.root = root
+            return
+        raise ValueError(
+            f"Unsupported PhraseMatcher pickle state (keys={list(state)!r})"
+        )
 
     def insert(self, record: PhraseRecord) -> None:
         if not record.match_key:
@@ -66,6 +120,19 @@ class PhraseMatcher:
         if best_end is None or best_rec is None:
             return None
         return best_end, best_rec
+
+
+def _matcher_records_for_pickle(matcher: PhraseMatcher) -> List[PhraseRecord]:
+    """All phrase payloads in the trie (iterative; safe for very deep paths)."""
+    by_key: Dict[str, PhraseRecord] = {}
+    stack: List[_TrieNode] = [matcher.root]
+    while stack:
+        node = stack.pop()
+        if node.best is not None:
+            b = node.best
+            by_key[b.match_key] = b
+        stack.extend(node.children.values())
+    return list(by_key.values())
 
 
 def _better_record(a: Optional[PhraseRecord], b: PhraseRecord) -> PhraseRecord:
