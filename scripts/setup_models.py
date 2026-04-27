@@ -17,12 +17,18 @@ logger = logging.getLogger(__name__)
 
 SPACY_MODEL = os.environ.get("SPACY_MODEL", "en_core_web_sm")
 MODEL_NAME = os.environ.get("MODEL_NAME", "all-MiniLM-L6-v2")
+CROSS_ENCODER_MODEL = os.environ.get(
+    "CROSS_ENCODER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2"
+)
 
 
 def main() -> int:
     hf_home = os.environ.get("HF_HOME", "data/processed/hf_cache")
     os.environ.setdefault("HF_HOME", hf_home)
-    os.environ.setdefault("TRANSFORMERS_CACHE", os.path.join(hf_home, "transformers"))
+    os.environ.setdefault(
+        "TRANSFORMERS_CACHE",
+        os.environ.get("TRANSFORMERS_CACHE") or os.path.join(hf_home, "transformers"),
+    )
     os.makedirs(hf_home, exist_ok=True)
     logger.info("HF cache: %s", os.environ.get("HF_HOME"))
 
@@ -38,12 +44,16 @@ def main() -> int:
         return 1
     logger.info("spaCy model ready.")
 
-    # SentenceTransformer
-    logger.info("Downloading SentenceTransformer model: %s", MODEL_NAME)
-    from sentence_transformers import SentenceTransformer
+    # SentenceTransformer + CrossEncoder (shared process cache after first load)
+    from surf_rag.core.model_cache import get_cross_encoder, get_sentence_transformer
 
-    SentenceTransformer(MODEL_NAME)
+    logger.info("Downloading SentenceTransformer model: %s", MODEL_NAME)
+    get_sentence_transformer(MODEL_NAME)
     logger.info("SentenceTransformer model ready.")
+
+    logger.info("Downloading CrossEncoder model: %s", CROSS_ENCODER_MODEL)
+    get_cross_encoder(CROSS_ENCODER_MODEL)
+    logger.info("CrossEncoder model ready.")
 
     # tiktoken (for chunking - cl100k_base aligns with OpenAI models)
     logger.info("Downloading tiktoken encoding: cl100k_base")
