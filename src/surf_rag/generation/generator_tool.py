@@ -186,8 +186,8 @@ def parse_message_for_format_answer(
             custom_id, "no format_answer tool call in response"
         )
     args_str = fn.get("arguments")
-    answer, reasoning, candidate_answer_span, support_quote, err = _parse_arguments_json(
-        args_str
+    answer, reasoning, candidate_answer_span, support_quote, err = (
+        _parse_arguments_json(args_str)
     )
     if err:
         return GenerationParseResult.error(

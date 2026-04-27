@@ -120,7 +120,9 @@ def test_parse_missing_answer_key():
 
 
 def test_parse_missing_candidate_answer_span_key():
-    line = _batch_line(arguments=json.dumps({"support_quote": "x", "reasoning": "r", "answer": "a"}))
+    line = _batch_line(
+        arguments=json.dumps({"support_quote": "x", "reasoning": "r", "answer": "a"})
+    )
     r = parse_generation_output_line(line)
     assert "candidate_answer_span" in (r.generation_parse_error or "").lower()
 
