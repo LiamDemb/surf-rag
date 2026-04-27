@@ -125,31 +125,31 @@ router-evaluate-ablations: validate-router-train
 	done
 
 e2e-print-config:
-	$(PY) -m scripts.e2e_benchmark print-config --config "$(CONFIG)" \
+	$(PY) -m scripts.e2e_benchmark --config "$(CONFIG)" print-config \
 		$(if $(E2E_RUN_ID),--run-id "$(E2E_RUN_ID)",) \
 		$(if $(E2E_POLICY),--policy "$(E2E_POLICY)",) \
 		$(if $(E2E_SPLIT),--split "$(E2E_SPLIT)",)
 
 e2e-prepare:
-	$(PY) -m scripts.e2e_benchmark prepare --config "$(CONFIG)" --dry-run \
+	$(PY) -m scripts.e2e_benchmark --config "$(CONFIG)" prepare --dry-run \
 		$(if $(E2E_RUN_ID),--run-id "$(E2E_RUN_ID)",) \
 		$(if $(E2E_POLICY),--policy "$(E2E_POLICY)",) \
 		$(if $(E2E_SPLIT),--split "$(E2E_SPLIT)",)
 
 e2e-submit:
-	$(PY) -m scripts.e2e_benchmark prepare --config "$(CONFIG)" \
+	$(PY) -m scripts.e2e_benchmark --config "$(CONFIG)" prepare \
 		$(if $(E2E_RUN_ID),--run-id "$(E2E_RUN_ID)",) \
 		$(if $(E2E_POLICY),--policy "$(E2E_POLICY)",) \
 		$(if $(E2E_SPLIT),--split "$(E2E_SPLIT)",)
 
 e2e-collect:
-	$(PY) -m scripts.e2e_benchmark collect --config "$(CONFIG)" \
+	$(PY) -m scripts.e2e_benchmark --config "$(CONFIG)" collect \
 		$(if $(E2E_RUN_ID),--run-id "$(E2E_RUN_ID)",) \
 		$(if $(E2E_POLICY),--policy "$(E2E_POLICY)",) \
 		$(if $(E2E_SPLIT),--split "$(E2E_SPLIT)",)
 
 e2e-evaluate:
-	$(PY) -m scripts.e2e_benchmark evaluate --config "$(CONFIG)" \
+	$(PY) -m scripts.e2e_benchmark --config "$(CONFIG)" evaluate \
 		$(if $(E2E_RUN_ID),--run-id "$(E2E_RUN_ID)",) \
 		$(if $(E2E_POLICY),--policy "$(E2E_POLICY)",) \
 		$(if $(E2E_SPLIT),--split "$(E2E_SPLIT)",)
@@ -190,5 +190,5 @@ e2e-evaluate-all-policies:
 # Smoke: one question, dense-only, dry-run; override E2E_RUN_ID or rely on a smoke-oriented CONFIG
 E2E_SMOKE_RUN_ID ?= smoke-$(shell date +%Y%m%d-%H%M%S)
 e2e-smoke-test-v01:
-	$(PY) -m scripts.e2e_benchmark prepare --config "$(CONFIG)" --dry-run --limit 1 \
+	$(PY) -m scripts.e2e_benchmark --config "$(CONFIG)" prepare --dry-run --limit 1 \
 		--run-id "$(E2E_SMOKE_RUN_ID)" --policy dense-only
