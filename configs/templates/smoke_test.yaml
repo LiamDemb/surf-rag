@@ -5,41 +5,41 @@ experiment_id: smoke
 seed: 42
 
 paths:
-  data_base: data
-  benchmark_base: data/benchmarks
-  router_base: data/router
-  benchmark_name: benchmark-name
-  benchmark_id: v01
-  router_id: v01
-  hf_home: null
-  transformers_cache: null
+    data_base: data
+    benchmark_base: data/benchmarks
+    router_base: data/router
+    benchmark_name: benchmark-name
+    benchmark_id: v01
+    router_id: v01
+    hf_home: null
+    transformers_cache: null
 
 raw_sources:
-  nq_path: data/raw/nq_100.jsonl
-  wiki2_path: data/raw/2wikimultihop_100.jsonl
+    nq_path: data/raw/nq_100.jsonl
+    wiki2_path: data/raw/2wikimultihop_100.jsonl
 
 model_setup:
-  embedding_model: all-MiniLM-L6-v2
-  cross_encoder_model: cross-encoder/ms-marco-MiniLM-L-6-v2
+    embedding_model: all-MiniLM-L6-v2
+    cross_encoder_model: cross-encoder/ms-marco-MiniLM-L-6-v2
 
 corpus: {}
 router: { dataset: {}, train: {} }
 retrieval: {}
 generation:
-  model: gpt-4o-mini
-  completion_window: 24h
+    model: gpt-4o-mini
+    completion_window: 24h
 
 e2e:
-  run_id: null
-  split: test
-  policy: dense-only
-  fusion_keep_k: 25
-  reranker: none
-  rerank_top_k: 5
-  router_device: cpu
-  router_input_mode: both
-  router_inference_batch_size: 32
-  limit: 1
-  dry_run: true
+    run_id: null
+    split: test
+    policy: dense-only
+    fusion_keep_k: 20
+    reranker: none
+    rerank_top_k: 5
+    router_device: cpu
+    router_input_mode: both
+    router_inference_batch_size: 32
+    limit: 1
+    dry_run: true
 
 secrets: {}
