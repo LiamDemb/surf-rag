@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
@@ -54,13 +54,24 @@ class DenseRetriever(BranchRetriever):
                 text = self.corpus.get_text(chunk_id)
                 if not text:
                     continue
+                meta: Dict[str, Any] = {"branch": "dense"}
+                gt = getattr(self.corpus, "get_title", None)
+                if callable(gt):
+                    t = gt(chunk_id)
+                    if t:
+                        meta["title"] = str(t)
+                gs = getattr(self.corpus, "get_source", None)
+                if callable(gs):
+                    s = gs(chunk_id)
+                    if s:
+                        meta["source"] = str(s)
                 chunks.append(
                     RetrievedChunk(
                         chunk_id=chunk_id,
                         text=text,
                         score=float(score),
                         rank=0,
-                        metadata={"branch": "dense"},
+                        metadata=meta,
                     )
                 )
 

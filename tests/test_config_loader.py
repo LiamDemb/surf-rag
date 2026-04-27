@@ -39,7 +39,7 @@ def test_yaml_unquoted_ids_coerce_to_str_for_paths_and_env() -> None:
 
 def test_load_example_pipeline(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[1]
-    cfg_path = root / "configs" / "examples" / "surf-bench-200-pipeline.yaml"
+    cfg_path = root / "configs" / "dev" / "examples" / "surf-bench-200-pipeline.yaml"
     cfg = load_pipeline_config(cfg_path)
     assert cfg.schema_version == "surf-rag/pipeline/v1"
     assert cfg.paths.benchmark_name == "surf-bench"
@@ -88,6 +88,27 @@ def test_validate_e2e_learned_requires_router_id() -> None:
     )
     with pytest.raises(ValueError, match="router_id"):
         validate_e2e_config(cfg)
+
+
+def test_e2e_sentence_rerank_fields_roundtrip() -> None:
+    cfg = pipeline_config_from_dict(
+        {
+            "e2e": {
+                "sentence_rerank_enabled": True,
+                "sentence_rerank_top_k": 15,
+                "sentence_rerank_max_sentences": 32,
+                "sentence_rerank_max_words": 900,
+                "sentence_rerank_include_title": False,
+                "sentence_rerank_prompt_style": "inline",
+            }
+        }
+    )
+    assert cfg.e2e.sentence_rerank_enabled is True
+    assert cfg.e2e.sentence_rerank_top_k == 15
+    assert cfg.e2e.sentence_rerank_max_sentences == 32
+    assert cfg.e2e.sentence_rerank_max_words == 900
+    assert cfg.e2e.sentence_rerank_include_title is False
+    assert cfg.e2e.sentence_rerank_prompt_style == "inline"
 
 
 def test_minimal_yaml_roundtrip(tmp_path: Path) -> None:

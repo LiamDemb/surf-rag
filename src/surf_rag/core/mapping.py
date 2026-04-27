@@ -47,6 +47,8 @@ class JsonCorpusLoader:
 
     def __post_init__(self) -> None:
         self.text_by_id: Dict[str, str] = {}
+        self.title_by_id: Dict[str, str] = {}
+        self.source_by_id: Dict[str, str] = {}
         with open(self.jsonl_path, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
@@ -56,6 +58,18 @@ class JsonCorpusLoader:
                 cid = str(obj[self.chunk_id_col])
                 txt = str(obj[self.text_key])
                 self.text_by_id[cid] = txt
+                t = obj.get("title")
+                if t is not None and str(t).strip():
+                    self.title_by_id[cid] = str(t).strip()
+                s = obj.get("source")
+                if s is not None and str(s).strip():
+                    self.source_by_id[cid] = str(s).strip()
 
     def get_text(self, chunk_id: str) -> Optional[str]:
         return self.text_by_id.get(chunk_id)
+
+    def get_title(self, chunk_id: str) -> Optional[str]:
+        return self.title_by_id.get(chunk_id)
+
+    def get_source(self, chunk_id: str) -> Optional[str]:
+        return self.source_by_id.get(chunk_id)

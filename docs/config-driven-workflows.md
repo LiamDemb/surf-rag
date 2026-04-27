@@ -9,7 +9,7 @@ This guide explains how to run the SuRF-RAG research pipeline using **versioned 
 | **`.env`**                 | Secrets (`OPENAI_API_KEY`) and optional local machine paths (caches) only. Not for experiment design.                                                                      |
 | **`configs/*.yaml`**       | Experiment recipes: benchmark identity, corpus settings, oracle, router, E2E, generation.                                                                                  |
 | **`Makefile` targets**     | Choose the **stage** (ingest, build-corpus, oracle, router, e2e).                                                                                                          |
-| **`CONFIG=path.yaml`**     | Choose the **recipe** (default in `Makefile`: `configs/pipelines/surf-bench-200.yaml`). |
+| **`CONFIG=path.yaml`**     | Choose the **recipe** (default in `Makefile`: `configs/dev/pipelines/surf-bench-200.yaml`). |
 | **`resolved_config.yaml`** | Written into major output dirs so runs are **auditable**; linked from `manifest.json` where applicable.                                                                    |
 
 **Precedence (same everywhere):** explicit **CLI** overrides config; **config** defines experiment semantics; **defaults** in `surf_rag.config.schema` are last. Environment variables are still set from config when you pass `--config` (`apply_pipeline_env_from_config`) so code paths that read `os.environ` stay consistent.
@@ -20,7 +20,7 @@ This guide explains how to run the SuRF-RAG research pipeline using **versioned 
 - **Typed model:** `PipelineConfig` in `src/surf_rag/config/schema.py`.
 - **Resolved paths:** `resolve_paths()` in `src/surf_rag/config/loader.py` — bundle dir, `benchmark/`, `corpus/`, `docstore`, router oracle/dataset/model dirs, HF cache roots.
 - **Inspect without running a stage:**  
-  `make print-resolved-config CONFIG=configs/pipelines/surf-bench-200.yaml`  
+  `make print-resolved-config CONFIG=configs/dev/pipelines/surf-bench-200.yaml`  
   or `poetry run python -m surf_rag.config <file.yaml>`
 
 Field-level inventory of targets vs sections: [CONFIG_INVENTORY.md](CONFIG_INVENTORY.md).
@@ -29,11 +29,11 @@ Field-level inventory of targets vs sections: [CONFIG_INVENTORY.md](CONFIG_INVEN
 
 | Location                                                | Use                                                                                             |
 | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `configs/templates/`                                    | Copy-paste starters with comments (`pipeline.yaml`, `e2e_run.yaml`, `router_training.yaml`, …). |
-| `configs/examples/`                                     | Committed **example** full pipelines.                                                           |
-| `configs/pipelines/`                                    | Your primary **full** pipeline configs.                                                         |
-| `configs/e2e/.../`                                      | **Named** E2E runs (policy tests, prompt tests).                                                |
-| `configs/router/`, `configs/corpus/`, `configs/oracle/` | Stage-focused configs.                                                                          |
+| `configs/dev/templates/`                                    | Copy-paste starters with comments (`pipeline.yaml`, `e2e_run.yaml`, `router_training.yaml`, …). |
+| `configs/dev/examples/`                                     | Committed **example** full pipelines.                                                           |
+| `configs/dev/pipelines/`                                    | Your primary **full** pipeline configs.                                                         |
+| `configs/dev/e2e/.../`                                      | **Named** E2E runs (policy tests, prompt tests).                                                |
+| `configs/dev/router/`, `configs/dev/corpus/`, `configs/dev/oracle/` | Stage-focused configs.                                                                          |
 
 **Rule of thumb:** if the run is worth citing in a paper, **commit a named YAML**; for a disposable local check, CLI overrides on top of a template are fine.
 
@@ -44,13 +44,13 @@ Field-level inventory of targets vs sections: [CONFIG_INVENTORY.md](CONFIG_INVEN
 **Print merged config (paths + sections):**
 
 ```bash
-make print-resolved-config CONFIG=configs/pipelines/surf-bench-200.yaml
+make print-resolved-config CONFIG=configs/dev/pipelines/surf-bench-200.yaml
 ```
 
 **Data → corpus (sequential):**
 
 ```bash
-make ingest CONFIG=configs/pipelines/surf-bench-200.yaml
+make ingest CONFIG=configs/dev/pipelines/surf-bench-200.yaml
 make fetch-wikipedia-articles CONFIG=...
 make align-2wiki-support CONFIG=...
 make build-corpus CONFIG=...
@@ -62,14 +62,14 @@ Or `make pipeline` (uses default `CONFIG` unless you override).
 **Oracle → soft labels:**
 
 ```bash
-make oracle-labels CONFIG=configs/oracle/surf-bench-200-router-4000-test.yaml
+make oracle-labels CONFIG=configs/dev/oracle/surf-bench-200-router-4000-test.yaml
 # or stepwise: oracle-prepare, oracle-sweep-beta, oracle-create-soft-labels
 ```
 
 **Router Parquet + training:**
 
 ```bash
-make router-build-dataset CONFIG=configs/router/4000-test.yaml
+make router-build-dataset CONFIG=configs/dev/router/4000-test.yaml
 make router-train CONFIG=...
 make router-eval CONFIG=...
 # Ablations: make router-train-ablations CONFIG=...  (overrides --input-mode per iter)
@@ -79,7 +79,7 @@ make router-eval CONFIG=...
 
 ```bash
 # run_id / policy in YAML, or override from Make (CLI wins):
-make e2e-submit CONFIG=configs/e2e/surf-bench/200-test/learned-soft-prompt-test-4.yaml
+make e2e-submit CONFIG=configs/dev/e2e/surf-bench/200-test/learned-soft-prompt-test-4.yaml
 make e2e-collect CONFIG=...
 make e2e-evaluate CONFIG=...
 ```
@@ -88,25 +88,25 @@ make e2e-evaluate CONFIG=...
 
 ```bash
 export E2E_RUN_ID=e2e-20250101-abc
-make e2e-run-all-policies CONFIG=configs/templates/e2e_multi_policy.yaml
+make e2e-run-all-policies CONFIG=configs/dev/templates/e2e_multi_policy.yaml
 ```
 
 **Smoke (dry-run, 1 question):**  
-With CONFIG, use `configs/templates/smoke_test.yaml` or pass `CONFIG=...` and **also** set `E2E_RUN_ID` for uniqueness:
+With CONFIG, use `configs/dev/templates/smoke_test.yaml` or pass `CONFIG=...` and **also** set `E2E_RUN_ID` for uniqueness:
 
 ```bash
-make e2e-smoke-test-v01 CONFIG=configs/templates/smoke_test.yaml
+make e2e-smoke-test-v01 CONFIG=configs/dev/templates/smoke_test.yaml
 ```
 
 **Model download (HF + spaCy):**
 
 ```bash
-make setup-models CONFIG=configs/pipelines/surf-bench-200.yaml
+make setup-models CONFIG=configs/dev/pipelines/surf-bench-200.yaml
 ```
 
 ## Target-by-target Makefile reference
 
-Default `CONFIG` is `configs/pipelines/surf-bench-200.yaml`. Every stage target runs the corresponding script with `--config "$(CONFIG)"`. Optional Make-only overrides: `E2E_RUN_ID`, `E2E_POLICY`, `E2E_SPLIT`, `E2E_POLICIES`, `SELECTED_BETA`, `ROUTER_INPUT_MODES`, `ENTITY_MATCHING_FORCE`, `ALIGN_2WIKI_EXTRA`.
+Default `CONFIG` is `configs/dev/pipelines/surf-bench-200.yaml`. Every stage target runs the corresponding script with `--config "$(CONFIG)"`. Optional Make-only overrides: `E2E_RUN_ID`, `E2E_POLICY`, `E2E_SPLIT`, `E2E_POLICIES`, `SELECTED_BETA`, `ROUTER_INPUT_MODES`, `ENTITY_MATCHING_FORCE`, `ALIGN_2WIKI_EXTRA`.
 
 | Target | Notes |
 |--------|--------|
@@ -140,6 +140,7 @@ Default `CONFIG` is `configs/pipelines/surf-bench-200.yaml`. Every stage target 
 ## Artifacts
 
 - **E2E run dir:** `resolved_config.yaml` + manifest entry `resolved_config` (see `e2e_runner.py`).
+- **Retrieval vs. generation evidence (E2E prepare):** `retrieval/retrieval_results.jsonl` holds the post-fusion chunk list (`fusion_keep_k`) used for retrieval metrics—**before** chunk or sentence reranking. `retrieval/prompt_evidence.jsonl` holds the exact `RetrievalResult` passed to the generator (after chunk CE rerank and optional sentence-level rerank). See `e2e` fields `sentence_rerank_*` in `schema.py`.
 - **Build corpus, oracle, router dataset/model:** scripts call `write_resolved_config_yaml` where implemented in your branch.
 
 ## Tests

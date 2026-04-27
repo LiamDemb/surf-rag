@@ -106,6 +106,12 @@ def cmd_prepare(args: argparse.Namespace) -> int:
         router_input_mode=args.router_input_mode,
         router_inference_batch_size=args.router_inference_batch_size,
         pipeline_config_for_artifact=cfg,
+        sentence_rerank=args.sentence_rerank,
+        sentence_rerank_top_k=args.sentence_rerank_top_k,
+        sentence_rerank_max_sentences=args.sentence_rerank_max_sentences,
+        sentence_rerank_max_words=args.sentence_rerank_max_words,
+        sentence_rerank_include_title=args.sentence_rerank_include_title,
+        sentence_rerank_prompt_style=args.sentence_rerank_prompt_style,
     )
 
 
@@ -194,6 +200,7 @@ def cmd_print_config(args: argparse.Namespace) -> int:
     )
     print("run_root", paths.run_root)
     print("retrieval", paths.retrieval_results_jsonl())
+    print("prompt_evidence", paths.prompt_evidence_jsonl())
     print("batch_state", paths.batch_state_json())
     print("answers", paths.generation_answers_jsonl())
     print("metrics", paths.run_root / "metrics.json")
@@ -238,6 +245,26 @@ def main() -> int:
         type=int,
         default=32,
         help="Mini-batch size for learned-router query embeddings + features.",
+    )
+    p_prep.add_argument(
+        "--sentence-rerank",
+        action="store_true",
+        default=False,
+        help="After chunk reranking, split into sentences and cross-encoder rerank for the prompt.",
+    )
+    p_prep.add_argument("--sentence-rerank-top-k", type=int, default=20)
+    p_prep.add_argument("--sentence-rerank-max-sentences", type=int, default=48)
+    p_prep.add_argument("--sentence-rerank-max-words", type=int, default=1280)
+    p_prep.add_argument(
+        "--sentence-rerank-include-title",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Include corpus title in sentence evidence attributes when available.",
+    )
+    p_prep.add_argument(
+        "--sentence-rerank-prompt-style",
+        default="structured",
+        help='How to format sentence evidence: "structured" (XML shortlist) or "inline".',
     )
     p_prep.set_defaults(func=cmd_prepare)
 

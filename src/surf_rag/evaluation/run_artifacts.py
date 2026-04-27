@@ -60,6 +60,10 @@ class RunArtifactPaths:
     def retrieval_results_jsonl(self) -> Path:
         return self.retrieval_dir / "retrieval_results.jsonl"
 
+    def prompt_evidence_jsonl(self) -> Path:
+        """Sentence-ranked (or other) prompt evidence used for generation; not for retrieval metrics."""
+        return self.retrieval_dir / "prompt_evidence.jsonl"
+
     def batch_input_jsonl(self) -> Path:
         return self.batch_dir / "batch_input.jsonl"
 

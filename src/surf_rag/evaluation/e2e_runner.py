@@ -45,7 +45,8 @@ from surf_rag.generation.batch_orchestrator import (
     finalize_batch_submission,
 )
 from surf_rag.generation.prompt_renderer import PromptRenderer
-from surf_rag.reranking.reranker import build_reranker
+from surf_rag.reranking.reranker import DEFAULT_CROSS_ENCODER_MODEL, build_reranker
+from surf_rag.reranking.sentence_reranker import apply_sentence_rerank
 from surf_rag.retrieval.routed import RoutedFusionPipeline
 from surf_rag.retrieval.types import RetrievalResult
 from surf_rag.router.inference_inputs import (
@@ -203,6 +204,12 @@ def e2e_prepare_and_submit(
     router_input_mode: str = "both",
     router_inference_batch_size: int = 32,
     pipeline_config_for_artifact: Optional["PipelineConfig"] = None,
+    sentence_rerank: bool = False,
+    sentence_rerank_top_k: int = 20,
+    sentence_rerank_max_sentences: int = 48,
+    sentence_rerank_max_words: int = 1280,
+    sentence_rerank_include_title: bool = True,
+    sentence_rerank_prompt_style: str = "structured",
 ) -> int:
     """Routed fusion retrieval + optional rerank + OpenAI batch submission."""
     policy = (
@@ -259,6 +266,7 @@ def e2e_prepare_and_submit(
     renderer = PromptRenderer(
         base_prompt=base_prompt,
         include_graph_provenance=include_graph_provenance,
+        sentence_rerank_prompt_style=sentence_rerank_prompt_style,
     )
 
     logger.info("Building dense + graph retrievers from %s", asset_dir)
@@ -284,8 +292,12 @@ def e2e_prepare_and_submit(
         fusion_keep_k=fusion_keep_k,
         router=loaded_router,
     )
+    resolved_ce_model = (
+        cross_encoder_model
+        or os.getenv("CROSS_ENCODER_MODEL")
+        or DEFAULT_CROSS_ENCODER_MODEL
+    )
     reranker = build_reranker(reranker_kind, cross_encoder_model=cross_encoder_model)
-
     write_manifest(
         paths,
         run_id=run_id,
@@ -300,6 +312,9 @@ def e2e_prepare_and_submit(
             "retrieval_results": str(
                 paths.retrieval_results_jsonl().relative_to(run_root)
             ),
+            "prompt_evidence": str(
+                paths.prompt_evidence_jsonl().relative_to(run_root)
+            ),
             "batch_input": str(paths.batch_input_jsonl().relative_to(run_root)),
             "batch_state": str(paths.batch_state_json().relative_to(run_root)),
             "generation_answers": str(
@@ -312,8 +327,15 @@ def e2e_prepare_and_submit(
                 "benchmark_id": benchmark_id,
                 "routing_policy": policy.value,
                 "fusion_keep_k": fusion_keep_k,
+                "retrieval_metrics_stage": "post_fusion",
                 "reranker": reranker_kind,
                 "rerank_top_k": rerank_top_k,
+                "sentence_rerank": sentence_rerank,
+                "sentence_rerank_top_k": sentence_rerank_top_k,
+                "sentence_rerank_max_sentences": sentence_rerank_max_sentences,
+                "sentence_rerank_max_words": sentence_rerank_max_words,
+                "sentence_rerank_include_title": sentence_rerank_include_title,
+                "sentence_rerank_prompt_style": sentence_rerank_prompt_style,
                 "router_id": router_id,
                 "router_input_mode": router_input_mode,
                 "router_inference_batch_size": router_inference_batch_size,
@@ -362,6 +384,7 @@ def e2e_prepare_and_submit(
                 tensor_by_qid[qid] = (qe[j : j + 1], qf[j : j + 1])
 
     retrieval_fp = paths.retrieval_results_jsonl().open("a", encoding="utf-8")
+    evidence_fp = paths.prompt_evidence_jsonl().open("a", encoding="utf-8")
     skipped = 0
     try:
         for sample in samples:
@@ -377,20 +400,35 @@ def e2e_prepare_and_submit(
             if router_ctx is not None:
                 q_emb, feat = tensor_by_qid[qid]
 
-            rr = pipeline.run(
+            fusion_rr = pipeline.run(
                 question,
                 policy,
                 query_embedding=q_emb,
                 feature_vector=feat,
             )
-            rr = reranker.rerank(question, rr, top_k=rerank_top_k)
+            # Retrieval metrics: post-fusion only (before chunk or sentence rerank)
+            write_retrieval_line(retrieval_fp, fusion_rr, qid)
 
-            write_retrieval_line(retrieval_fp, rr, qid)
+            chunk_rr = reranker.rerank(question, fusion_rr, top_k=rerank_top_k)
+            if sentence_rerank and chunk_rr.status == "OK" and chunk_rr.chunks:
+                gen_rr = apply_sentence_rerank(
+                    question,
+                    chunk_rr,
+                    cross_encoder_model=resolved_ce_model,
+                    top_k=sentence_rerank_top_k,
+                    max_sentences=sentence_rerank_max_sentences,
+                    max_words=sentence_rerank_max_words,
+                    include_title_attr=sentence_rerank_include_title,
+                )
+            else:
+                gen_rr = chunk_rr
+            # Exact evidence passed to the generator (chunk- or sentence-ranked)
+            write_retrieval_line(evidence_fp, gen_rr, qid)
 
             custom_id = make_generation_custom_id(
                 run_id, benchmark_name, split, pipeline_name, qid
             )
-            messages = renderer.to_messages(question, rr)
+            messages = renderer.to_messages(question, gen_rr)
             body = build_completion_body(
                 messages,
                 model_id=model_id,
@@ -402,6 +440,7 @@ def e2e_prepare_and_submit(
                 progress.update(1)
     finally:
         retrieval_fp.close()
+        evidence_fp.close()
         if progress is not None:
             progress.close()
 

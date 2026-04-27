@@ -23,6 +23,7 @@ def _cfg() -> PipelineConfig:
     return load_pipeline_config(
         Path(__file__).resolve().parents[1]
         / "configs"
+        / "dev"
         / "examples"
         / "surf-bench-200-pipeline.yaml"
     )

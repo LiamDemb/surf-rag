@@ -363,16 +363,27 @@ class GraphRetriever(BranchRetriever):
                     f"Path: {self._format_path(b.path)}" for b, _ in bundles[:3]
                 ]
                 score = bundles[0][1]
+                meta: Dict[str, Any] = {
+                    "branch": "graph",
+                    "graph_path_lines": path_lines,
+                }
+                gt = getattr(self.corpus, "get_title", None)
+                if callable(gt):
+                    t = gt(cid)
+                    if t:
+                        meta["title"] = str(t)
+                gs = getattr(self.corpus, "get_source", None)
+                if callable(gs):
+                    s = gs(cid)
+                    if s:
+                        meta["source"] = str(s)
                 chunks.append(
                     RetrievedChunk(
                         chunk_id=cid,
                         text=text,
                         score=float(score),
                         rank=0,
-                        metadata={
-                            "branch": "graph",
-                            "graph_path_lines": path_lines,
-                        },
+                        metadata=meta,
                     )
                 )
 

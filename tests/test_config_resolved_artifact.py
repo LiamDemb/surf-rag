@@ -17,7 +17,7 @@ from surf_rag.router.policies import RoutingPolicyName
 def test_write_resolved_config_yaml_roundtrip(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[1]
     cfg = load_pipeline_config(
-        root / "configs" / "examples" / "surf-bench-200-pipeline.yaml"
+        root / "configs" / "dev" / "examples" / "surf-bench-200-pipeline.yaml"
     )
     rp = resolve_paths(cfg)
     out = tmp_path / "resolved_config.yaml"
@@ -32,7 +32,7 @@ def test_manifest_accepts_resolved_config_artifact(tmp_path: Path) -> None:
     """update_manifest_artifacts links resolved_config relative to run root."""
     root = Path(__file__).resolve().parents[1]
     cfg = load_pipeline_config(
-        root / "configs" / "examples" / "surf-bench-200-pipeline.yaml"
+        root / "configs" / "dev" / "examples" / "surf-bench-200-pipeline.yaml"
     )
     rp = resolve_paths(cfg)
     paths = make_e2e_run_paths(

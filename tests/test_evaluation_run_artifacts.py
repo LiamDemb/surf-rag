@@ -47,6 +47,9 @@ def test_run_artifact_paths_resolves_relative_root(tmp_path):
     assert p.retrieval_results_jsonl().relative_to(p.run_root).as_posix() == (
         "retrieval/retrieval_results.jsonl"
     )
+    assert p.prompt_evidence_jsonl().relative_to(p.run_root).as_posix() == (
+        "retrieval/prompt_evidence.jsonl"
+    )
 
 
 def test_default_evaluation_base_is_relative():
