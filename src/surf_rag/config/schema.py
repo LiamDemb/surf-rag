@@ -71,8 +71,8 @@ class EntityMatchingSection:
 
 @dataclass
 class OracleSection:
-    branch_top_k: int = 25
-    fusion_keep_k: int = 25
+    branch_top_k: int = 20
+    fusion_keep_k: int = 20
     betas: list[float] = field(
         default_factory=lambda: [0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
     )
@@ -144,10 +144,29 @@ class E2ESection:
             "learned-hard",
         ]
     )
-    fusion_keep_k: int = 25
+    branch_top_k: int = 20
+    fusion_keep_k: int = 20
     reranker: str = "none"
-    rerank_top_k: int = 10
+    rerank_top_k: int = 5
     cross_encoder_model: str | None = None
+    sentence_window_radius: int = 1
+    sentence_window_max_windows: int = 12
+    sentence_window_min_windows: int = 8
+    sentence_window_max_words: int = 1280
+    sentence_window_max_subwindow_words: int = 180
+    sentence_window_min_top_chunk_coverage: int = 3
+    sentence_window_min_distinct_parent_chunks: int = 4
+    sentence_window_max_per_chunk: int = 2
+    sentence_window_iou_select_threshold: float = 0.35
+    sentence_window_premerge_iou: float = 0.35
+    sentence_window_premerge_max_gap_chars: int = 48
+    sentence_window_ce_relax_margin: float = 3.0
+    sentence_window_ce_filler_top_ranks: int = 3
+    sentence_window_filler_title_overlap: bool = True
+    sentence_window_filler_novel_parent_max_rank: int = 10
+    sentence_window_merge_overlaps: bool = True
+    sentence_window_duplicate_filter: bool = True
+    sentence_window_include_title: bool = True
     router_device: str = "cpu"
     router_input_mode: str = "both"
     router_inference_batch_size: int = 32

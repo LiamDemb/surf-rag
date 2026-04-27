@@ -10,3 +10,7 @@ def test_argv_provides_detects_flag() -> None:
         ["prog", "prepare", "--run-id", "x", "--config", "a.yaml"], "--run-id"
     )
     assert not argv_provides(["prog", "prepare", "--config", "a.yaml"], "--run-id")
+
+
+def test_argv_provides_none_is_safe() -> None:
+    assert not argv_provides(None, "--run-id")

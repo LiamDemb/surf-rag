@@ -69,6 +69,16 @@ def test_e2e_fusion_keep_inherits_oracle_when_unset() -> None:
     assert cfg.e2e.fusion_keep_k == 42
 
 
+def test_e2e_branch_top_k_inherits_oracle_when_unset() -> None:
+    cfg = pipeline_config_from_dict(
+        {
+            "oracle": {"branch_top_k": 15},
+            "e2e": {"policy": "dense-only"},
+        }
+    )
+    assert cfg.e2e.branch_top_k == 15
+
+
 def test_validate_e2e_learned_requires_router_id() -> None:
     cfg = pipeline_config_from_dict(
         {
