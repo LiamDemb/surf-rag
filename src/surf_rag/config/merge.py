@@ -303,54 +303,6 @@ def merge_e2e_prepare_args(
         args.rerank_top_k = e.rerank_top_k
     if not argv_provides(argv, "--cross-encoder-model") and e.cross_encoder_model:
         args.cross_encoder_model = e.cross_encoder_model
-    if not argv_provides(argv, "--sentence-window-radius"):
-        args.sentence_window_radius = e.sentence_window_radius
-    if not argv_provides(argv, "--sentence-window-max-windows"):
-        args.sentence_window_max_windows = e.sentence_window_max_windows
-    if not argv_provides(argv, "--sentence-window-min-windows"):
-        args.sentence_window_min_windows = e.sentence_window_min_windows
-    if not argv_provides(argv, "--sentence-window-max-words"):
-        args.sentence_window_max_words = e.sentence_window_max_words
-    if not argv_provides(argv, "--sentence-window-max-subwindow-words"):
-        args.sentence_window_max_subwindow_words = e.sentence_window_max_subwindow_words
-    if not argv_provides(argv, "--sentence-window-iou-select-threshold"):
-        args.sentence_window_iou_select_threshold = (
-            e.sentence_window_iou_select_threshold
-        )
-    if not argv_provides(argv, "--sentence-window-premerge-iou"):
-        args.sentence_window_premerge_iou = e.sentence_window_premerge_iou
-    if not argv_provides(argv, "--sentence-window-premerge-max-gap-chars"):
-        args.sentence_window_premerge_max_gap_chars = (
-            e.sentence_window_premerge_max_gap_chars
-        )
-    if not argv_provides(argv, "--sentence-window-ce-relax-margin"):
-        args.sentence_window_ce_relax_margin = e.sentence_window_ce_relax_margin
-    if not argv_provides(argv, "--sentence-window-ce-filler-top-ranks"):
-        args.sentence_window_ce_filler_top_ranks = e.sentence_window_ce_filler_top_ranks
-    if not argv_provides(argv, "--sentence-window-filler-title-overlap"):
-        args.sentence_window_filler_title_overlap = (
-            e.sentence_window_filler_title_overlap
-        )
-    if not argv_provides(argv, "--sentence-window-filler-novel-parent-max-rank"):
-        args.sentence_window_filler_novel_parent_max_rank = (
-            e.sentence_window_filler_novel_parent_max_rank
-        )
-    if not argv_provides(argv, "--sentence-window-min-top-chunk-coverage"):
-        args.sentence_window_min_top_chunk_coverage = (
-            e.sentence_window_min_top_chunk_coverage
-        )
-    if not argv_provides(argv, "--sentence-window-min-distinct-parent-chunks"):
-        args.sentence_window_min_distinct_parent_chunks = (
-            e.sentence_window_min_distinct_parent_chunks
-        )
-    if not argv_provides(argv, "--sentence-window-max-per-chunk"):
-        args.sentence_window_max_per_chunk = e.sentence_window_max_per_chunk
-    if not argv_provides(argv, "--sentence-window-merge-overlaps"):
-        args.sentence_window_merge_overlaps = e.sentence_window_merge_overlaps
-    if not argv_provides(argv, "--sentence-window-duplicate-filter"):
-        args.sentence_window_duplicate_filter = e.sentence_window_duplicate_filter
-    if not argv_provides(argv, "--sentence-window-include-title"):
-        args.sentence_window_include_title = e.sentence_window_include_title
     if e.limit is not None and not argv_provides(argv, "--limit"):
         args.limit = e.limit
     if not argv_provides(argv, "--completion-window") and e.completion_window:
