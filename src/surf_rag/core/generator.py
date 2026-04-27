@@ -91,6 +91,8 @@ class OpenAIChatGenerator:
             sampling={
                 "temperature": self.temperature,
                 "max_tokens": self.max_tokens,
+                "candidate_answer_span": parsed.candidate_answer_span,
+                "support_quote": parsed.support_quote,
                 "reasoning": parsed.reasoning,
                 "generation_output_format": parsed.generation_output_format,
                 "generation_parse_error": parsed.generation_parse_error,

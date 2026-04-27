@@ -10,21 +10,29 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 logger = logging.getLogger(__name__)
 
 FORMAT_ANSWER_FUNCTION_NAME = "format_answer"
-GENERATION_OUTPUT_FORMAT = "format_answer_v1"
+GENERATION_OUTPUT_FORMAT = "format_answer_v2"
 
-# Single forced function; reasoning + final short answer for metrics.
+# Single forced function; grounded evidence fields + final short answer for metrics.
 FORMAT_ANSWER_TOOL: Dict[str, Any] = {
     "type": "function",
     "function": {
         "name": FORMAT_ANSWER_FUNCTION_NAME,
         "description": (
-            "Return a concise evidence-based rationale and the final short answer. "
+            "Return grounded evidence fields, concise rationale, and the final short answer. "
             "The answer must be short and suitable for exact-match evaluation."
         ),
         "strict": True,
         "parameters": {
             "type": "object",
             "properties": {
+                "candidate_answer_span": {
+                    "type": "string",
+                    "description": "Best candidate answer phrase copied from context.",
+                },
+                "support_quote": {
+                    "type": "string",
+                    "description": "Shortest direct quote from context supporting the answer.",
+                },
                 "reasoning": {
                     "type": "string",
                     "description": "Brief rationale grounded in the provided context only.",
@@ -35,7 +43,12 @@ FORMAT_ANSWER_TOOL: Dict[str, Any] = {
                     "suffices.",
                 },
             },
-            "required": ["reasoning", "answer"],
+            "required": [
+                "candidate_answer_span",
+                "support_quote",
+                "reasoning",
+                "answer",
+            ],
             "additionalProperties": False,
         },
     },
@@ -54,6 +67,8 @@ class GenerationParseResult:
     custom_id: str
     answer: str
     reasoning: str
+    candidate_answer_span: str = ""
+    support_quote: str = ""
     generation_output_format: str = GENERATION_OUTPUT_FORMAT
     generation_parse_error: Optional[str] = None
 
@@ -73,11 +88,15 @@ class GenerationParseResult:
         *,
         answer: str = "",
         reasoning: str = "",
+        candidate_answer_span: str = "",
+        support_quote: str = "",
     ) -> "GenerationParseResult":
         return cls(
             custom_id=custom_id,
             answer=answer,
             reasoning=reasoning,
+            candidate_answer_span=candidate_answer_span,
+            support_quote=support_quote,
             generation_output_format=GENERATION_OUTPUT_FORMAT,
             generation_parse_error=err,
         )
@@ -102,26 +121,56 @@ def _find_format_answer_tool_call(
 
 def _parse_arguments_json(
     args_str: Optional[Union[str, Any]],
-) -> Tuple[str, str, Optional[str]]:
-    """Returns (answer, reasoning, parse_error or None)."""
+) -> Tuple[str, str, str, str, Optional[str]]:
+    """Returns (answer, reasoning, candidate_answer_span, support_quote, parse_error)."""
     if args_str is None:
-        return ("", "", "missing function arguments")
+        return ("", "", "", "", "missing function arguments")
     s = str(args_str).strip() if not isinstance(args_str, str) else args_str.strip()
     if not s:
         s = "{}"
     try:
         data = json.loads(s)
     except json.JSONDecodeError as e:
-        return ("", "", f"invalid tool arguments JSON: {e}")
+        return ("", "", "", "", f"invalid tool arguments JSON: {e}")
     if not isinstance(data, dict):
-        return ("", "", "tool arguments must be a JSON object")
+        return ("", "", "", "", "tool arguments must be a JSON object")
     reasoning = str(data.get("reasoning", "") or "").strip()
     answer = str(data.get("answer", "") or "").strip()
+    candidate_answer_span = str(data.get("candidate_answer_span", "") or "").strip()
+    support_quote = str(data.get("support_quote", "") or "").strip()
     if "answer" not in data:
-        return ("", reasoning, "missing required field: answer")
+        return (
+            "",
+            reasoning,
+            candidate_answer_span,
+            support_quote,
+            "missing required field: answer",
+        )
     if "reasoning" not in data:
-        return (answer, "", "missing required field: reasoning")
-    return (answer, reasoning, None)
+        return (
+            answer,
+            "",
+            candidate_answer_span,
+            support_quote,
+            "missing required field: reasoning",
+        )
+    if "candidate_answer_span" not in data:
+        return (
+            answer,
+            reasoning,
+            "",
+            support_quote,
+            "missing required field: candidate_answer_span",
+        )
+    if "support_quote" not in data:
+        return (
+            answer,
+            reasoning,
+            candidate_answer_span,
+            "",
+            "missing required field: support_quote",
+        )
+    return (answer, reasoning, candidate_answer_span, support_quote, None)
 
 
 def parse_message_for_format_answer(
@@ -137,15 +186,24 @@ def parse_message_for_format_answer(
             custom_id, "no format_answer tool call in response"
         )
     args_str = fn.get("arguments")
-    answer, reasoning, err = _parse_arguments_json(args_str)
+    answer, reasoning, candidate_answer_span, support_quote, err = _parse_arguments_json(
+        args_str
+    )
     if err:
         return GenerationParseResult.error(
-            custom_id, err, answer=answer, reasoning=reasoning
+            custom_id,
+            err,
+            answer=answer,
+            reasoning=reasoning,
+            candidate_answer_span=candidate_answer_span,
+            support_quote=support_quote,
         )
     return GenerationParseResult(
         custom_id=custom_id,
         answer=answer,
         reasoning=reasoning,
+        candidate_answer_span=candidate_answer_span,
+        support_quote=support_quote,
     )
 
 

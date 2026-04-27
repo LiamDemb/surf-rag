@@ -12,7 +12,10 @@ from surf_rag.core.generator import OpenAIChatGenerator
 
 class _FakeFunction:
     name = "format_answer"
-    arguments = '{"reasoning": "ctx says Paris", "answer": "Paris"}'
+    arguments = (
+        '{"candidate_answer_span": "Paris", "support_quote": "born in Paris", '
+        '"reasoning": "ctx says Paris", "answer": "Paris"}'
+    )
 
 
 class _FakeToolCall:
@@ -36,7 +39,9 @@ class _FakeMessage:
                     "function": {
                         "name": "format_answer",
                         "arguments": (
-                            '{"reasoning": "ctx says Paris", "answer": "Paris"}'
+                            '{"candidate_answer_span": "Paris", '
+                            '"support_quote": "born in Paris", '
+                            '"reasoning": "ctx says Paris", "answer": "Paris"}'
                         ),
                     },
                 }
@@ -68,6 +73,8 @@ def test_openai_chat_generator_uses_format_answer_tool(mock_openai):
     )
 
     assert out.text == "Paris"
+    assert out.sampling.get("candidate_answer_span") == "Paris"
+    assert out.sampling.get("support_quote") == "born in Paris"
     assert out.sampling.get("reasoning") == "ctx says Paris"
     assert out.sampling.get("generation_parse_error") is None
 

@@ -17,7 +17,10 @@ def _batch_line(
     custom_id: str = "run::b::test::dense::q1",
     status_code: int = 200,
     tool_name: str = FORMAT_ANSWER_FUNCTION_NAME,
-    arguments: str | None = '{"reasoning": "r1", "answer": "a1"}',
+    arguments: str | None = (
+        '{"candidate_answer_span": "a1", "support_quote": "quote a1", '
+        '"reasoning": "r1", "answer": "a1"}'
+    ),
     content: str = "ignored free text",
     error: object | None = None,
     choices: list | None = None,
@@ -52,6 +55,8 @@ def test_parse_valid_tool_call():
     assert r.custom_id == "run::b::test::dense::q1"
     assert r.answer == "a1"
     assert r.reasoning == "r1"
+    assert r.candidate_answer_span == "a1"
+    assert r.support_quote == "quote a1"
     assert r.generation_output_format == GENERATION_OUTPUT_FORMAT
     assert r.generation_parse_error is None
 
@@ -101,9 +106,33 @@ def test_parse_invalid_json_arguments():
 
 
 def test_parse_missing_answer_key():
-    line = _batch_line(arguments=json.dumps({"reasoning": "only"}))
+    line = _batch_line(
+        arguments=json.dumps(
+            {
+                "candidate_answer_span": "x",
+                "support_quote": "x",
+                "reasoning": "only",
+            }
+        )
+    )
     r = parse_generation_output_line(line)
     assert "answer" in (r.generation_parse_error or "").lower()
+
+
+def test_parse_missing_candidate_answer_span_key():
+    line = _batch_line(arguments=json.dumps({"support_quote": "x", "reasoning": "r", "answer": "a"}))
+    r = parse_generation_output_line(line)
+    assert "candidate_answer_span" in (r.generation_parse_error or "").lower()
+
+
+def test_parse_missing_support_quote_key():
+    line = _batch_line(
+        arguments=json.dumps(
+            {"candidate_answer_span": "x", "reasoning": "r", "answer": "a"}
+        )
+    )
+    r = parse_generation_output_line(line)
+    assert "support_quote" in (r.generation_parse_error or "").lower()
 
 
 def test_parse_message_direct():
@@ -112,13 +141,18 @@ def test_parse_message_direct():
             {
                 "function": {
                     "name": FORMAT_ANSWER_FUNCTION_NAME,
-                    "arguments": '{"reasoning": "x", "answer": "y"}',
+                    "arguments": (
+                        '{"candidate_answer_span": "y", "support_quote": "quote y", '
+                        '"reasoning": "x", "answer": "y"}'
+                    ),
                 }
             }
         ]
     }
     r = parse_message_for_format_answer(msg, custom_id="cid")
     assert r.answer == "y" and r.reasoning == "x" and r.custom_id == "cid"
+    assert r.candidate_answer_span == "y"
+    assert r.support_quote == "quote y"
 
 
 @pytest.mark.parametrize("empty", [None, {}, ""])
