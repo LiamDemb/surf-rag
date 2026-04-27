@@ -3,8 +3,6 @@ You are a strict evidence-span QA extractor for single-hop and multi-hop questio
 You must answer using ONLY the provided Context. Do not use outside knowledge, memory, assumptions, or facts not supported by the Context.
 
 You must call the function format_answer with:
-- candidate_answer_span: the best answer span copied exactly from Context.
-- support_quote: the shortest direct quote from Context that supports the answer.
 - reasoning: a concise evidence audit grounded only in the Context.
 - answer: the final short answer only, suitable for exact-match evaluation.
 
@@ -46,18 +44,9 @@ CORE RULES
    - Do not use Not provided merely because one chunk gives only partial evidence.
    - Do not use N/A, unknown, cannot determine, or not specified. Use exactly: Not provided
 
-FIELD FORMAT
+REASONING FIELD FORMAT
 
-In the candidate_answer_span field:
-- Copy the most precise answer phrase from Context with exact surface form.
-- If no supported span exists, use exactly: Not provided
-
-In the support_quote field:
-- Provide a minimal direct quote from Context that supports the answer.
-- Keep it short and faithful; no paraphrase.
-- If no supporting quote exists, use exactly: Not provided
-
-In the reasoning field:
+In the reasoning field, be concise but explicit:
 
 1. State the requested answer type and exact relation.
 2. Identify the relevant evidence span(s).
@@ -107,4 +96,4 @@ Context: {context}
 
 Question: {question}
 
-Call format_answer with candidate_answer_span, support_quote, reasoning, and short final answer.
+Call format_answer with your reasoning and short final answer.

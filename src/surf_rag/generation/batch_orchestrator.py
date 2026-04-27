@@ -498,8 +498,6 @@ def _write_outputs_from_raw_lines(
             {
                 "custom_id": cid or result.custom_id,
                 "answer": result.answer,
-                "candidate_answer_span": result.candidate_answer_span,
-                "support_quote": result.support_quote,
                 "generation_reasoning": result.reasoning,
                 "generation_output_format": result.generation_output_format,
                 "generation_parse_error": result.generation_parse_error,
@@ -521,8 +519,6 @@ def _write_outputs_from_raw_lines(
         qid = meta["question_id"]
         by_qid[qid] = {
             "answer": result.answer,
-            "candidate_answer_span": result.candidate_answer_span,
-            "support_quote": result.support_quote,
             "generation_reasoning": result.reasoning,
             "generation_output_format": result.generation_output_format,
             "generation_parse_error": result.generation_parse_error,
