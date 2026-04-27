@@ -46,7 +46,7 @@ from surf_rag.reranking.reranker import build_reranker
 from surf_rag.retrieval.routed import RoutedFusionPipeline
 from surf_rag.retrieval.types import RetrievalResult
 from surf_rag.router.inference_inputs import (
-    compute_query_tensors_for_router,
+    compute_query_tensors_for_router_batch,
     load_router_inference_context,
 )
 from surf_rag.router.policies import RoutingPolicyName
@@ -198,6 +198,7 @@ def e2e_prepare_and_submit(
     dry_run: bool = False,
     router_device: str = "cpu",
     router_input_mode: str = "both",
+    router_inference_batch_size: int = 32,
 ) -> int:
     """Routed fusion retrieval + optional rerank + OpenAI batch submission."""
     policy = (
@@ -311,6 +312,7 @@ def e2e_prepare_and_submit(
                 "rerank_top_k": rerank_top_k,
                 "router_id": router_id,
                 "router_input_mode": router_input_mode,
+                "router_inference_batch_size": router_inference_batch_size,
             },
         },
     )
@@ -328,6 +330,19 @@ def e2e_prepare_and_submit(
         else None
     )
 
+    tensor_by_qid: dict[str, tuple] = {}
+    if router_ctx is not None and pending:
+        bs = max(1, int(router_inference_batch_size))
+        for i in range(0, len(pending), bs):
+            chunk = pending[i : i + bs]
+            qs = [str(s.get("question", "") or "").strip() for s in chunk]
+            qe, qf = compute_query_tensors_for_router_batch(
+                qs, router_ctx, st_batch_size=bs
+            )
+            for j, s in enumerate(chunk):
+                qid = str(s.get("question_id", "") or "").strip()
+                tensor_by_qid[qid] = (qe[j : j + 1], qf[j : j + 1])
+
     retrieval_fp = paths.retrieval_results_jsonl().open("a", encoding="utf-8")
     skipped = 0
     try:
@@ -342,7 +357,7 @@ def e2e_prepare_and_submit(
 
             q_emb = feat = None
             if router_ctx is not None:
-                q_emb, feat = compute_query_tensors_for_router(question, router_ctx)
+                q_emb, feat = tensor_by_qid[qid]
 
             rr = pipeline.run(
                 question,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List, Sequence
+from typing import Callable, List, Optional, Sequence
 
 import numpy as np
 
@@ -14,12 +14,23 @@ def embed_queries(
     *,
     model_name: str,
     batch_size: int = 32,
+    embedder: Optional[SentenceTransformersEmbedder] = None,
+    embedder_factory: Optional[Callable[[], SentenceTransformersEmbedder]] = None,
 ) -> np.ndarray:
-    """Return float32 array ``(len(questions), dim)``, L2-normalized per vector."""
-    embedder = SentenceTransformersEmbedder(model_name=model_name)
-    # Batch encode for throughput
+    """Return float32 array ``(len(questions), dim)``, L2-normalized per vector.
+
+    ``embedder_factory`` is invoked only when ``embedder`` is ``None`` (lazy init).
+    Callers should pass ``embedder_factory=ictx.query_embedder`` to reuse a shared
+    embedder without eagerly constructing it when ``embed_queries`` is patched in tests.
+    """
+    if embedder is not None:
+        e = embedder
+    elif embedder_factory is not None:
+        e = embedder_factory()
+    else:
+        e = SentenceTransformersEmbedder(model_name=model_name)
     texts = [str(q or "") for q in questions]
-    model = embedder.model
+    model = e.model
     all_vecs = model.encode(
         texts,
         batch_size=batch_size,

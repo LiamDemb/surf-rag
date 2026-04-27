@@ -8,6 +8,9 @@ import json
 import logging
 import sys
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from surf_rag.evaluation.artifact_paths import (
     default_benchmark_base,
@@ -68,6 +71,7 @@ def cmd_prepare(args: argparse.Namespace) -> int:
         dry_run=args.dry_run,
         router_device=args.router_device,
         router_input_mode=args.router_input_mode,
+        router_inference_batch_size=args.router_inference_batch_size,
     )
 
 
@@ -163,6 +167,12 @@ def main() -> int:
     p_prep.add_argument("--dry-run", action="store_true")
     p_prep.add_argument("--router-device", default="cpu")
     p_prep.add_argument("--router-input-mode", default="both")
+    p_prep.add_argument(
+        "--router-inference-batch-size",
+        type=int,
+        default=32,
+        help="Mini-batch size for learned-router query embeddings + features.",
+    )
     p_prep.set_defaults(func=cmd_prepare)
 
     p_col = sub.add_parser("collect", help="Download batch outputs → answers.jsonl")

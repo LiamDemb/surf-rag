@@ -3,7 +3,8 @@ from dataclasses import dataclass
 from typing import List, Protocol
 
 import numpy as np
-from sentence_transformers import SentenceTransformer
+
+from surf_rag.core.model_cache import get_sentence_transformer
 
 
 class Embedder(Protocol):
@@ -15,7 +16,7 @@ class SentenceTransformersEmbedder:
     model_name: str
 
     def __post_init__(self) -> None:
-        self.model = SentenceTransformer(self.model_name)
+        self.model = get_sentence_transformer(self.model_name)
 
     def embed_query(self, text: str) -> np.ndarray:
         vector = self.model.encode(

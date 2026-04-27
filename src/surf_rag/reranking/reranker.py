@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Literal, Protocol, runtime_checkable
 
+from surf_rag.core.model_cache import get_cross_encoder
 from surf_rag.retrieval.types import RetrievedChunk, RetrievalResult
 
 DEFAULT_CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
@@ -54,9 +55,7 @@ class CrossEncoderReranker:
     """SentenceTransformers cross-encoder scores query-passage pairs."""
 
     def __init__(self, model_name: str = DEFAULT_CROSS_ENCODER_MODEL) -> None:
-        from sentence_transformers import CrossEncoder
-
-        self._model = CrossEncoder(model_name)
+        self._model = get_cross_encoder(model_name)
         self._model_name = model_name
 
     @property

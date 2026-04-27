@@ -200,6 +200,7 @@ def extract_features_v1(
         return {name: 0.0 for name in V1_FEATURE_NAMES}
 
     nlp = _get_nlp(ctx.nlp)
+    ctx.nlp = nlp
     doc = nlp(text)
     content = _content_tokens(doc)
     content_len = max(len(content), 1)

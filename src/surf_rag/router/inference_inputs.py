@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import TYPE_CHECKING, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -30,6 +30,9 @@ from surf_rag.router.query_features import (
     feature_vector_ordered,
 )
 
+if TYPE_CHECKING:
+    from surf_rag.core.embedder import SentenceTransformersEmbedder
+
 
 @dataclass
 class RouterInferenceContext:
@@ -40,6 +43,19 @@ class RouterInferenceContext:
     embedding_model: str
     input_mode: str
     feature_context: Optional[QueryFeatureContext]
+    _query_embedder: Optional["SentenceTransformersEmbedder"] = field(
+        default=None, init=False, repr=False
+    )
+
+    def query_embedder(self) -> "SentenceTransformersEmbedder":
+        """Lazy shared SentenceTransformer wrapper for batched query embeddings."""
+        if self._query_embedder is None:
+            from surf_rag.core.embedder import SentenceTransformersEmbedder
+
+            self._query_embedder = SentenceTransformersEmbedder(
+                model_name=self.embedding_model
+            )
+        return self._query_embedder
 
 
 def _feature_context_for_corpus(corpus_dir: Path) -> QueryFeatureContext:
@@ -101,14 +117,49 @@ def load_router_inference_context(
     )
 
 
-def _dummy_embeddings(router: LoadedRouter) -> np.ndarray:
-    d = int(router.config.embedding_dim)
-    return np.zeros((1, d), dtype=np.float32)
+def compute_query_tensors_for_router_batch(
+    queries: Sequence[str],
+    ictx: RouterInferenceContext,
+    *,
+    st_batch_size: int = 32,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Batched (query_embedding, feature_vector) arrays for ``predict_batch``."""
+    mode = parse_router_input_mode(ictx.input_mode)
+    r = ictx.router
+    texts = [str(q or "").strip() for q in queries]
+    n = len(texts)
 
+    qe: Optional[np.ndarray] = None
+    qf: Optional[np.ndarray] = None
+    if mode in ("both", "embedding"):
+        qe = embed_queries(
+            texts,
+            model_name=ictx.embedding_model,
+            batch_size=st_batch_size,
+            embedder_factory=ictx.query_embedder,
+        )
+    if mode in ("both", "query-features"):
+        ctx = ictx.feature_context
+        rows = [extract_features_v1(t, ctx) for t in texts]
+        qf = np.stack(
+            [
+                np.asarray(
+                    feature_vector_ordered(transform_row(raw, ictx.normalizer)),
+                    dtype=np.float32,
+                )
+                for raw in rows
+            ],
+            axis=0,
+        )
+    if mode == "embedding":
+        fd = int(r.config.feature_dim)
+        qf = np.zeros((n, fd), dtype=np.float32)
+    elif mode == "query-features":
+        ed = int(r.config.embedding_dim)
+        qe = np.zeros((n, ed), dtype=np.float32)
 
-def _dummy_features(router: LoadedRouter) -> np.ndarray:
-    d = int(router.config.feature_dim)
-    return np.zeros((1, d), dtype=np.float32)
+    assert qe is not None and qf is not None
+    return qe, qf
 
 
 def compute_query_tensors_for_router(
@@ -116,22 +167,7 @@ def compute_query_tensors_for_router(
     ictx: RouterInferenceContext,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Return (query_embedding, feature_vector) batches for ``predict_batch``."""
-    mode = parse_router_input_mode(ictx.input_mode)
-    qe: Optional[np.ndarray] = None
-    qf: Optional[np.ndarray] = None
-    if mode in ("both", "embedding"):
-        qe = embed_queries([query], model_name=ictx.embedding_model)
-    if mode in ("both", "query-features"):
-        raw = extract_features_v1(query, ictx.feature_context)
-        norm = transform_row(raw, ictx.normalizer)
-        qf = np.asarray([feature_vector_ordered(norm)], dtype=np.float32)
-    r = ictx.router
-    if mode == "embedding":
-        qf = _dummy_features(r)
-    elif mode == "query-features":
-        qe = _dummy_embeddings(r)
-    assert qe is not None and qf is not None
-    return qe, qf
+    return compute_query_tensors_for_router_batch([query], ictx, st_batch_size=1)
 
 
 def predict_router_distribution(

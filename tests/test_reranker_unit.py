@@ -30,10 +30,12 @@ def test_noop_rerank_truncates() -> None:
     assert out.chunks[0].chunk_id == "b"
 
 
-@patch("sentence_transformers.CrossEncoder")
-def test_cross_encoder_rerank_order(mock_ce: MagicMock) -> None:
+@patch("surf_rag.reranking.reranker.get_cross_encoder")
+def test_cross_encoder_rerank_order(mock_get_ce: MagicMock) -> None:
     # Chunks are score-sorted as [b, a]; pairs follow that order.
-    mock_ce.return_value.predict.return_value = [0.0, 1.0]
+    mock_model = MagicMock()
+    mock_model.predict.return_value = [0.0, 1.0]
+    mock_get_ce.return_value = mock_model
     r = _result()
     ce = CrossEncoderReranker(model_name="dummy-model")
     out = ce.rerank("q", r, top_k=2)

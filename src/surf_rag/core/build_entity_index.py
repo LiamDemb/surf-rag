@@ -12,7 +12,7 @@ from typing import List, Optional
 import faiss
 import numpy as np
 import pandas as pd
-from sentence_transformers import SentenceTransformer
+from surf_rag.core.model_cache import get_sentence_transformer
 
 
 def build_entity_index(
@@ -51,7 +51,7 @@ def build_entity_index(
         pd.DataFrame(meta_rows).to_parquet(output_meta_path, index=False)
         return
 
-    model = SentenceTransformer(model_name)
+    model = get_sentence_transformer(model_name)
     embeddings = model.encode(texts, show_progress_bar=True, normalize_embeddings=True)
     embeddings = np.array(embeddings, dtype="float32")
 
