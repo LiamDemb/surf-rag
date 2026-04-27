@@ -10,6 +10,10 @@ from pathlib import Path
 from typing import Dict, Iterable, List
 
 from dotenv import load_dotenv
+
+from surf_rag.config.env import load_app_env, apply_pipeline_env_from_config
+from surf_rag.config.loader import load_pipeline_config
+from surf_rag.config.merge import merge_ingest_args
 from surf_rag.core.loaders import load_2wiki, load_nq
 from surf_rag.core.schemas import (
     BenchmarkItem,
@@ -86,8 +90,15 @@ def _load_existing_benchmark(path: Path) -> List[BenchmarkItem]:
 
 
 def main() -> int:
+    load_app_env()
     load_dotenv()
     parser = argparse.ArgumentParser(description="Phase 1 ingestion pipeline.")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="YAML pipeline config (see configs/templates/pipeline.yaml)",
+    )
     parser.add_argument(
         "--nq",
         default=os.getenv("NQ_PATH"),
@@ -109,6 +120,10 @@ def main() -> int:
         "--2wiki-version", dest="wiki2_version", default=os.getenv("2WIKI_VERSION")
     )
     args = parser.parse_args()
+    if args.config:
+        cfg = load_pipeline_config(args.config.resolve())
+        apply_pipeline_env_from_config(cfg)
+        merge_ingest_args(args, cfg)
 
     dataset_paths = [
         args.nq,

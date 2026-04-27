@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import List
 
 from surf_rag.core.entity_alias_resolver import EntityAliasResolver
+from surf_rag.entity_matching.artifacts import try_load_precomputed_matcher
 from surf_rag.entity_matching.filters import rank_and_cap, resolve_and_filter
 from surf_rag.entity_matching.matcher import (
     PhraseMatcher,
@@ -15,6 +18,8 @@ from surf_rag.entity_matching.matcher import (
     records_to_matcher,
 )
 from surf_rag.entity_matching.normalization import normalize_for_query_match
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -45,8 +50,17 @@ class LexiconAliasEntityPipeline:
     ) -> "LexiconAliasEntityPipeline":
         odir = str(output_dir)
         resolver = EntityAliasResolver.from_artifacts(output_dir=odir)
-        _, records = build_phrase_records(odir)
-        matcher = records_to_matcher(records)
+        matcher = try_load_precomputed_matcher(Path(odir))
+        if matcher is None:
+            logger.warning(
+                "Building phrase matcher from alias_map + entity_lexicon under %s. "
+                "For faster startup, run: python -m scripts.build_entity_matching_artifacts "
+                "--corpus-dir %s",
+                odir,
+                odir,
+            )
+            _, records = build_phrase_records(odir)
+            matcher = records_to_matcher(records)
         return cls(
             output_dir=odir,
             resolver=resolver,

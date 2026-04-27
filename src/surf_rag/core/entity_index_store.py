@@ -9,7 +9,7 @@ from typing import List, Optional, Tuple
 import faiss
 import numpy as np
 import pandas as pd
-from sentence_transformers import SentenceTransformer
+from surf_rag.core.model_cache import get_sentence_transformer
 
 
 class EntityIndexStore:
@@ -38,7 +38,7 @@ class EntityIndexStore:
         if self._meta_df is None:
             self._meta_df = pd.read_parquet(self.meta_path)
         if self._model is None:
-            self._model = SentenceTransformer(self.model_name)
+            self._model = get_sentence_transformer(self.model_name)
 
     def search(
         self,

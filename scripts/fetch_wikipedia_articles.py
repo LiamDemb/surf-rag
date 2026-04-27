@@ -10,6 +10,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+from surf_rag.config.env import load_app_env, apply_pipeline_env_from_config
+from surf_rag.config.loader import load_pipeline_config
+from surf_rag.config.merge import merge_fetch_wikipedia_args
 from tqdm.auto import tqdm
 
 from surf_rag.core.benchmark_samples import (
@@ -30,12 +34,19 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> int:
+    load_app_env()
     load_dotenv()
     parser = argparse.ArgumentParser(
         description=(
             "Fetch Wikipedia HTML for benchmark questions into DocStore (idempotent; "
             "cached titles are skipped)."
         )
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="YAML pipeline config (see configs/templates/pipeline.yaml)",
     )
     parser.add_argument("--benchmark", default=os.getenv("BENCHMARK_PATH"))
     parser.add_argument("--nq", default=os.getenv("NQ_PATH"))
@@ -53,6 +64,10 @@ def main() -> int:
         help="Optional path for fetch summary JSON (default: output-dir/wikipedia_fetch_summary.json).",
     )
     args = parser.parse_args()
+    if args.config:
+        cfg = load_pipeline_config(args.config.resolve())
+        apply_pipeline_env_from_config(cfg)
+        merge_fetch_wikipedia_args(args, cfg)
 
     if not args.benchmark or not str(args.benchmark).strip():
         raise ValueError("BENCHMARK_PATH is required (--benchmark or env).")

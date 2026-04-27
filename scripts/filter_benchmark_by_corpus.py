@@ -10,6 +10,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from surf_rag.config.env import load_app_env, apply_pipeline_env_from_config
+from surf_rag.config.loader import load_pipeline_config
+from surf_rag.config.merge import merge_filter_benchmark_args
+
 from surf_rag.benchmark.corpus_filter import (
     filter_benchmark_rows,
     iter_jsonl,
@@ -27,11 +31,18 @@ def _default_backup_path(benchmark_path: Path) -> Path:
 
 
 def main() -> int:
+    load_app_env()
     load_dotenv()
     parser = argparse.ArgumentParser(
         description=(
             "Filter benchmark.jsonl by checking gold_support_sentences against corpus.jsonl."
         )
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="YAML pipeline config (see configs/templates/pipeline.yaml)",
     )
     parser.add_argument(
         "--benchmark",
@@ -49,6 +60,10 @@ def main() -> int:
         help="Optional explicit backup output path for the original benchmark.",
     )
     args = parser.parse_args()
+    if args.config:
+        cfg = load_pipeline_config(args.config.resolve())
+        apply_pipeline_env_from_config(cfg)
+        merge_filter_benchmark_args(args, cfg)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     benchmark_path = Path(args.benchmark)

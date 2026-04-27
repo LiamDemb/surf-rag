@@ -8,6 +8,15 @@ from pathlib import Path
 from typing import Dict, Optional
 
 
+def as_resolved_path(path: Path) -> Path:
+    """Expand ``~`` and resolve to an absolute path (CWD-anchored if relative).
+
+    Use for every ``run_root`` so ``Path.relative_to`` and manifest paths behave
+    consistently regardless of whether callers passed relative or absolute paths.
+    """
+    return path.expanduser().resolve()
+
+
 def default_evaluation_base() -> Path:
     return Path(os.getenv("EVALUATION_BASE", "data/evaluation"))
 
@@ -28,6 +37,9 @@ class RunArtifactPaths:
     """Standard subpaths for retrieval, batch, and generation stages."""
 
     run_root: Path
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "run_root", as_resolved_path(self.run_root))
 
     @property
     def manifest(self) -> Path:

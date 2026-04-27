@@ -24,6 +24,10 @@ def test_build_completion_body_from_messages_roundtrip():
     assert body["model"] == "gpt-4o-mini"
     assert body["messages"] == messages
     assert body["temperature"] == 0.0
+    assert body["max_tokens"] == 128
+    assert body["parallel_tool_calls"] is False
+    assert body["tool_choice"]["function"]["name"] == "format_answer"
+    assert body["tools"][0]["function"]["name"] == "format_answer"
 
 
 def test_build_batch_line_shape():

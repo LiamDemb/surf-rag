@@ -8,6 +8,7 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.12,<3.15,!=3.14.1"
 dependencies = [
+    "torch (>=2.2.0,<3.0.0)",
     "sentence-transformers (>=5.4.1,<6.0.0)",
     "faiss-cpu (>=1.13.2,<2.0.0)",
     "networkx (>=3.6.1,<4.0.0)",
@@ -22,7 +23,8 @@ dependencies = [
     "flashtext (>=2.7,<3.0)",
     "pyarrow (>=23.0.1,<24.0.0)",
     "fastparquet (>=2026.3.0,<2027.0.0)",
-    "pytest (>=9.0.3,<10.0.0)"
+    "pytest (>=9.0.3,<10.0.0)",
+    "pyyaml (>=6.0.2,<7.0.0)"
 ]
 
 [tool.poetry]

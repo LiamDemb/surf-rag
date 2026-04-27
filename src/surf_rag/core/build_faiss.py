@@ -5,7 +5,7 @@ from typing import Iterable, List
 import faiss
 import numpy as np
 import pandas as pd
-from sentence_transformers import SentenceTransformer
+from surf_rag.core.model_cache import get_sentence_transformer
 
 
 def build_faiss_index(
@@ -16,7 +16,7 @@ def build_faiss_index(
 ) -> None:
     chunks_list = list(chunks)
     texts = [chunk["text"] for chunk in chunks_list]
-    model = SentenceTransformer(model_name)
+    model = get_sentence_transformer(model_name)
     embeddings = model.encode(texts, show_progress_bar=True, normalize_embeddings=True)
     embeddings = np.array(embeddings, dtype="float32")
 

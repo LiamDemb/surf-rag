@@ -9,7 +9,8 @@ from typing import Dict, List, Protocol
 
 from openai import OpenAI
 
-from surf_rag.core.answer_prefix import strip_answer_prefix
+from surf_rag.generation.batch import build_completion_body
+from surf_rag.generation.generator_tool import parse_openai_sync_response
 
 
 class Generator(Protocol):
@@ -35,7 +36,7 @@ def hash_messages(messages: List[Dict[str, str]]) -> str:
 
 @dataclass
 class OpenAIChatGenerator:
-    """Synchronous OpenAI chat completions from pre-rendered messages."""
+    """Synchronous OpenAI chat completions from pre-rendered messages (format_answer tool)."""
 
     model_id: str
     temperature: float = 0.0
@@ -64,20 +65,36 @@ class OpenAIChatGenerator:
             )
 
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        response = client.chat.completions.create(
-            model=self.model_id,
-            messages=messages,
+        body = build_completion_body(
+            messages,
+            model_id=self.model_id,
             temperature=self.temperature,
             max_tokens=self.max_tokens,
         )
-        answer = response.choices[0].message.content or ""
-        final_answer = strip_answer_prefix(answer)
+        response = client.chat.completions.create(
+            model=body["model"],
+            messages=body["messages"],
+            temperature=body["temperature"],
+            max_tokens=body["max_tokens"],
+            tools=body["tools"],
+            tool_choice=body["tool_choice"],
+            parallel_tool_calls=body.get("parallel_tool_calls", False),
+        )
+        parsed = parse_openai_sync_response(response)
 
         latency_ms = (time.perf_counter() - start_time) * 1000
         return GenerationResult(
-            text=final_answer,
+            text=parsed.answer,
             model_id=self.model_id,
             latency_ms=latency_ms,
             prompt_hash=prompt_hash,
-            sampling={"temperature": self.temperature, "max_tokens": self.max_tokens},
+            sampling={
+                "temperature": self.temperature,
+                "max_tokens": self.max_tokens,
+                "candidate_answer_span": parsed.candidate_answer_span,
+                "support_quote": parsed.support_quote,
+                "reasoning": parsed.reasoning,
+                "generation_output_format": parsed.generation_output_format,
+                "generation_parse_error": parsed.generation_parse_error,
+            },
         )

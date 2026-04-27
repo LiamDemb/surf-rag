@@ -12,6 +12,7 @@ import pandas as pd
 
 from surf_rag.evaluation.artifact_paths import default_router_base
 from surf_rag.evaluation.oracle_artifacts import read_jsonl, utc_now_iso
+from surf_rag.evaluation.run_artifacts import as_resolved_path
 
 
 def build_router_dataset_root(router_base: Path, router_id: str) -> Path:
@@ -23,6 +24,9 @@ class RouterDatasetPaths:
     """Standard subpaths inside one router's dataset directory."""
 
     run_root: Path
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "run_root", as_resolved_path(self.run_root))
 
     @property
     def manifest(self) -> Path:

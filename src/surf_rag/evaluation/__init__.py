@@ -2,8 +2,10 @@
 
 from surf_rag.evaluation.artifact_paths import (
     benchmark_bundle_dir,
+    default_benchmark_base,
     default_data_base,
     default_router_base,
+    e2e_policy_run_dir,
     evaluation_policy_dir,
     evaluations_root,
     hard_router_policy_id,
@@ -43,6 +45,12 @@ from surf_rag.evaluation.retrieval_metrics import (
     score_retrieval_result,
     stateful_relevances,
 )
+from surf_rag.evaluation.router_model_artifacts import (
+    RouterModelPaths,
+    build_router_model_root,
+    make_router_model_paths_for_cli,
+    read_router_model_manifest,
+)
 from surf_rag.evaluation.router_overlap import (
     RouterOverlapSplit,
     RouterSplitSets,
@@ -60,14 +68,20 @@ from surf_rag.evaluation.run_artifacts import (
 __all__ = [
     # Benchmark / router / evaluation layout
     "default_data_base",
+    "default_benchmark_base",
     "default_router_base",
     "benchmark_bundle_dir",
     "router_bundle_dir",
     "router_oracle_dir",
     "router_dataset_dir",
     "router_model_dir",
+    "RouterModelPaths",
+    "build_router_model_root",
+    "make_router_model_paths_for_cli",
+    "read_router_model_manifest",
     "evaluations_root",
     "evaluation_policy_dir",
+    "e2e_policy_run_dir",
     "trained_router_policy_id",
     "hard_router_policy_id",
     "POLICY_50_50",
