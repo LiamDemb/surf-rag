@@ -43,6 +43,7 @@ from surf_rag.generation.batch_compiler import BatchRequestRecord
 from surf_rag.generation.batch_orchestrator import (
     _load_completed_question_ids_from_answers,
     finalize_batch_submission,
+    finalize_sync_submission,
 )
 from surf_rag.generation.prompt_renderer import PromptRenderer
 from surf_rag.reranking.reranker import build_reranker
@@ -202,6 +203,7 @@ def e2e_prepare_and_submit(
     router_device: str = "cpu",
     router_input_mode: str = "both",
     router_inference_batch_size: int = 32,
+    dev_sync: bool = False,
     pipeline_config_for_artifact: Optional["PipelineConfig"] = None,
 ) -> int:
     """Routed fusion retrieval + optional rerank + OpenAI batch submission."""
@@ -408,17 +410,48 @@ def e2e_prepare_and_submit(
     if skipped:
         logger.info("Skipped %d questions with existing answers.", skipped)
 
-    code = finalize_batch_submission(
-        records,
-        samples,
-        benchmark_path=benchmark_path,
-        paths=paths,
-        benchmark=benchmark_name,
-        split=split,
-        pipeline_name=pipeline_name,
-        run_id=run_id,
-        retrieval_asset_dir=asset_dir,
-        completion_window=completion_window,
-        dry_run=dry_run,
-    )
+    if dev_sync:
+        if dry_run:
+            logger.warning("--dev-sync with --dry-run skips sync API calls.")
+        code = (
+            finalize_batch_submission(
+                records,
+                samples,
+                benchmark_path=benchmark_path,
+                paths=paths,
+                benchmark=benchmark_name,
+                split=split,
+                pipeline_name=pipeline_name,
+                run_id=run_id,
+                retrieval_asset_dir=asset_dir,
+                completion_window=completion_window,
+                dry_run=True,
+            )
+            if dry_run
+            else finalize_sync_submission(
+                records,
+                samples,
+                benchmark_path=benchmark_path,
+                paths=paths,
+                benchmark=benchmark_name,
+                split=split,
+                pipeline_name=pipeline_name,
+                run_id=run_id,
+                retrieval_asset_dir=asset_dir,
+            )
+        )
+    else:
+        code = finalize_batch_submission(
+            records,
+            samples,
+            benchmark_path=benchmark_path,
+            paths=paths,
+            benchmark=benchmark_name,
+            split=split,
+            pipeline_name=pipeline_name,
+            run_id=run_id,
+            retrieval_asset_dir=asset_dir,
+            completion_window=completion_window,
+            dry_run=dry_run,
+        )
     return code

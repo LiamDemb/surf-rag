@@ -105,6 +105,7 @@ def cmd_prepare(args: argparse.Namespace) -> int:
         router_device=args.router_device,
         router_input_mode=args.router_input_mode,
         router_inference_batch_size=args.router_inference_batch_size,
+        dev_sync=args.dev_sync,
         pipeline_config_for_artifact=cfg,
     )
 
@@ -231,6 +232,11 @@ def main() -> int:
     p_prep.add_argument("--completion-window", default="24h")
     p_prep.add_argument("--include-graph-provenance", action="store_true")
     p_prep.add_argument("--dry-run", action="store_true")
+    p_prep.add_argument(
+        "--dev-sync",
+        action="store_true",
+        help="Dev-only: call chat completions synchronously and ingest immediately.",
+    )
     p_prep.add_argument("--router-device", default="cpu")
     p_prep.add_argument("--router-input-mode", default="both")
     p_prep.add_argument(

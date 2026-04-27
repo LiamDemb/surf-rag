@@ -441,6 +441,212 @@ def finalize_batch_submission(
     return 0
 
 
+def _write_outputs_from_raw_lines(
+    *,
+    paths: RunArtifactPaths,
+    samples: list[dict],
+    raw_lines: list[str],
+) -> tuple[int, int]:
+    """Persist raw/parsed outputs and merge into answers.jsonl."""
+    raw_path = paths.batch_output_raw_jsonl()
+    parsed_path = paths.batch_output_parsed_jsonl()
+    answers_path = paths.generation_answers_jsonl()
+
+    raw_path.write_text(
+        "\n".join(raw_lines) + ("\n" if raw_lines else ""), encoding="utf-8"
+    )
+
+    existing_by_qid: Dict[str, Dict[str, Any]] = {}
+    if answers_path.is_file():
+        with answers_path.open("r", encoding="utf-8") as ef:
+            for line in ef:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                qid = str(row.get("question_id", "")).strip()
+                if qid:
+                    existing_by_qid[qid] = row
+
+    answers_by_cid: Dict[str, GenerationParseResult] = {}
+    errors_by_cid: Dict[str, Any] = {}
+    completed = 0
+    failed = 0
+    parsed_rows: List[Dict[str, Any]] = []
+
+    for ln in raw_lines:
+        try:
+            obj = json.loads(ln)
+        except json.JSONDecodeError:
+            continue
+        result = parse_generation_output(obj)
+        cid = str(obj.get("custom_id", "") or result.custom_id or "")
+        if cid:
+            answers_by_cid[cid] = result
+        if obj.get("error"):
+            failed += 1
+            if cid:
+                errors_by_cid[cid] = obj.get("error")
+        elif result.generation_parse_error:
+            failed += 1
+        else:
+            completed += 1
+        parsed_rows.append(
+            {
+                "custom_id": cid or result.custom_id,
+                "answer": result.answer,
+                "candidate_answer_span": result.candidate_answer_span,
+                "support_quote": result.support_quote,
+                "generation_reasoning": result.reasoning,
+                "generation_output_format": result.generation_output_format,
+                "generation_parse_error": result.generation_parse_error,
+                "error": obj.get("error"),
+                "raw_status_code": (obj.get("response") or {}).get("status_code"),
+            }
+        )
+
+    with parsed_path.open("w", encoding="utf-8") as pf:
+        for pr in parsed_rows:
+            pf.write(json.dumps(pr, ensure_ascii=False) + "\n")
+
+    by_qid: Dict[str, Dict[str, Any]] = {}
+    for cid, result in answers_by_cid.items():
+        meta = parse_generation_custom_id(cid)
+        if not meta:
+            logger.warning("Unparseable custom_id (skipped): %s", cid)
+            continue
+        qid = meta["question_id"]
+        by_qid[qid] = {
+            "answer": result.answer,
+            "candidate_answer_span": result.candidate_answer_span,
+            "support_quote": result.support_quote,
+            "generation_reasoning": result.reasoning,
+            "generation_output_format": result.generation_output_format,
+            "generation_parse_error": result.generation_parse_error,
+            "custom_id": cid,
+            "batch_error": errors_by_cid.get(cid),
+        }
+
+    logger.info("Writing %s (one line per benchmark row)...", answers_path)
+    with answers_path.open("w", encoding="utf-8") as out:
+        for sample in samples:
+            row = dict(sample)
+            qid = str(row.get("question_id", "")).strip()
+            if qid in by_qid:
+                row.update(by_qid[qid])
+            elif qid in existing_by_qid:
+                row.update(existing_by_qid[qid])
+            else:
+                row.setdefault("answer", "")
+                row.setdefault("custom_id", "")
+            out.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+    update_manifest_artifacts(
+        paths,
+        {
+            "batch_output_raw": str(
+                paths.batch_output_raw_jsonl().relative_to(paths.run_root)
+            ),
+            "batch_output_parsed": str(
+                paths.batch_output_parsed_jsonl().relative_to(paths.run_root)
+            ),
+            "generation_answers": str(
+                paths.generation_answers_jsonl().relative_to(paths.run_root)
+            ),
+        },
+    )
+    return completed, failed
+
+
+def finalize_sync_submission(
+    records: List[BatchRequestRecord],
+    samples: list[dict],
+    *,
+    benchmark_path: Path,
+    paths: RunArtifactPaths,
+    benchmark: str,
+    split: str,
+    pipeline_name: str,
+    run_id: str,
+    retrieval_asset_dir: Path,
+) -> int:
+    """Submit one chat completion per record and ingest like collect_batches."""
+    run_root = paths.run_root.resolve()
+    asset_dir = retrieval_asset_dir.resolve()
+
+    batch_input_path = paths.batch_input_jsonl()
+    with batch_input_path.open("w", encoding="utf-8") as bf:
+        for rec in records:
+            line = build_batch_line(rec.custom_id, rec.body)
+            bf.write(json.dumps(line, ensure_ascii=False) + "\n")
+
+    state = _build_state(
+        paths=paths,
+        benchmark_path=benchmark_path,
+        samples=samples,
+        shards=[],
+        retrieval_asset_dir=asset_dir,
+        benchmark=benchmark,
+        split=split,
+        pipeline_name=pipeline_name,
+        run_id=run_id,
+    )
+    paths.batch_state_json().write_text(
+        json.dumps(state, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+    if not records:
+        logger.info("All questions already collected. Nothing to submit.")
+        return 0
+
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    raw_lines: list[str] = []
+    for rec in tqdm(records, desc="E2E sync generation", unit="q", dynamic_ncols=True):
+        body = rec.body
+        try:
+            response = client.chat.completions.create(
+                model=body["model"],
+                messages=body["messages"],
+                temperature=body["temperature"],
+                max_tokens=body["max_tokens"],
+                tools=body["tools"],
+                tool_choice=body["tool_choice"],
+                parallel_tool_calls=body.get("parallel_tool_calls", False),
+            )
+            response_body = (
+                response.model_dump()
+                if hasattr(response, "model_dump")
+                else dict(response)
+            )
+            line_obj = {
+                "custom_id": rec.custom_id,
+                "response": {"status_code": 200, "body": response_body},
+            }
+        except Exception as e:  # noqa: BLE001
+            line_obj = {
+                "custom_id": rec.custom_id,
+                "error": {"message": str(e)},
+            }
+        raw_lines.append(json.dumps(line_obj, ensure_ascii=False))
+
+    completed, failed = _write_outputs_from_raw_lines(
+        paths=paths,
+        samples=samples,
+        raw_lines=raw_lines,
+    )
+    logger.info(
+        "Sync submit+collect complete: completed=%d failed=%d; run_root=%s",
+        completed,
+        failed,
+        run_root,
+    )
+    return 0
+
+
 def _build_state(
     *,
     paths: RunArtifactPaths,
@@ -497,8 +703,6 @@ def collect_batches(
     paths.generation_dir.mkdir(parents=True, exist_ok=True)
     paths.batch_dir.mkdir(parents=True, exist_ok=True)
 
-    raw_path = paths.batch_output_raw_jsonl()
-    parsed_path = paths.batch_output_parsed_jsonl()
     answers_path = paths.generation_answers_jsonl()
 
     api_key = os.getenv("OPENAI_API_KEY")
@@ -507,32 +711,6 @@ def collect_batches(
         return 1
 
     client = OpenAI(api_key=api_key)
-
-    existing_by_qid: Dict[str, Dict[str, Any]] = {}
-    if answers_path.is_file():
-        with answers_path.open("r", encoding="utf-8") as ef:
-            for line in ef:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    row = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                qid = str(row.get("question_id", "")).strip()
-                if qid:
-                    existing_by_qid[qid] = row
-        if existing_by_qid:
-            logger.info(
-                "Loaded %d existing answer rows from %s.",
-                len(existing_by_qid),
-                answers_path,
-            )
-
-    answers_by_cid: Dict[str, GenerationParseResult] = {}
-    errors_by_cid: Dict[str, Any] = {}
-    completed = 0
-    failed = 0
 
     raw_lines: List[str] = []
     for shard in shards:
@@ -564,87 +742,10 @@ def collect_batches(
             if ln.strip():
                 raw_lines.append(ln)
 
-    raw_path.write_text(
-        "\n".join(raw_lines) + ("\n" if raw_lines else ""), encoding="utf-8"
-    )
-
-    parsed_rows: List[Dict[str, Any]] = []
-    for ln in raw_lines:
-        try:
-            obj = json.loads(ln)
-        except json.JSONDecodeError:
-            continue
-        result = parse_generation_output(obj)
-        cid = str(obj.get("custom_id", "") or result.custom_id or "")
-        if cid:
-            answers_by_cid[cid] = result
-        if obj.get("error"):
-            failed += 1
-            if cid:
-                errors_by_cid[cid] = obj.get("error")
-        elif result.generation_parse_error:
-            failed += 1
-        else:
-            completed += 1
-        parsed_rows.append(
-            {
-                "custom_id": cid or result.custom_id,
-                "answer": result.answer,
-                "generation_reasoning": result.reasoning,
-                "generation_output_format": result.generation_output_format,
-                "generation_parse_error": result.generation_parse_error,
-                "error": obj.get("error"),
-                "raw_status_code": (obj.get("response") or {}).get("status_code"),
-            }
-        )
-
-    with parsed_path.open("w", encoding="utf-8") as pf:
-        for pr in parsed_rows:
-            pf.write(json.dumps(pr, ensure_ascii=False) + "\n")
-
-    by_qid: Dict[str, Dict[str, Any]] = {}
-    for cid, result in answers_by_cid.items():
-        meta = parse_generation_custom_id(cid)
-        if not meta:
-            logger.warning("Unparseable custom_id (skipped): %s", cid)
-            continue
-        qid = meta["question_id"]
-        by_qid[qid] = {
-            "answer": result.answer,
-            "generation_reasoning": result.reasoning,
-            "generation_output_format": result.generation_output_format,
-            "generation_parse_error": result.generation_parse_error,
-            "custom_id": cid,
-            "batch_error": errors_by_cid.get(cid),
-        }
-
-    logger.info("Writing %s (one line per benchmark row)...", answers_path)
-    with answers_path.open("w", encoding="utf-8") as out:
-        for sample in samples:
-            row = dict(sample)
-            qid = str(row.get("question_id", "")).strip()
-            if qid in by_qid:
-                row.update(by_qid[qid])
-            elif qid in existing_by_qid:
-                row.update(existing_by_qid[qid])
-            else:
-                row.setdefault("answer", "")
-                row.setdefault("custom_id", "")
-            out.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-    update_manifest_artifacts(
-        paths,
-        {
-            "batch_output_raw": str(
-                paths.batch_output_raw_jsonl().relative_to(paths.run_root)
-            ),
-            "batch_output_parsed": str(
-                paths.batch_output_parsed_jsonl().relative_to(paths.run_root)
-            ),
-            "generation_answers": str(
-                paths.generation_answers_jsonl().relative_to(paths.run_root)
-            ),
-        },
+    completed, failed = _write_outputs_from_raw_lines(
+        paths=paths,
+        samples=samples,
+        raw_lines=raw_lines,
     )
 
     logger.info(

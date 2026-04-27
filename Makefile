@@ -18,6 +18,7 @@ export OPENAI_API_KEY
 E2E_RUN_ID ?=
 E2E_POLICY ?=
 E2E_SPLIT ?=
+E2E_DEV_SYNC ?=
 E2E_POLICIES ?= dense-only graph-only 50-50 learned-soft learned-hard
 SELECTED_BETA ?=
 ROUTER_INPUT_MODES ?= both query-features embedding
@@ -140,7 +141,8 @@ e2e-submit:
 	$(PY) -m scripts.e2e_benchmark --config "$(CONFIG)" prepare \
 		$(if $(E2E_RUN_ID),--run-id "$(E2E_RUN_ID)",) \
 		$(if $(E2E_POLICY),--policy "$(E2E_POLICY)",) \
-		$(if $(E2E_SPLIT),--split "$(E2E_SPLIT)",)
+		$(if $(E2E_SPLIT),--split "$(E2E_SPLIT)",) \
+		$(if $(E2E_DEV_SYNC),--dev-sync,)
 
 e2e-collect:
 	$(PY) -m scripts.e2e_benchmark --config "$(CONFIG)" collect \
