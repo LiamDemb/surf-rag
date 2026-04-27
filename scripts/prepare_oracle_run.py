@@ -10,6 +10,11 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from surf_rag.config.env import load_app_env, apply_pipeline_env_from_config
+from surf_rag.config.loader import load_pipeline_config, resolve_paths
+from surf_rag.config.merge import merge_oracle_prepare_args
+from surf_rag.config.resolved import write_resolved_config_yaml
+
 from surf_rag.evaluation.oracle_artifacts import (
     DEFAULT_DENSE_WEIGHT_GRID,
     OracleRunPaths,
@@ -44,18 +49,24 @@ def parse_args() -> argparse.Namespace:
         description="Prepare (or resume) an oracle labeling run."
     )
     parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="YAML pipeline config (see configs/templates/oracle_labels.yaml).",
+    )
+    parser.add_argument(
         "--router-id",
-        required=True,
+        default=None,
         help="Router bundle id, e.g. v01 (oracle path key).",
     )
     parser.add_argument(
         "--benchmark-name",
-        required=True,
+        default=None,
         help="Source benchmark family name, e.g. 'mix' or 'hotpotqa'.",
     )
     parser.add_argument(
         "--benchmark-id",
-        required=True,
+        default=None,
         help="Source benchmark bundle id, e.g. v01 (for provenance).",
     )
     parser.add_argument(
@@ -65,13 +76,13 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--benchmark-path",
-        required=True,
+        default=None,
         type=Path,
         help="Path to benchmark JSONL containing question_id, question, dataset_source, gold_support_sentences.",
     )
     parser.add_argument(
         "--retrieval-asset-dir",
-        required=True,
+        default=None,
         type=Path,
         help="Directory containing corpus, FAISS index, and graph artifacts used by both retrievers.",
     )
@@ -107,14 +118,41 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    load_app_env()
     load_dotenv()
     args = parse_args()
     logging.basicConfig(level=args.log_level, format="%(levelname)s: %(message)s")
+    log = logging.getLogger(__name__)
+    args._pipeline_cfg = None
+    if args.config:
+        pcfg = load_pipeline_config(args.config.resolve())
+        args._pipeline_cfg = pcfg
+        apply_pipeline_env_from_config(pcfg)
+        merge_oracle_prepare_args(args, pcfg)
+    if (
+        not args.router_id
+        or not args.benchmark_name
+        or not args.benchmark_id
+        or not args.benchmark_path
+        or not args.retrieval_asset_dir
+    ):
+        log.error(
+            "Missing oracle inputs. Use --config or pass --router-id, "
+            "--benchmark-name, --benchmark-id, --benchmark-path, --retrieval-asset-dir."
+        )
+        return 2
 
     router_base = args.router_base if args.router_base else default_oracle_base()
     paths = OracleRunPaths(run_root=build_oracle_run_root(router_base, args.router_id))
 
-    cfg = OracleRunConfig(
+    if getattr(args, "_pipeline_cfg", None) is not None:
+        write_resolved_config_yaml(
+            paths.run_root / "resolved_config.yaml",
+            args._pipeline_cfg,
+            resolve_paths(args._pipeline_cfg),
+        )
+
+    run_cfg = OracleRunConfig(
         router_id=args.router_id,
         benchmark_name=args.benchmark_name,
         benchmark_id=args.benchmark_id,
@@ -129,9 +167,9 @@ def main() -> int:
         diagnostic_metric_ks=DEFAULT_NDCG_KS,
     )
 
-    logger.info("Oracle run root: %s", paths.run_root)
+    log.info("Oracle run root: %s", paths.run_root)
     summary = prepare_oracle_run(
-        cfg,
+        run_cfg,
         paths,
         dense_retriever_factory=lambda: build_dense_retriever(
             str(args.retrieval_asset_dir),
@@ -145,13 +183,13 @@ def main() -> int:
         progress=_progress,
     )
 
-    logger.info("questions: %d", summary["questions_snapshot"])
-    logger.info("dense cached (total): %d", summary["dense_cached"])
-    logger.info("graph cached (total): %d", summary["graph_cached"])
-    logger.info("oracle rows (total): %d", summary["oracle_scored"])
-    logger.info("newly retrieved dense: %d", summary["newly_retrieved_dense"])
-    logger.info("newly retrieved graph: %d", summary["newly_retrieved_graph"])
-    logger.info("newly scored: %d", summary["newly_scored"])
+    log.info("questions: %d", summary["questions_snapshot"])
+    log.info("dense cached (total): %d", summary["dense_cached"])
+    log.info("graph cached (total): %d", summary["graph_cached"])
+    log.info("oracle rows (total): %d", summary["oracle_scored"])
+    log.info("newly retrieved dense: %d", summary["newly_retrieved_dense"])
+    log.info("newly retrieved graph: %d", summary["newly_retrieved_graph"])
+    log.info("newly scored: %d", summary["newly_scored"])
     return 0
 
 

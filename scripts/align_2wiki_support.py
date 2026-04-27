@@ -15,6 +15,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from surf_rag.config.env import load_app_env, apply_pipeline_env_from_config
+from surf_rag.config.loader import load_pipeline_config
+from surf_rag.config.merge import merge_align_2wiki_args
+
 from surf_rag.benchmark.align_2wiki import run_2wiki_support_alignment
 
 logger = logging.getLogger(__name__)
@@ -39,11 +43,18 @@ def _default_report_path(benchmark_path: Path) -> Path:
 
 
 def main() -> int:
+    load_app_env()
     load_dotenv()
     parser = argparse.ArgumentParser(
         description=(
             "Align 2Wiki gold support sentences to DocStore-backed article text by Wikipedia title."
         )
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="YAML pipeline config (see configs/templates/pipeline.yaml)",
     )
     parser.add_argument(
         "--benchmark",
@@ -117,6 +128,10 @@ def main() -> int:
         default=int(os.getenv("CHUNK_OVERLAP_TOKENS", "100")),
     )
     args = parser.parse_args()
+    if args.config:
+        cfg = load_pipeline_config(args.config.resolve())
+        apply_pipeline_env_from_config(cfg)
+        merge_align_2wiki_args(args, cfg)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 

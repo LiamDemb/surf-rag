@@ -13,6 +13,10 @@ import pandas as pd
 from tqdm.auto import tqdm
 
 from dotenv import load_dotenv
+
+from surf_rag.config.env import load_app_env, apply_pipeline_env_from_config
+from surf_rag.config.loader import load_pipeline_config
+from surf_rag.config.merge import merge_build_corpus_args
 from surf_rag.core.build_entity_index import build_entity_index
 from surf_rag.core.build_faiss import build_faiss_index
 from surf_rag.core.build_graph import build_graph
@@ -56,8 +60,15 @@ def _write_jsonl(path: Path, items: List[dict]) -> None:
 
 
 def main() -> int:
+    load_app_env()
     load_dotenv()
     parser = argparse.ArgumentParser(description="Build unified corpus + indexes.")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="YAML pipeline config (see configs/templates/pipeline.yaml)",
+    )
     parser.add_argument("--benchmark", default=os.getenv("BENCHMARK_PATH"))
     parser.add_argument("--nq", default=os.getenv("NQ_PATH"))
     parser.add_argument("--2wiki", dest="wiki2", default=os.getenv("2WIKI_PATH"))
@@ -107,6 +118,14 @@ def main() -> int:
         ),
     )
     args = parser.parse_args()
+    args._pipeline_cfg = None
+    if args.config:
+        cfg = load_pipeline_config(args.config.resolve())
+        args._pipeline_cfg = cfg
+        apply_pipeline_env_from_config(cfg)
+        merge_build_corpus_args(args, cfg)
+        if cfg.corpus.fetch_missing and "--fetch-missing" not in sys.argv:
+            args.fetch_missing = True
 
     if not args.benchmark or not str(args.benchmark).strip():
         raise ValueError(
@@ -379,6 +398,15 @@ def main() -> int:
 
     logger.info("Wrote corpus and artifacts to %s", output_dir)
     docstore.close()
+    if getattr(args, "_pipeline_cfg", None) is not None:
+        from surf_rag.config.loader import resolve_paths
+        from surf_rag.config.resolved import write_resolved_config_yaml
+
+        write_resolved_config_yaml(
+            Path(args.output_dir) / "resolved_config.yaml",
+            args._pipeline_cfg,
+            resolve_paths(args._pipeline_cfg),
+        )
     return 0
 
 

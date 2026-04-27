@@ -9,6 +9,11 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from surf_rag.config.env import load_app_env, apply_pipeline_env_from_config
+from surf_rag.config.loader import load_pipeline_config, resolve_paths
+from surf_rag.config.merge import merge_router_train_args
+from surf_rag.config.resolved import write_resolved_config_yaml
+
 from surf_rag.evaluation.router_dataset_artifacts import (
     make_router_dataset_paths_for_cli,
     read_router_dataset_manifest,
@@ -34,7 +39,13 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Train RouterMLP on router Parquet dataset."
     )
-    p.add_argument("--router-id", required=True)
+    p.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="YAML pipeline config (router.train section).",
+    )
+    p.add_argument("--router-id", default=None)
     p.add_argument("--router-base", type=Path, default=None)
     p.add_argument("--epochs", type=int, default=None)
     p.add_argument("--batch-size", type=int, default=None)
@@ -50,12 +61,22 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    load_app_env()
     load_dotenv()
     import logging
 
     args = parse_args()
     logging.basicConfig(level=args.log_level, format="%(levelname)s: %(message)s")
     log = logging.getLogger(__name__)
+    args._pipeline_cfg = None
+    if args.config:
+        pcfg = load_pipeline_config(args.config.resolve())
+        args._pipeline_cfg = pcfg
+        apply_pipeline_env_from_config(pcfg)
+        merge_router_train_args(args, pcfg)
+    if not args.router_id:
+        log.error("Provide --config or --router-id.")
+        return 2
 
     ds_paths = make_router_dataset_paths_for_cli(
         args.router_id, router_base=args.router_base
@@ -143,6 +164,12 @@ def main() -> int:
         if rows:
             write_predictions_jsonl(out_paths.predictions(split), rows)
 
+    if getattr(args, "_pipeline_cfg", None) is not None:
+        write_resolved_config_yaml(
+            out_paths.run_root / "resolved_config.yaml",
+            args._pipeline_cfg,
+            resolve_paths(args._pipeline_cfg),
+        )
     log.info("Wrote %s", out_paths.checkpoint)
     return 0
 

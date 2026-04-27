@@ -6,9 +6,12 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 from tqdm.auto import tqdm
+
+if TYPE_CHECKING:
+    from surf_rag.config.schema import PipelineConfig
 
 from surf_rag.core.prompts import get_generator_prompt
 from surf_rag.evaluation.artifact_paths import (
@@ -199,6 +202,7 @@ def e2e_prepare_and_submit(
     router_device: str = "cpu",
     router_input_mode: str = "both",
     router_inference_batch_size: int = 32,
+    pipeline_config_for_artifact: Optional["PipelineConfig"] = None,
 ) -> int:
     """Routed fusion retrieval + optional rerank + OpenAI batch submission."""
     policy = (
@@ -316,6 +320,20 @@ def e2e_prepare_and_submit(
             },
         },
     )
+
+    if pipeline_config_for_artifact is not None:
+        from surf_rag.config.loader import resolve_paths
+        from surf_rag.config.resolved import write_resolved_config_yaml
+
+        rp = resolve_paths(pipeline_config_for_artifact)
+        write_resolved_config_yaml(
+            run_root / "resolved_config.yaml",
+            pipeline_config_for_artifact,
+            rp,
+        )
+        from surf_rag.evaluation.manifest import update_manifest_artifacts
+
+        update_manifest_artifacts(paths, {"resolved_config": "resolved_config.yaml"})
 
     records: List[BatchRequestRecord] = []
     pending = [

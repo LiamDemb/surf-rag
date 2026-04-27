@@ -8,10 +8,18 @@ import json
 import logging
 import sys
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 load_dotenv()
 
+from surf_rag.config.env import load_app_env, apply_pipeline_env_from_config
+from surf_rag.config.loader import load_pipeline_config, validate_e2e_config
+from surf_rag.config.merge import (
+    merge_e2e_common_args,
+    merge_e2e_evaluate_args,
+    merge_e2e_prepare_args,
+)
 from surf_rag.evaluation.artifact_paths import (
     default_benchmark_base,
     default_router_base,
@@ -32,22 +40,47 @@ log = logging.getLogger(__name__)
 
 def _add_common(p: argparse.ArgumentParser) -> None:
     p.add_argument("--benchmark-base", type=Path, default=None)
-    p.add_argument("--benchmark-name", required=True)
-    p.add_argument("--benchmark-id", required=True)
-    p.add_argument("--benchmark-path", type=Path, required=True)
+    p.add_argument("--benchmark-name", default=None)
+    p.add_argument("--benchmark-id", default=None)
+    p.add_argument("--benchmark-path", type=Path, default=None)
     p.add_argument(
         "--split", default="test", help="Split label for batch custom_id / manifest."
     )
-    p.add_argument("--run-id", required=True)
+    p.add_argument("--run-id", default=None)
     p.add_argument(
         "--policy",
-        required=True,
+        default=None,
         help="Routing policy: learned-soft, learned-hard, 50-50, dense-only, graph-only",
     )
-    p.add_argument("--retrieval-asset-dir", type=Path, required=True)
+    p.add_argument("--retrieval-asset-dir", type=Path, default=None)
+
+
+def _e2e_config(args: argparse.Namespace):
+    return getattr(args, "_pipeline_config", None)
 
 
 def cmd_prepare(args: argparse.Namespace) -> int:
+    cfg = _e2e_config(args)
+    if (
+        not args.benchmark_name
+        or not args.benchmark_id
+        or not args.benchmark_path
+        or not args.run_id
+        or not args.policy
+        or not args.retrieval_asset_dir
+    ):
+        log.error(
+            "Missing required fields. Use --config path.yaml or pass "
+            "--benchmark-name, --benchmark-id, --benchmark-path, --run-id, "
+            "--policy, --retrieval-asset-dir."
+        )
+        return 2
+    if cfg:
+        try:
+            validate_e2e_config(cfg)
+        except ValueError as e:
+            log.error("%s", e)
+            return 2
     bb = args.benchmark_base or default_benchmark_base()
     return e2e_prepare_and_submit(
         args.benchmark_path.resolve(),
@@ -72,10 +105,19 @@ def cmd_prepare(args: argparse.Namespace) -> int:
         router_device=args.router_device,
         router_input_mode=args.router_input_mode,
         router_inference_batch_size=args.router_inference_batch_size,
+        pipeline_config_for_artifact=cfg,
     )
 
 
 def cmd_collect(args: argparse.Namespace) -> int:
+    if (
+        not args.benchmark_name
+        or not args.benchmark_id
+        or not args.run_id
+        or not args.policy
+    ):
+        log.error("Missing required E2E fields (use --config or CLI flags).")
+        return 2
     bb = args.benchmark_base or default_benchmark_base()
     from surf_rag.evaluation.e2e_policies import parse_routing_policy
 
@@ -91,6 +133,15 @@ def cmd_collect(args: argparse.Namespace) -> int:
 
 
 def cmd_evaluate(args: argparse.Namespace) -> int:
+    if (
+        not args.benchmark_name
+        or not args.benchmark_id
+        or not args.benchmark_path
+        or not args.run_id
+        or not args.policy
+    ):
+        log.error("Missing required E2E fields (use --config or CLI flags).")
+        return 2
     bb = args.benchmark_base or default_benchmark_base()
     from surf_rag.evaluation.e2e_policies import parse_routing_policy
 
@@ -122,6 +173,14 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
 
 
 def cmd_print_config(args: argparse.Namespace) -> int:
+    if (
+        not args.benchmark_name
+        or not args.benchmark_id
+        or not args.run_id
+        or not args.policy
+    ):
+        log.error("Missing required E2E fields (use --config or CLI flags).")
+        return 2
     bb = args.benchmark_base or default_benchmark_base()
     from surf_rag.evaluation.e2e_policies import parse_routing_policy
 
@@ -142,7 +201,14 @@ def cmd_print_config(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
+    load_app_env()
     ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="YAML pipeline/E2E config (see configs/templates/)",
+    )
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     p_prep = sub.add_parser(
@@ -200,6 +266,18 @@ def main() -> int:
     p_pc.set_defaults(func=cmd_print_config)
 
     args = ap.parse_args()
+    if args.config:
+        cfg = load_pipeline_config(args.config.resolve())
+        apply_pipeline_env_from_config(cfg)
+        args._pipeline_config = cfg
+        if args.cmd == "prepare":
+            merge_e2e_prepare_args(args, cfg)
+        elif args.cmd == "collect":
+            merge_e2e_common_args(args, cfg)
+        elif args.cmd == "evaluate":
+            merge_e2e_evaluate_args(args, cfg)
+        elif args.cmd == "print-config":
+            merge_e2e_common_args(args, cfg)
     return int(args.func(args))
 
 

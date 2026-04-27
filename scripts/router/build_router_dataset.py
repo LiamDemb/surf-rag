@@ -20,6 +20,11 @@ from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 
+from surf_rag.config.env import load_app_env, apply_pipeline_env_from_config
+from surf_rag.config.loader import load_pipeline_config, resolve_paths
+from surf_rag.config.merge import merge_router_build_dataset_args
+from surf_rag.config.resolved import write_resolved_config_yaml
+
 from surf_rag.evaluation.oracle_artifacts import (
     OracleRunPaths,
     build_oracle_run_root,
@@ -71,24 +76,30 @@ def parse_args() -> argparse.Namespace:
         description="Build router Parquet dataset from oracle labels."
     )
     p.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="YAML pipeline config (see configs/templates/pipeline.yaml).",
+    )
+    p.add_argument(
         "--router-id",
-        required=True,
+        default=None,
         help="Router bundle id (same as oracle + dataset directory).",
     )
     p.add_argument(
         "--benchmark-name",
-        required=True,
+        default=None,
         help="Source benchmark family (provenance).",
     )
     p.add_argument(
         "--benchmark-id",
-        required=True,
+        default=None,
         help="Source benchmark bundle id (provenance).",
     )
     p.add_argument(
         "--benchmark-path",
         type=Path,
-        required=True,
+        default=None,
         help="Full benchmark JSONL (same as oracle; single file).",
     )
     p.add_argument(
@@ -135,12 +146,27 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     global logger
+    load_app_env()
     load_dotenv()
     import logging
 
     args = parse_args()
     logging.basicConfig(level=args.log_level, format="%(levelname)s: %(message)s")
     logger = logging.getLogger(__name__)
+    args._pipeline_cfg = None
+    if args.config:
+        pcfg = load_pipeline_config(args.config.resolve())
+        args._pipeline_cfg = pcfg
+        apply_pipeline_env_from_config(pcfg)
+        merge_router_build_dataset_args(args, pcfg)
+    if (
+        not args.router_id
+        or not args.benchmark_name
+        or not args.benchmark_id
+        or not args.benchmark_path
+    ):
+        logger.error("Provide --config or all of router/benchmark id/name/path flags.")
+        return 2
 
     router_base = args.router_base if args.router_base else default_router_base()
     o_paths = OracleRunPaths(
@@ -250,6 +276,12 @@ def main() -> int:
         test_ratio=te,
         extra={"row_count": int(len(df))},
     )
+    if getattr(args, "_pipeline_cfg", None) is not None:
+        write_resolved_config_yaml(
+            r_paths.run_root / "resolved_config.yaml",
+            args._pipeline_cfg,
+            resolve_paths(args._pipeline_cfg),
+        )
     logger.info("Wrote %s", r_paths.router_dataset_parquet)
     return 0
 

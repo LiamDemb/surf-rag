@@ -9,6 +9,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from surf_rag.config.env import load_app_env, apply_pipeline_env_from_config
+from surf_rag.config.loader import load_pipeline_config
+from surf_rag.config.merge import merge_router_evaluate_args
+
 import pandas as pd
 import torch
 
@@ -30,7 +34,13 @@ from surf_rag.router.training import (
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Evaluate RouterMLP checkpoint.")
-    p.add_argument("--router-id", required=True)
+    p.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="YAML pipeline config (router.train section).",
+    )
+    p.add_argument("--router-id", default=None)
     p.add_argument("--router-base", type=Path, default=None)
     p.add_argument("--device", default=None)
     p.add_argument(
@@ -43,12 +53,20 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    load_app_env()
     load_dotenv()
     import logging
 
     args = parse_args()
     logging.basicConfig(level=args.log_level, format="%(levelname)s: %(message)s")
     log = logging.getLogger(__name__)
+    if args.config:
+        pcfg = load_pipeline_config(args.config.resolve())
+        apply_pipeline_env_from_config(pcfg)
+        merge_router_evaluate_args(args, pcfg)
+    if not args.router_id:
+        log.error("Provide --config or --router-id.")
+        return 2
 
     ds_paths = make_router_dataset_paths_for_cli(
         args.router_id, router_base=args.router_base

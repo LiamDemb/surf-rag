@@ -12,6 +12,11 @@ from typing import List
 
 from dotenv import load_dotenv
 
+from surf_rag.config.env import load_app_env, apply_pipeline_env_from_config
+from surf_rag.config.loader import load_pipeline_config, resolve_paths
+from surf_rag.config.merge import merge_create_soft_labels_args
+from surf_rag.config.resolved import write_resolved_config_yaml
+
 from surf_rag.evaluation.oracle_artifacts import (
     OracleRunPaths,
     build_oracle_run_root,
@@ -29,13 +34,19 @@ def parse_args() -> argparse.Namespace:
         description="Materialize soft labels from an oracle run."
     )
     parser.add_argument(
-        "--router-id", required=True, help="Router bundle id (oracle directory key)."
+        "--config",
+        type=Path,
+        default=None,
+        help="YAML pipeline config (oracle.betas, paths.router_id).",
+    )
+    parser.add_argument(
+        "--router-id", default=None, help="Router bundle id (oracle directory key)."
     )
     parser.add_argument(
         "--beta",
         action="append",
         type=float,
-        required=True,
+        default=None,
         help="Beta value to materialize (repeatable).",
     )
     parser.add_argument(
@@ -60,9 +71,19 @@ def _resolve_paths(args: argparse.Namespace) -> OracleRunPaths:
 
 
 def main() -> int:
+    load_app_env()
     load_dotenv()
     args = parse_args()
     logging.basicConfig(level=args.log_level, format="%(levelname)s: %(message)s")
+    args._pipeline_cfg = None
+    if args.config:
+        pcfg = load_pipeline_config(args.config.resolve())
+        args._pipeline_cfg = pcfg
+        apply_pipeline_env_from_config(pcfg)
+        merge_create_soft_labels_args(args, pcfg)
+    if not args.router_id or not args.beta:
+        logger.error("Provide --config or --router-id and at least one --beta.")
+        return 2
 
     paths = _resolve_paths(args)
     if not paths.oracle_scores.is_file():
@@ -108,6 +129,12 @@ def main() -> int:
             }
         },
     )
+    if getattr(args, "_pipeline_cfg", None) is not None:
+        write_resolved_config_yaml(
+            paths.run_root / "resolved_config.yaml",
+            args._pipeline_cfg,
+            resolve_paths(args._pipeline_cfg),
+        )
     return 0
 
 
