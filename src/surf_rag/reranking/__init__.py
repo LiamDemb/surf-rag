@@ -6,10 +6,16 @@ from surf_rag.reranking.reranker import (
     Reranker,
     build_reranker,
 )
+from surf_rag.reranking.sentence_windows import (
+    SentenceWindowConfig,
+    SentenceWindowReranker,
+)
 
 __all__ = [
     "Reranker",
     "NoOpReranker",
     "CrossEncoderReranker",
+    "SentenceWindowConfig",
+    "SentenceWindowReranker",
     "build_reranker",
 ]

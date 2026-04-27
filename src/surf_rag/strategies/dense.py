@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
 from surf_rag.core.embedder import Embedder
 from surf_rag.core.index_store import FaissIndexStore
-from surf_rag.core.mapping import ChunkIdToText, RowIdToChunkId
+from surf_rag.core.mapping import (
+    ChunkIdToText,
+    RowIdToChunkId,
+    metadata_from_corpus_record,
+)
 from surf_rag.retrieval.base import BranchRetriever
 from surf_rag.retrieval.types import RetrievedChunk, RetrievalResult
 
@@ -54,13 +58,20 @@ class DenseRetriever(BranchRetriever):
                 text = self.corpus.get_text(chunk_id)
                 if not text:
                     continue
+                meta: Dict[str, Any] = {"branch": "dense"}
+                rec = (
+                    self.corpus.get_record(chunk_id)
+                    if hasattr(self.corpus, "get_record")
+                    else None
+                )
+                meta.update(metadata_from_corpus_record(rec))
                 chunks.append(
                     RetrievedChunk(
                         chunk_id=chunk_id,
                         text=text,
                         score=float(score),
                         rank=0,
-                        metadata={"branch": "dense"},
+                        metadata=meta,
                     )
                 )
 

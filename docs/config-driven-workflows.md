@@ -134,7 +134,7 @@ Default `CONFIG` is `configs/pipelines/surf-bench-200.yaml`. Every stage target 
 | `ORACLE_*`                               | `oracle`                                                           |
 | `TRAIN_RATIO`, `DEV_RATIO`, `TEST_RATIO` | `router.dataset`                                                   |
 | `ROUTER_EPOCHS`, `ROUTER_*`              | `router.train` (and `apply_pipeline_env_from_config` mirrors many) |
-| `E2E_*`                                  | `e2e`                                                              |
+| `E2E_*`                                  | `e2e` (see `E2ESection`: `branch_top_k`, `fusion_keep_k`, `reranker`, `rerank_top_k`, `sentence_window_*`, …) |
 | `OPENAI_API_KEY`                         | Stays in `.env`; `secrets.openai_api_key_env` only names the var   |
 
 ## Artifacts

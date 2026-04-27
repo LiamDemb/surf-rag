@@ -7,6 +7,7 @@ import argparse
 import json
 import logging
 import sys
+from argparse import BooleanOptionalAction
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -94,9 +95,28 @@ def cmd_prepare(args: argparse.Namespace) -> int:
         router_id=args.router_id,
         router_base=args.router_base,
         fusion_keep_k=args.fusion_keep_k,
+        branch_top_k=args.branch_top_k,
         reranker_kind=args.reranker,
         rerank_top_k=args.rerank_top_k,
         cross_encoder_model=args.cross_encoder_model,
+        sentence_window_radius=args.sentence_window_radius,
+        sentence_window_max_windows=args.sentence_window_max_windows,
+        sentence_window_min_windows=args.sentence_window_min_windows,
+        sentence_window_max_words=args.sentence_window_max_words,
+        sentence_window_max_subwindow_words=args.sentence_window_max_subwindow_words,
+        sentence_window_min_top_chunk_coverage=args.sentence_window_min_top_chunk_coverage,
+        sentence_window_min_distinct_parent_chunks=args.sentence_window_min_distinct_parent_chunks,
+        sentence_window_max_per_chunk=args.sentence_window_max_per_chunk,
+        sentence_window_iou_select_threshold=args.sentence_window_iou_select_threshold,
+        sentence_window_premerge_iou=args.sentence_window_premerge_iou,
+        sentence_window_premerge_max_gap_chars=args.sentence_window_premerge_max_gap_chars,
+        sentence_window_ce_relax_margin=args.sentence_window_ce_relax_margin,
+        sentence_window_ce_filler_top_ranks=args.sentence_window_ce_filler_top_ranks,
+        sentence_window_filler_title_overlap=args.sentence_window_filler_title_overlap,
+        sentence_window_filler_novel_parent_max_rank=args.sentence_window_filler_novel_parent_max_rank,
+        sentence_window_merge_overlaps=args.sentence_window_merge_overlaps,
+        sentence_window_duplicate_filter=args.sentence_window_duplicate_filter,
+        sentence_window_include_title=args.sentence_window_include_title,
         limit=args.limit,
         only_question_ids=set(args.only_question_id) if args.only_question_id else None,
         completion_window=args.completion_window,
@@ -218,14 +238,111 @@ def main() -> int:
     _add_common(p_prep)
     p_prep.add_argument("--router-id", default=None)
     p_prep.add_argument("--router-base", type=Path, default=None)
-    p_prep.add_argument("--fusion-keep-k", type=int, default=25)
+    p_prep.add_argument(
+        "--branch-top-k",
+        type=int,
+        default=20,
+        help="Per-branch (dense / graph) retrieval depth before fusion trim.",
+    )
+    p_prep.add_argument("--fusion-keep-k", type=int, default=20)
     p_prep.add_argument(
         "--reranker",
         default="none",
-        help="none | cross_encoder (default model: cross-encoder/ms-marco-MiniLM-L-6-v2)",
+        help="none | cross_encoder | sentence_window (cross-encoder model from config)",
     )
-    p_prep.add_argument("--rerank-top-k", type=int, default=10)
+    p_prep.add_argument(
+        "--rerank-top-k",
+        type=int,
+        default=5,
+        help="For cross_encoder: number of chunks after rerank. Ignored for sentence_window max windows (use --sentence-window-max-windows).",
+    )
     p_prep.add_argument("--cross-encoder-model", default=None)
+    p_prep.add_argument("--sentence-window-radius", type=int, default=1)
+    p_prep.add_argument(
+        "--sentence-window-max-windows",
+        type=int,
+        default=12,
+        help="Upper cap on selected windows (target 8–12 in default configs).",
+    )
+    p_prep.add_argument(
+        "--sentence-window-min-windows",
+        type=int,
+        default=8,
+        help="Try to select at least this many windows when pool and word budget allow.",
+    )
+    p_prep.add_argument(
+        "--sentence-window-max-words",
+        type=int,
+        default=1280,
+        help="Total evidence word budget across selected windows.",
+    )
+    p_prep.add_argument(
+        "--sentence-window-max-subwindow-words",
+        type=int,
+        default=180,
+        help="Hard cap per window before scoring; oversized spans are split.",
+    )
+    p_prep.add_argument(
+        "--sentence-window-iou-select-threshold",
+        type=float,
+        default=0.35,
+    )
+    p_prep.add_argument(
+        "--sentence-window-premerge-iou",
+        type=float,
+        default=0.35,
+    )
+    p_prep.add_argument(
+        "--sentence-window-premerge-max-gap-chars",
+        type=int,
+        default=48,
+    )
+    p_prep.add_argument(
+        "--sentence-window-ce-relax-margin",
+        type=float,
+        default=3.0,
+        help="Filler pass: allow scores within this margin of the per-question max.",
+    )
+    p_prep.add_argument(
+        "--sentence-window-ce-filler-top-ranks",
+        type=int,
+        default=3,
+        help="Filler: always-allow parent chunks ranked below this (0..k-1).",
+    )
+    p_prep.add_argument(
+        "--sentence-window-filler-title-overlap",
+        action=BooleanOptionalAction,
+        default=True,
+    )
+    p_prep.add_argument(
+        "--sentence-window-filler-novel-parent-max-rank",
+        type=int,
+        default=10,
+        help="Max fused parent rank for weak-score filler from a not-yet-covered chunk.",
+    )
+    p_prep.add_argument("--sentence-window-min-top-chunk-coverage", type=int, default=3)
+    p_prep.add_argument(
+        "--sentence-window-min-distinct-parent-chunks",
+        type=int,
+        default=4,
+        help="Prefer evidence from at least this many distinct retrieved chunks when available.",
+    )
+    p_prep.add_argument("--sentence-window-max-per-chunk", type=int, default=2)
+    p_prep.add_argument(
+        "--sentence-window-merge-overlaps",
+        action=BooleanOptionalAction,
+        default=True,
+    )
+    p_prep.add_argument(
+        "--sentence-window-duplicate-filter",
+        action=BooleanOptionalAction,
+        default=True,
+    )
+    p_prep.add_argument(
+        "--sentence-window-include-title",
+        action=BooleanOptionalAction,
+        default=True,
+    )
     p_prep.add_argument("--limit", type=int, default=None)
     p_prep.add_argument("--only-question-id", action="append", default=[])
     p_prep.add_argument("--completion-window", default="24h")

@@ -24,6 +24,6 @@ This document maps each `Makefile` phony target to its inputs: recommended confi
 | `router-build-dataset` / `router-pipeline`                          | Parquet + splits         | pipeline or router                    | `router.dataset`                          |
 | `validate-router-train`                                             | check Parquet            | pipeline                              | -                                         |
 | `router-train` / `eval` / `*-ablations`                             | MLP                      | pipeline or router                    | `router.train`                            |
-| `e2e-*`                                                             | E2E eval                 | e2e or full pipeline                  | `e2e.*`, `generation`                     |
+| `e2e-*`                                                             | E2E eval                 | e2e or full pipeline                  | `e2e.*` (e.g. `branch_top_k`, `fusion_keep_k`, `reranker`, sentence-window fields), `generation` |
 
 Runtime `os.getenv` is still read by many modules; when you pass `--config`, `apply_pipeline_env_from_config` mirrors the YAML into the environment. `.env` should hold secrets (e.g. `OPENAI_API_KEY`) and optional local cache overrides only.

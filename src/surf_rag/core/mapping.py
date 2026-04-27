@@ -1,8 +1,23 @@
 from __future__ import annotations
-from dataclasses import dataclass
-from typing import Dict, Optional, Protocol
+
 import json
+from dataclasses import dataclass
+from typing import Any, Dict, Optional, Protocol
+
 import pandas as pd
+
+_CORPUS_META_KEYS = ("title", "doc_id", "source", "url", "section_path")
+
+
+def metadata_from_corpus_record(record: dict[str, Any] | None) -> dict[str, Any]:
+    """Pick stable fields from a corpus.jsonl row for ``RetrievedChunk.metadata``."""
+    if not record:
+        return {}
+    out: dict[str, Any] = {}
+    for k in _CORPUS_META_KEYS:
+        if k in record and record[k] is not None:
+            out[k] = record[k]
+    return out
 
 
 class RowIdToChunkId(Protocol):
@@ -39,7 +54,7 @@ class VectorMetaMapper:
 
 @dataclass
 class JsonCorpusLoader:
-    """Loads corpus.jsonl and provides chunk_id -> chunk text."""
+    """Loads corpus.jsonl: chunk text plus optional row fields for retrieval metadata."""
 
     jsonl_path: str
     chunk_id_col: str = "chunk_id"
@@ -47,15 +62,23 @@ class JsonCorpusLoader:
 
     def __post_init__(self) -> None:
         self.text_by_id: Dict[str, str] = {}
+        self._row_by_id: Dict[str, dict[str, Any]] = {}
         with open(self.jsonl_path, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:
                     continue
                 obj = json.loads(line)
+                if not isinstance(obj, dict):
+                    continue
                 cid = str(obj[self.chunk_id_col])
                 txt = str(obj[self.text_key])
                 self.text_by_id[cid] = txt
+                self._row_by_id[cid] = obj
 
     def get_text(self, chunk_id: str) -> Optional[str]:
         return self.text_by_id.get(chunk_id)
+
+    def get_record(self, chunk_id: str) -> Optional[dict[str, Any]]:
+        """Full JSON object for a chunk id (last row wins if duplicates)."""
+        return self._row_by_id.get(chunk_id)

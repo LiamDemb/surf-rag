@@ -10,7 +10,7 @@ import networkx as nx
 from surf_rag.core.embedder import Embedder
 from surf_rag.core.entity_alias_resolver import EntityAliasResolver
 from surf_rag.core.entity_index_store import EntityIndexStore
-from surf_rag.core.mapping import ChunkIdToText
+from surf_rag.core.mapping import ChunkIdToText, metadata_from_corpus_record
 from surf_rag.core.scoring_config import DEFAULT_SCORING_CONFIG, ScoringConfig
 from surf_rag.graph.graph_grounding import ground_path
 from surf_rag.graph.graph_paths import enumerate_candidate_paths
@@ -363,16 +363,23 @@ class GraphRetriever(BranchRetriever):
                     f"Path: {self._format_path(b.path)}" for b, _ in bundles[:3]
                 ]
                 score = bundles[0][1]
+                meta: Dict[str, Any] = {
+                    "branch": "graph",
+                    "graph_path_lines": path_lines,
+                }
+                rec = (
+                    self.corpus.get_record(cid)
+                    if hasattr(self.corpus, "get_record")
+                    else None
+                )
+                meta.update(metadata_from_corpus_record(rec))
                 chunks.append(
                     RetrievedChunk(
                         chunk_id=cid,
                         text=text,
                         score=float(score),
                         rank=0,
-                        metadata={
-                            "branch": "graph",
-                            "graph_path_lines": path_lines,
-                        },
+                        metadata=meta,
                     )
                 )
 

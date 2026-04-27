@@ -5,6 +5,10 @@ from __future__ import annotations
 from typing import Literal, Protocol, runtime_checkable
 
 from surf_rag.core.model_cache import get_cross_encoder
+from surf_rag.reranking.sentence_windows import (
+    SentenceWindowConfig,
+    SentenceWindowReranker,
+)
 from surf_rag.retrieval.types import RetrievedChunk, RetrievalResult
 
 DEFAULT_CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
@@ -102,17 +106,23 @@ class CrossEncoderReranker:
         )
 
 
-RerankerKind = Literal["none", "cross_encoder"]
+RerankerKind = Literal["none", "cross_encoder", "sentence_window"]
 
 
 def build_reranker(
     kind: str,
     *,
     cross_encoder_model: str | None = None,
+    sentence_window_config: SentenceWindowConfig | None = None,
 ) -> Reranker:
     k = (kind or "cross_encoder").strip().lower()
     if k in ("none", "noop", "no-op"):
         return NoOpReranker()
     if k in ("cross_encoder", "cross-encoder", "ce"):
         return CrossEncoderReranker(cross_encoder_model or DEFAULT_CROSS_ENCODER_MODEL)
+    if k in ("sentence_window", "sentence-window", "sw"):
+        m = cross_encoder_model or DEFAULT_CROSS_ENCODER_MODEL
+        return SentenceWindowReranker(
+            m, config=sentence_window_config or SentenceWindowConfig()
+        )
     raise ValueError(f"unknown reranker kind {kind!r}")

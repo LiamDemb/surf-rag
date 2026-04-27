@@ -8,7 +8,7 @@ from surf_rag.core.embedder import SentenceTransformersEmbedder
 from surf_rag.core.scoring_config import DEFAULT_SCORING_CONFIG
 
 
-def build_dense_retriever(output_dir: str, top_k: int = 10):
+def build_dense_retriever(output_dir: str, top_k: int = 20):
     """Build DenseRetriever with corpus, index, embedder."""
     from surf_rag.core.index_store import FaissIndexStore
     from surf_rag.core.mapping import JsonCorpusLoader, VectorMetaMapper
@@ -27,7 +27,7 @@ def build_dense_retriever(output_dir: str, top_k: int = 10):
     )
 
 
-def build_graph_retriever(output_dir: str, top_k: int = 10):
+def build_graph_retriever(output_dir: str, top_k: int = 20):
     """Build GraphRetriever with corpus, graph, entity resolution."""
     from surf_rag.core.entity_index_store import EntityIndexStore
     from surf_rag.core.mapping import JsonCorpusLoader

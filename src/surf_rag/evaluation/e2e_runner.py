@@ -44,8 +44,10 @@ from surf_rag.generation.batch_orchestrator import (
     _load_completed_question_ids_from_answers,
     finalize_batch_submission,
 )
+from surf_rag.generation.evidence_audit import audit_sentence_window_batch
 from surf_rag.generation.prompt_renderer import PromptRenderer
 from surf_rag.reranking.reranker import build_reranker
+from surf_rag.reranking.sentence_windows import SentenceWindowConfig
 from surf_rag.retrieval.routed import RoutedFusionPipeline
 from surf_rag.retrieval.types import RetrievalResult
 from surf_rag.router.inference_inputs import (
@@ -190,10 +192,29 @@ def e2e_prepare_and_submit(
     retrieval_asset_dir: Path,
     router_id: Optional[str] = None,
     router_base: Optional[Path] = None,
-    fusion_keep_k: int = 25,
+    fusion_keep_k: int = 20,
+    branch_top_k: int = 20,
     reranker_kind: str = "none",
-    rerank_top_k: int = 10,
+    rerank_top_k: int = 5,
     cross_encoder_model: Optional[str] = None,
+    sentence_window_radius: int = 1,
+    sentence_window_max_windows: int = 12,
+    sentence_window_min_windows: int = 8,
+    sentence_window_max_words: int = 1280,
+    sentence_window_max_subwindow_words: int = 180,
+    sentence_window_min_top_chunk_coverage: int = 3,
+    sentence_window_min_distinct_parent_chunks: int = 4,
+    sentence_window_max_per_chunk: int = 2,
+    sentence_window_iou_select_threshold: float = 0.35,
+    sentence_window_premerge_iou: float = 0.35,
+    sentence_window_premerge_max_gap_chars: int = 48,
+    sentence_window_ce_relax_margin: float = 3.0,
+    sentence_window_ce_filler_top_ranks: int = 3,
+    sentence_window_filler_title_overlap: bool = True,
+    sentence_window_filler_novel_parent_max_rank: int = 10,
+    sentence_window_merge_overlaps: bool = True,
+    sentence_window_duplicate_filter: bool = True,
+    sentence_window_include_title: bool = True,
     limit: Optional[int] = None,
     only_question_ids: Optional[Set[str]] = None,
     completion_window: str = "24h",
@@ -262,8 +283,8 @@ def e2e_prepare_and_submit(
     )
 
     logger.info("Building dense + graph retrievers from %s", asset_dir)
-    dense_retriever = build_dense_retriever(str(asset_dir))
-    graph_retriever = build_graph_retriever(str(asset_dir))
+    dense_retriever = build_dense_retriever(str(asset_dir), top_k=branch_top_k)
+    graph_retriever = build_graph_retriever(str(asset_dir), top_k=branch_top_k)
 
     loaded_router = None
     router_ctx = None
@@ -284,7 +305,31 @@ def e2e_prepare_and_submit(
         fusion_keep_k=fusion_keep_k,
         router=loaded_router,
     )
-    reranker = build_reranker(reranker_kind, cross_encoder_model=cross_encoder_model)
+    sw_config = SentenceWindowConfig(
+        radius=sentence_window_radius,
+        max_windows=sentence_window_max_windows,
+        min_windows=sentence_window_min_windows,
+        max_words=sentence_window_max_words,
+        max_subwindow_words=sentence_window_max_subwindow_words,
+        min_top_chunk_coverage=sentence_window_min_top_chunk_coverage,
+        min_distinct_parent_chunks=sentence_window_min_distinct_parent_chunks,
+        max_windows_per_chunk=sentence_window_max_per_chunk,
+        iou_select_threshold=sentence_window_iou_select_threshold,
+        premerge_iou=sentence_window_premerge_iou,
+        premerge_max_gap_chars=sentence_window_premerge_max_gap_chars,
+        ce_relax_margin=sentence_window_ce_relax_margin,
+        ce_filler_top_ranks=sentence_window_ce_filler_top_ranks,
+        filler_title_overlap=sentence_window_filler_title_overlap,
+        filler_novel_parent_max_rank=sentence_window_filler_novel_parent_max_rank,
+        merge_overlaps=sentence_window_merge_overlaps,
+        duplicate_filter=sentence_window_duplicate_filter,
+        include_title=sentence_window_include_title,
+    )
+    reranker = build_reranker(
+        reranker_kind,
+        cross_encoder_model=cross_encoder_model,
+        sentence_window_config=sw_config,
+    )
 
     write_manifest(
         paths,
@@ -312,11 +357,28 @@ def e2e_prepare_and_submit(
                 "benchmark_id": benchmark_id,
                 "routing_policy": policy.value,
                 "fusion_keep_k": fusion_keep_k,
+                "branch_top_k": branch_top_k,
                 "reranker": reranker_kind,
+                "mode_cross_encoder": reranker_kind
+                in ("cross_encoder", "ce", "cross-encoder"),
+                "mode_sentence_window": reranker_kind
+                in ("sentence_window", "sentence-window", "sw"),
                 "rerank_top_k": rerank_top_k,
                 "router_id": router_id,
                 "router_input_mode": router_input_mode,
                 "router_inference_batch_size": router_inference_batch_size,
+                "sentence_window": {
+                    "radius": sentence_window_radius,
+                    "min_windows": sentence_window_min_windows,
+                    "max_windows": sentence_window_max_windows,
+                    "max_words": sentence_window_max_words,
+                    "max_subwindow_words": sentence_window_max_subwindow_words,
+                    "min_top_chunk_coverage": sentence_window_min_top_chunk_coverage,
+                    "min_distinct_parent_chunks": sentence_window_min_distinct_parent_chunks,
+                    "max_per_parent_chunk": sentence_window_max_per_chunk,
+                    "ce_relax_margin": sentence_window_ce_relax_margin,
+                    "ce_filler_top_ranks": sentence_window_ce_filler_top_ranks,
+                },
             },
         },
     )
@@ -377,20 +439,20 @@ def e2e_prepare_and_submit(
             if router_ctx is not None:
                 q_emb, feat = tensor_by_qid[qid]
 
-            rr = pipeline.run(
+            rr_retrieval = pipeline.run(
                 question,
                 policy,
                 query_embedding=q_emb,
                 feature_vector=feat,
             )
-            rr = reranker.rerank(question, rr, top_k=rerank_top_k)
+            write_retrieval_line(retrieval_fp, rr_retrieval, qid)
 
-            write_retrieval_line(retrieval_fp, rr, qid)
+            rr_context = reranker.rerank(question, rr_retrieval, top_k=rerank_top_k)
 
             custom_id = make_generation_custom_id(
                 run_id, benchmark_name, split, pipeline_name, qid
             )
-            messages = renderer.to_messages(question, rr)
+            messages = renderer.to_messages(question, rr_context)
             body = build_completion_body(
                 messages,
                 model_id=model_id,
@@ -407,6 +469,48 @@ def e2e_prepare_and_submit(
 
     if skipped:
         logger.info("Skipped %d questions with existing answers.", skipped)
+
+    if (
+        str(reranker_kind).strip().lower()
+        in ("sentence_window", "sentence-window", "sw")
+        and records
+    ):
+        user_msgs: list[str] = []
+        for rec in records:
+            msgs = rec.body.get("messages") or []
+            if msgs and str(msgs[-1].get("role")) == "user":
+                c = str(msgs[-1].get("content") or "")
+                user_msgs.append(c)
+            elif msgs:
+                user_msgs.append(str(msgs[0].get("content") or ""))
+        audit = audit_sentence_window_batch(user_msgs)
+        logger.info("Preflight evidence audit: %s", audit.summary_line())
+        if audit.suspicious_flags:
+            for fl in audit.suspicious_flags:
+                logger.warning("Preflight flag: %s", fl)
+        audit_mode = str(os.getenv("E2E_EVIDENCE_AUDIT", "fail") or "fail").lower()
+        if audit.level == "fail" and audit_mode in (
+            "1",
+            "true",
+            "yes",
+            "fail",
+            "error",
+        ):
+            msg = (
+                "Sentence-window preflight failed — refusing batch submission. "
+                f"{audit.summary_line()}. "
+                "Set E2E_EVIDENCE_AUDIT=warn to only log."
+            )
+            logger.error("%s", msg)
+            return 1
+        if audit.level == "warn" or (
+            audit.level == "fail" and audit_mode in ("warn", "warning")
+        ):
+            logger.warning(
+                "Preflight: evidence audit level=%s (continuing with E2E_EVIDENCE_AUDIT=%s)",
+                audit.level,
+                audit_mode,
+            )
 
     code = finalize_batch_submission(
         records,
