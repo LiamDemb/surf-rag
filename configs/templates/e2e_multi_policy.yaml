@@ -1,0 +1,48 @@
+# Base config for: make e2e-run-all-policies CONFIG=...
+# Set e2e.run_id to a shared prefix; Makefile appends -<policy> per job.
+# policies list should match Makefile E2E_POLICIES when using e2e-*-all-policies.
+schema_version: surf-rag/pipeline/v1
+experiment_id: e2e-multi
+seed: 42
+
+paths:
+  data_base: data
+  benchmark_base: data/benchmarks
+  router_base: data/router
+  benchmark_name: surf-bench
+  benchmark_id: 200-test
+  router_id: 4000-test
+  hf_home: null
+  transformers_cache: null
+
+raw_sources:
+  nq_path: data/raw/nq_100.jsonl
+  wiki2_path: data/raw/2wikimultihop_100.jsonl
+
+model_setup:
+  embedding_model: all-MiniLM-L6-v2
+  cross_encoder_model: cross-encoder/ms-marco-MiniLM-L-6-v2
+
+corpus: {}
+router: { dataset: {}, train: {} }
+retrieval: {}
+generation:
+  model: gpt-4o-mini
+  completion_window: 24h
+  batch_max_requests: 2000
+
+e2e:
+  run_id: e2e-batch-prefix
+  split: test
+  policy: learned-soft
+  policies: [dense-only, graph-only, 50-50, learned-soft, learned-hard]
+  fusion_keep_k: 25
+  reranker: cross_encoder
+  rerank_top_k: 5
+  router_device: cpu
+  router_input_mode: both
+  router_inference_batch_size: 32
+  dry_run: false
+
+secrets:
+  openai_api_key_env: OPENAI_API_KEY

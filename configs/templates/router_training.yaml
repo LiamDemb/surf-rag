@@ -1,0 +1,47 @@
+# Router train/eval with existing oracle labels + Parquet dataset.
+# Use: make router-train CONFIG=...  OR  make router-eval CONFIG=...
+schema_version: surf-rag/pipeline/v1
+experiment_id: router-train
+seed: 42
+
+paths:
+  data_base: data
+  benchmark_base: data/benchmarks
+  router_base: data/router
+  benchmark_name: surf-bench
+  benchmark_id: 200-test
+  router_id: 4000-test
+  hf_home: null
+  transformers_cache: null
+
+raw_sources:
+  nq_path: data/raw/nq_100.jsonl
+  wiki2_path: data/raw/2wikimultihop_100.jsonl
+
+model_setup:
+  embedding_model: all-MiniLM-L6-v2
+  cross_encoder_model: cross-encoder/ms-marco-MiniLM-L-6-v2
+
+corpus: {}
+alignment: {}
+entity_matching: {}
+oracle: {}
+retrieval: {}
+generation: {}
+
+router:
+  dataset:
+    embedding_model: all-MiniLM-L6-v2
+    train_ratio: 0.6
+    dev_ratio: 0.2
+    test_ratio: 0.2
+  train:
+    epochs: 100
+    batch_size: 32
+    learning_rate: 0.001
+    device: cpu
+    input_mode: both
+    input_modes: [both, query-features, embedding]
+
+e2e: {}
+secrets: {}

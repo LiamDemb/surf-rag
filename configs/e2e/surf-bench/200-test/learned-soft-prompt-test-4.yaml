@@ -1,0 +1,53 @@
+# Named E2E eval run: set run_id to something stable for your paper / slides.
+schema_version: surf-rag/pipeline/v1
+experiment_id: e2e-learned-soft-prompt-test-4
+seed: 42
+
+paths:
+  data_base: data
+  benchmark_base: data/benchmarks
+  router_base: data/router
+  benchmark_name: surf-bench
+  benchmark_id: 200-test
+  router_id: 4000-test
+  hf_home: null
+  transformers_cache: null
+
+raw_sources:
+  nq_path: data/raw/nq_100.jsonl
+  wiki2_path: data/raw/2wikimultihop_100.jsonl
+
+model_setup:
+  embedding_model: all-MiniLM-L6-v2
+  cross_encoder_model: cross-encoder/ms-marco-MiniLM-L-6-v2
+
+corpus: {}
+alignment: {}
+entity_matching: {}
+oracle: {}
+router: { dataset: {}, train: {} }
+retrieval: {}
+generation:
+  model: gpt-4o-mini
+  max_tokens: 512
+  temperature: 0.0
+  prompt_file: prompts/generator.txt
+  completion_window: 24h
+  batch_max_requests: 2000
+  include_graph_provenance: false
+
+e2e:
+  run_id: prompt-test-4
+  split: test
+  policy: learned-soft
+  fusion_keep_k: 25
+  reranker: cross_encoder
+  rerank_top_k: 5
+  router_device: cpu
+  router_input_mode: both
+  router_inference_batch_size: 32
+  limit: null
+  dry_run: false
+
+secrets:
+  openai_api_key_env: OPENAI_API_KEY
