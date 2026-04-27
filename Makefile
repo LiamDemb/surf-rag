@@ -4,7 +4,9 @@
 	router-train router-eval router-train-ablations router-evaluate-ablations \
 	print-oracle-config print-router-config print-paths validate-oracle-config validate-router-config \
 	validate-router-train \
-	e2e-print-config e2e-prepare e2e-submit e2e-collect e2e-evaluate e2e-run e2e-run-all-policies e2e-smoke-test-v01
+	e2e-print-config e2e-prepare e2e-submit e2e-collect e2e-evaluate e2e-run \
+	e2e-run-all-policies e2e-collect-all-policies e2e-evaluate-all-policies e2e-smoke-test-v01 \
+	build-entity-matching-artifacts
 
 -include .env
 export OPENAI_API_KEY
@@ -38,6 +40,9 @@ DOCSTORE_PATH := $(CORPUS_DIR)/docstore.sqlite
 CORPUS_PATH := $(CORPUS_DIR)/corpus.jsonl
 OUTPUT_DIR := $(CORPUS_DIR)
 HF_HOME ?= $(CORPUS_DIR)/hf_cache
+TRANSFORMERS_CACHE ?= $(HF_HOME)/transformers
+export HF_HOME
+export TRANSFORMERS_CACHE
 
 # Router bundle (oracle + dataset + model)
 ROUTER_BASE ?= $(DATA_BASE)/router
@@ -74,9 +79,12 @@ E2E_RUN_ID ?= e2e-$(shell date +%Y%m%d-%H%M%S)
 E2E_POLICY ?= learned-soft
 E2E_POLICIES ?= dense-only graph-only 50-50 learned-soft learned-hard
 E2E_FUSION_KEEP_K ?= $(ORACLE_FUSION_KEEP_K)
-E2E_RERANKER ?= none
-E2E_RERANK_TOP_K ?= 10
+# Reranking: none | cross_encoder (aliases: cross-encoder, ce)
+E2E_RERANKER ?= cross_encoder
+E2E_RERANK_TOP_K ?= 5
+E2E_CROSS_ENCODER_MODEL ?= cross-encoder/ms-marco-MiniLM-L-6-v2
 E2E_ROUTER_DEVICE ?= cpu
+E2E_ROUTER_INFERENCE_BATCH_SIZE ?= 32
 
 # Poetry Python for consistent CLI
 PY = poetry run python
@@ -88,7 +96,7 @@ install-hooks:
 	poetry run pre-commit install
 
 setup-models:
-	HF_HOME="$(HF_HOME)" poetry run python scripts/setup_models.py
+	HF_HOME="$(HF_HOME)" TRANSFORMERS_CACHE="$(TRANSFORMERS_CACHE)" poetry run python scripts/setup_models.py
 
 lock:
 	poetry lock
@@ -135,6 +143,12 @@ build-corpus:
 		--output-dir "$(OUTPUT_DIR)" \
 		--docstore "$(DOCSTORE_PATH)"
 
+# Precompute lexicon phrase matcher (optional; speeds graph + learned-router feature paths)
+# Rebuild: make build-entity-matching-artifacts ENTITY_MATCHING_FORCE=1
+build-entity-matching-artifacts:
+	$(PY) -m scripts.build_entity_matching_artifacts \
+		--corpus-dir "$(CORPUS_DIR)" \
+		$(if $(ENTITY_MATCHING_FORCE),--force,)
 
 filter-benchmark:
 	poetry run python scripts/filter_benchmark_by_corpus.py \
@@ -294,8 +308,10 @@ e2e-prepare:
 		--fusion-keep-k $(E2E_FUSION_KEEP_K) \
 		--reranker "$(E2E_RERANKER)" \
 		--rerank-top-k $(E2E_RERANK_TOP_K) \
+		--cross-encoder-model "$(E2E_CROSS_ENCODER_MODEL)" \
 		--router-device "$(E2E_ROUTER_DEVICE)" \
 		--router-input-mode "$(ROUTER_INPUT_MODE)" \
+		--router-inference-batch-size $(E2E_ROUTER_INFERENCE_BATCH_SIZE) \
 		--dry-run
 
 e2e-submit:
@@ -313,8 +329,10 @@ e2e-submit:
 		--fusion-keep-k $(E2E_FUSION_KEEP_K) \
 		--reranker "$(E2E_RERANKER)" \
 		--rerank-top-k $(E2E_RERANK_TOP_K) \
+		--cross-encoder-model "$(E2E_CROSS_ENCODER_MODEL)" \
 		--router-device "$(E2E_ROUTER_DEVICE)" \
-		--router-input-mode "$(ROUTER_INPUT_MODE)"
+		--router-input-mode "$(ROUTER_INPUT_MODE)" \
+		--router-inference-batch-size $(E2E_ROUTER_INFERENCE_BATCH_SIZE)
 
 e2e-collect:
 	$(PY) -m scripts.e2e_benchmark collect \
@@ -342,13 +360,28 @@ e2e-evaluate:
 
 e2e-run:
 	@echo "1) make e2e-submit   (or e2e-prepare for local dry-run)"
+	@echo "   All policies: make e2e-run-all-policies  (same E2E_RUN_ID prefix as collect/eval-all)"
 	@echo "2) Wait for OpenAI batch(es) to complete."
 	@echo "3) make e2e-collect && make e2e-evaluate"
+	@echo "   All policies: make e2e-collect-all-policies && make e2e-evaluate-all-policies"
 
+# Shared prefix: set E2E_RUN_ID to the same value used for e2e-run-all-policies (each policy uses $(E2E_RUN_ID)-<policy>).
 e2e-run-all-policies:
 	@for pol in $(E2E_POLICIES); do \
 		echo "=== E2E policy=$$pol run=$(E2E_RUN_ID)-$$pol ==="; \
 		$(MAKE) e2e-submit E2E_POLICY=$$pol E2E_RUN_ID="$(E2E_RUN_ID)-$$pol" || exit 1; \
+	done
+
+e2e-collect-all-policies:
+	@for pol in $(E2E_POLICIES); do \
+		echo "=== E2E collect policy=$$pol run=$(E2E_RUN_ID)-$$pol ==="; \
+		$(MAKE) e2e-collect E2E_POLICY=$$pol E2E_RUN_ID="$(E2E_RUN_ID)-$$pol" || exit 1; \
+	done
+
+e2e-evaluate-all-policies:
+	@for pol in $(E2E_POLICIES); do \
+		echo "=== E2E evaluate policy=$$pol run=$(E2E_RUN_ID)-$$pol ==="; \
+		$(MAKE) e2e-evaluate E2E_POLICY=$$pol E2E_RUN_ID="$(E2E_RUN_ID)-$$pol" || exit 1; \
 	done
 
 e2e-smoke-test-v01: E2E_RUN_ID := smoke-$(shell date +%Y%m%d-%H%M%S)
@@ -363,4 +396,6 @@ e2e-smoke-test-v01:
 		--policy dense-only \
 		--retrieval-asset-dir "$(CORPUS_DIR)" \
 		--limit 1 \
+		--router-inference-batch-size $(E2E_ROUTER_INFERENCE_BATCH_SIZE) \
 		--dry-run
+
