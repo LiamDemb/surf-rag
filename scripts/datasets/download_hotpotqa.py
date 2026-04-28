@@ -17,7 +17,9 @@ from typing import Any
 import pyarrow.parquet as pq
 import requests
 from huggingface_hub import HfApi
+from huggingface_hub.utils import build_hf_headers
 
+from surf_rag.config.env import get_hf_hub_token, load_app_env
 from surf_rag.core.corpus_acquisition import (
     supporting_titles_from_supporting_facts_sample,
 )
@@ -91,7 +93,9 @@ def iter_hotpotqa_examples(
     fail with ``Feature type 'List' not found`` when the local dataset builder
     cache has legacy ``dataset_infos`` metadata incompatible with ``datasets`` 3.x.
     """
-    api = HfApi()
+    load_app_env()
+    token = get_hf_hub_token()
+    api = HfApi(token=token)
     rev = _resolve_revision(api, revision)
     relpaths = _parquet_relpaths(
         api, config_name=config_name, split=split, revision=rev
@@ -109,8 +113,11 @@ def iter_hotpotqa_examples(
     )
 
     session = requests.Session()
-    session.headers.setdefault(
-        "User-Agent", "surf-rag/download_hotpotqa (research; +https://github.com)"
+    session.headers.update(
+        build_hf_headers(
+            library_name="surf-rag",
+            user_agent="download_hotpotqa (research; +https://github.com)",
+        )
     )
 
     for url in urls:
@@ -180,6 +187,8 @@ def main() -> int:
         help="Deprecated: ignored. Each run downloads parquet shards over the network.",
     )
     args = parser.parse_args()
+
+    load_app_env()
 
     if args.n < 1:
         parser.error("--n must be >= 1")

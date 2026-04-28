@@ -6,13 +6,44 @@ import os
 
 from dotenv import load_dotenv
 
+# Hugging Face Hub accepts either name; keep .env single-sourced and mirror here.
+HF_TOKEN_ENV = "HF_TOKEN"
+HUGGING_FACE_HUB_TOKEN_ENV = "HUGGING_FACE_HUB_TOKEN"
+
+
+def sync_hf_hub_token_env() -> None:
+    """Mirror the Hub token between ``HF_TOKEN`` and ``HUGGING_FACE_HUB_TOKEN``.
+
+    ``huggingface_hub`` resolves ``HF_TOKEN`` first, then ``HUGGING_FACE_HUB_TOKEN``.
+    Syncing avoids tools that only read one of the two missing auth after ``load_dotenv``.
+    """
+    hf = (os.environ.get(HF_TOKEN_ENV) or "").strip()
+    hub = (os.environ.get(HUGGING_FACE_HUB_TOKEN_ENV) or "").strip()
+    if hf and not hub:
+        os.environ[HUGGING_FACE_HUB_TOKEN_ENV] = hf
+    elif hub and not hf:
+        os.environ[HF_TOKEN_ENV] = hub
+
+
+def get_hf_hub_token() -> str | None:
+    """Return a Hub token if available: env (after sync) or Hugging Face CLI cache.
+
+    Call :func:`load_app_env` early in CLIs so ``.env`` is loaded first.
+    """
+    sync_hf_hub_token_env()
+    from huggingface_hub.utils import get_token  # local import: heavy deps
+
+    return get_token()
+
 
 def load_app_env(*, override: bool = False) -> None:
     """Load ``.env`` from the current working directory if present.
 
     ``override=False`` matches python-dotenv defaults: existing process env wins.
+    After loading, normalizes Hugging Face token env aliases.
     """
     load_dotenv(override=override)
+    sync_hf_hub_token_env()
 
 
 def _env_s(value: object) -> str:
