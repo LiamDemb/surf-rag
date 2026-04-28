@@ -24,6 +24,7 @@ SELECTED_BETA ?=
 ROUTER_INPUT_MODES ?= both query-features embedding
 ENTITY_MATCHING_FORCE ?=
 ALIGN_2WIKI_EXTRA ?=
+PIPELINE_RUN_ID ?=
 
 PY = poetry run python
 
@@ -67,13 +68,16 @@ validate-router-train:
 	$(PY) -m surf_rag.config validate-router-train "$(CONFIG)"
 
 ingest:
-	$(PY) scripts/ingest_data.py --config "$(CONFIG)"
+	$(PY) scripts/ingest_data.py --config "$(CONFIG)" \
+		$(if $(PIPELINE_RUN_ID),--pipeline-run-id "$(PIPELINE_RUN_ID)",)
 
 fetch-wikipedia-articles:
 	$(PY) scripts/fetch_wikipedia_articles.py --config "$(CONFIG)"
 
 align-2wiki-support:
-	$(PY) scripts/align_2wiki_support.py --config "$(CONFIG)" $(ALIGN_2WIKI_EXTRA)
+	$(PY) scripts/align_2wiki_support.py --config "$(CONFIG)" \
+		$(if $(PIPELINE_RUN_ID),--pipeline-run-id "$(PIPELINE_RUN_ID)",) \
+		$(ALIGN_2WIKI_EXTRA)
 
 align-2wiki-support-full:
 	$(MAKE) align-2wiki-support CONFIG="$(CONFIG)" ALIGN_2WIKI_EXTRA=--full-report
@@ -86,9 +90,18 @@ build-entity-matching-artifacts:
 		$(if $(ENTITY_MATCHING_FORCE),--force,)
 
 filter-benchmark:
-	$(PY) scripts/filter_benchmark_by_corpus.py --config "$(CONFIG)"
+	$(PY) scripts/filter_benchmark_by_corpus.py --config "$(CONFIG)" \
+		$(if $(PIPELINE_RUN_ID),--pipeline-run-id "$(PIPELINE_RUN_ID)",)
 
-pipeline: ingest fetch-wikipedia-articles align-2wiki-support build-corpus
+pipeline:
+	@rid="$(PIPELINE_RUN_ID)"; \
+	[ -n "$$rid" ] || rid=pipeline-$$(date +%Y%m%dT%H%M%SZ); \
+	echo "=== pipeline run-id: $$rid ==="; \
+	$(MAKE) ingest CONFIG="$(CONFIG)" PIPELINE_RUN_ID="$$rid" || exit 1; \
+	$(MAKE) fetch-wikipedia-articles CONFIG="$(CONFIG)" PIPELINE_RUN_ID="$$rid" || exit 1; \
+	$(MAKE) align-2wiki-support CONFIG="$(CONFIG)" ALIGN_2WIKI_EXTRA="$(ALIGN_2WIKI_EXTRA)" PIPELINE_RUN_ID="$$rid" || exit 1; \
+	$(MAKE) build-corpus CONFIG="$(CONFIG)" PIPELINE_RUN_ID="$$rid" || exit 1; \
+	$(MAKE) filter-benchmark CONFIG="$(CONFIG)" PIPELINE_RUN_ID="$$rid" || exit 1
 
 oracle-prepare: validate-oracle-config
 	$(PY) -m scripts.prepare_oracle_run --config "$(CONFIG)"

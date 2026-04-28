@@ -14,6 +14,10 @@ from surf_rag.config.env import load_app_env, apply_pipeline_env_from_config
 from surf_rag.config.loader import load_pipeline_config
 from surf_rag.config.merge import merge_filter_benchmark_args
 
+from surf_rag.benchmark.pipeline_audit import (
+    resolve_pipeline_run_id,
+    write_pipeline_step_report,
+)
 from surf_rag.benchmark.corpus_filter import (
     filter_benchmark_rows,
     iter_jsonl,
@@ -59,6 +63,11 @@ def main() -> int:
         default=None,
         help="Optional explicit backup output path for the original benchmark.",
     )
+    parser.add_argument(
+        "--pipeline-run-id",
+        default=os.getenv("PIPELINE_RUN_ID"),
+        help="Optional shared run id for cross-step benchmark count reporting.",
+    )
     args = parser.parse_args()
     if args.config:
         cfg = load_pipeline_config(args.config.resolve())
@@ -100,6 +109,18 @@ def main() -> int:
                 source,
             )
     logger.info("Wrote filtered benchmark to %s", benchmark_path)
+    run_id = resolve_pipeline_run_id(args.pipeline_run_id)
+    report_path = write_pipeline_step_report(
+        benchmark_path=benchmark_path,
+        step_name="filter_benchmark",
+        before=stats.total,
+        after=stats.kept,
+        run_id=run_id,
+        details={
+            "dropped_by_source": dict(sorted((stats.dropped_by_source or {}).items())),
+        },
+    )
+    logger.info("Wrote pipeline counts report: %s", report_path)
     return 0
 
 

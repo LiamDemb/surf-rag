@@ -14,6 +14,10 @@ from dotenv import load_dotenv
 from surf_rag.config.env import load_app_env, apply_pipeline_env_from_config
 from surf_rag.config.loader import load_pipeline_config
 from surf_rag.config.merge import merge_ingest_args
+from surf_rag.benchmark.pipeline_audit import (
+    resolve_pipeline_run_id,
+    write_pipeline_step_report,
+)
 from surf_rag.core.loaders import load_2wiki, load_hotpotqa, load_nq
 from surf_rag.core.schemas import (
     BenchmarkItem,
@@ -119,6 +123,11 @@ def main() -> int:
         "--output-dir",
         default=os.getenv("OUTPUT_DIR", "data/processed"),
         help="Output directory for processed artifacts.",
+    )
+    parser.add_argument(
+        "--pipeline-run-id",
+        default=os.getenv("PIPELINE_RUN_ID"),
+        help="Optional shared run id for cross-step benchmark count reporting.",
     )
     parser.add_argument("--nq-version", default=os.getenv("NQ_VERSION"))
     parser.add_argument(
@@ -226,6 +235,21 @@ def main() -> int:
         len(new_items),
     )
     logger.info("Wrote %s", benchmark_path)
+    run_id = resolve_pipeline_run_id(args.pipeline_run_id)
+    report_path = write_pipeline_step_report(
+        benchmark_path=benchmark_path,
+        step_name="ingest",
+        before=len(existing_items),
+        after=len(combined),
+        run_id=run_id,
+        details={
+            "existing": len(existing_items),
+            "added": len(new_items),
+            "novel_questions": novel_count,
+            "new_by_source": {k: len(v) for k, v in sorted(new_by_source.items())},
+        },
+    )
+    logger.info("Wrote pipeline counts report: %s", report_path)
 
     return 0
 
