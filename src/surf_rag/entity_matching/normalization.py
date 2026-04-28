@@ -15,10 +15,15 @@ _SPACE_AFTER_OPEN_BRACKET_RE = re.compile(r"([(\[{])\s+")
 _SPACE_BEFORE_CLOSE_BRACKET_RE = re.compile(r"\s+([)\]}])")
 
 
+def _strip_diacritics(text: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", text)
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+
+
 def normalize_for_query_match(text: str) -> str:
     """Normalize text for substring matching against the phrase inventory.
 
-    - Unicode NFKC
+    - Unicode NFKC + diacritic folding
     - Lowercase (casefold)
     - Collapse whitespace
     - Light punctuation spacing cleanup (aligned with benchmark alignment helpers)
@@ -27,6 +32,9 @@ def normalize_for_query_match(text: str) -> str:
     """
     s = unicodedata.normalize("NFKC", str(text or ""))
     s = s.casefold()
+    s = _strip_diacritics(s)
+    # Normalize modifier-letter apostrophes that survive diacritic folding.
+    s = s.replace("ʿ", "").replace("ʼ", "")
     s = s.replace("|", " ")
     s = _SPACE_BEFORE_PUNCT_RE.sub(r"\1", s)
     s = _SPACE_AFTER_OPEN_BRACKET_RE.sub(r"\1", s)

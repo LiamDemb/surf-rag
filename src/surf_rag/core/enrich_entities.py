@@ -11,8 +11,17 @@ DEFAULT_ENTITY_TYPES = {"PERSON", "ORG", "GPE", "LOC", "EVENT", "WORK_OF_ART"}
 DEFAULT_SPACY_MODEL = "en_core_web_sm"
 
 
+def _strip_diacritics(text: str) -> str:
+    """Fold accented/marked characters to ASCII-like base letters."""
+    decomposed = unicodedata.normalize("NFKD", text)
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+
+
 def normalize_key(text: str) -> str:
-    s = unicodedata.normalize("NFKC", text).lower()
+    s = unicodedata.normalize("NFKC", text).casefold()
+    s = _strip_diacritics(s)
+    # Normalize modifier-letter apostrophes that survive diacritic folding.
+    s = s.replace("ʿ", "").replace("ʼ", "")
     s = re.sub(r"\([^)]*\)", "", s)  # Remove anything in brackets
     s = re.sub(r"['’]s\b", "", s)
     s = re.sub(r"[^\w\s-]", " ", s)
