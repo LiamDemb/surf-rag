@@ -166,7 +166,7 @@ e2e-run-all-policies:
 	@for pol in $(E2E_POLICIES); do \
 		base="$(E2E_RUN_ID)"; \
 		[ -n "$$base" ] || base=e2e; \
-		rid="$$base-$$pol"; \
+		rid="$(E2E_RUN_ID)"; \
 		echo "=== E2E policy=$$pol run=$$rid ==="; \
 		$(MAKE) e2e-submit E2E_POLICY=$$pol E2E_RUN_ID="$$rid" CONFIG="$(CONFIG)" || exit 1; \
 	done
@@ -175,7 +175,7 @@ e2e-collect-all-policies:
 	@for pol in $(E2E_POLICIES); do \
 		base="$(E2E_RUN_ID)"; \
 		[ -n "$$base" ] || base=e2e; \
-		rid="$$base-$$pol"; \
+		rid="$(E2E_RUN_ID)"; \
 		echo "=== E2E collect policy=$$pol run=$$rid ==="; \
 		$(MAKE) e2e-collect E2E_POLICY=$$pol E2E_RUN_ID="$$rid" CONFIG="$(CONFIG)" || exit 1; \
 	done
@@ -184,7 +184,7 @@ e2e-evaluate-all-policies:
 	@for pol in $(E2E_POLICIES); do \
 		base="$(E2E_RUN_ID)"; \
 		[ -n "$$base" ] || base=e2e; \
-		rid="$$base-$$pol"; \
+		rid="$(E2E_RUN_ID)"; \
 		echo "=== E2E evaluate policy=$$pol run=$$rid ==="; \
 		$(MAKE) e2e-evaluate E2E_POLICY=$$pol E2E_RUN_ID="$$rid" CONFIG="$(CONFIG)" || exit 1; \
 	done
