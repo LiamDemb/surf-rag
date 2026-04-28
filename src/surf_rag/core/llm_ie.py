@@ -1,9 +1,9 @@
-"""One-pass LLM extraction: entities + triples in a single call.
+"""One-pass LLM extraction focused on relational triples.
 
-Uses OpenAI Chat API with tool calling to extract both entity inventory and
-relational triples from chunk text. The LLM is the sole authority.
-Post-processing uses normalize_key() only (no alias canonicalization) for
-duplicate-entity-node graph representation.
+Uses OpenAI Chat API with tool calling to extract subject-predicate-object
+triples from chunk text. Entity inventory is derived from triple endpoints in
+post-processing, which reduces output token load and keeps extraction focused
+on recall of factual relations.
 """
 
 from __future__ import annotations
@@ -26,28 +26,10 @@ _EXTRACT_IE_TOOL = {
     "type": "function",
     "function": {
         "name": "extract_entities_and_triples",
-        "description": "Emit extracted entities and triples from the text in one pass.",
+        "description": "Emit extracted relational triples from the text in one pass.",
         "parameters": {
             "type": "object",
             "properties": {
-                "entities": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "surface": {
-                                "type": "string",
-                                "description": "Entity as mentioned in text",
-                            },
-                            "type": {
-                                "type": "string",
-                                "description": "PERSON, ORG, GPE, LOC, EVENT, WORK_OF_ART, NOUN_CHUNK",
-                            },
-                        },
-                        "required": ["surface", "type"],
-                    },
-                    "description": "All named entities found in the text",
-                },
                 "triples": {
                     "type": "array",
                     "items": {
@@ -57,14 +39,13 @@ _EXTRACT_IE_TOOL = {
                             "pred": {"type": "string"},
                             "obj_surface": {"type": "string"},
                             "confidence": {"type": "number"},
-                            "evidence": {"type": "string"},
                         },
                         "required": ["subj_surface", "pred", "obj_surface"],
                     },
                     "description": "Subject-predicate-object triples",
                 },
             },
-            "required": ["entities", "triples"],
+            "required": ["triples"],
         },
     },
 }
@@ -94,7 +75,7 @@ def _post_process_ie(
     """Convert raw LLM output into corpus metadata schema.
 
     Uses normalize_key() only (no alias_map) per duplicate-entity-node design.
-    Ensures all triple endpoints exist in the entity list.
+    Entity inventory is primarily derived from triple endpoints.
     """
     entity_by_norm: Dict[str, Dict[str, Any]] = {}
     banned_predicates = {
@@ -152,8 +133,12 @@ def _post_process_ie(
             continue
         seen_triples.add(key)
 
-        start_char, end_char = _find_evidence_span(evidence, text)
-        match_text = evidence or f"{subj_surface} {pred} {obj_surface}"
+        if evidence:
+            start_char, end_char = _find_evidence_span(evidence, text)
+            match_text = evidence
+        else:
+            start_char, end_char = (-1, -1)
+            match_text = f"{subj_surface} {pred} {obj_surface}"
 
         rec: Dict[str, Any] = {
             "subj_surface": subj_surface,
@@ -193,7 +178,7 @@ def _post_process_ie(
 
 @dataclass
 class LLMInformationExtractor:
-    """One-pass LLM extractor: entities + triples in a single API call."""
+    """One-pass LLM extractor: triples-first extraction in a single API call."""
 
     model_id: str = ""
     temperature: float = 0.0
@@ -227,9 +212,10 @@ class LLMInformationExtractor:
         seed_titles_in_chunk: Optional[List[str]] = None,
         title: str = "N/A",
     ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-        """Extract entities and triples in one LLM call.
+        """Extract triples in one LLM call.
 
-        Returns (entities, relations) in corpus metadata schema.
+        Returns (entities, relations) in corpus metadata schema, with entities
+        derived from triple endpoints in post-processing.
         """
         text = text or ""
         if not text.strip():

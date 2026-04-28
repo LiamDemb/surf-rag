@@ -89,6 +89,21 @@ def test_post_process_injects_endpoint_entities() -> None:
     assert "singer" in norms
 
 
+def test_post_process_derives_entities_from_triples_only() -> None:
+    raw_entities = []
+    raw_triples = [
+        {
+            "subj_surface": "Steve Jobs",
+            "pred": "founded",
+            "obj_surface": "Apple",
+        },
+    ]
+    entities, relations = _post_process_ie(raw_entities, raw_triples, "text", None)
+    assert len(relations) == 1
+    norms = {e["norm"] for e in entities}
+    assert norms == {"steve jobs", "apple"}
+
+
 def test_post_process_shape() -> None:
     raw_entities = [
         {"surface": "Ra", "type": "PERSON"},
