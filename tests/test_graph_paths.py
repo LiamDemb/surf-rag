@@ -39,7 +39,7 @@ def test_enumerate_candidate_paths_skips_appears_in_and_returns_rel_paths_only()
         ]
     )
 
-    paths = enumerate_candidate_paths(
+    paths, diag = enumerate_candidate_paths(
         graph=graph,
         start_nodes={"E:a"},
         max_hops=1,
@@ -50,6 +50,7 @@ def test_enumerate_candidate_paths_skips_appears_in_and_returns_rel_paths_only()
     assert {_sig(p) for p in paths} == {
         (("E:a", "causes", False, "E:b"),),
     }
+    assert diag.paths_emitted == len(paths)
 
 
 def test_enumerate_candidate_paths_respects_bidirectionality():
@@ -71,7 +72,7 @@ def test_enumerate_candidate_paths_respects_bidirectionality():
         ]
     )
 
-    paths = enumerate_candidate_paths(
+    paths, _diag = enumerate_candidate_paths(
         graph=graph,
         start_nodes={"E:director"},
         max_hops=1,
@@ -108,7 +109,7 @@ def test_enumerate_candidate_paths_expands_multiple_labels_on_same_edge():
         ]
     )
 
-    paths = enumerate_candidate_paths(
+    paths, _diag = enumerate_candidate_paths(
         graph=graph,
         start_nodes={"E:film"},
         max_hops=1,
@@ -142,7 +143,7 @@ def test_enumerate_candidate_paths_respects_max_hops_and_deduplicates():
         ]
     )
 
-    paths_1 = enumerate_candidate_paths(
+    paths_1, _d1 = enumerate_candidate_paths(
         graph=graph,
         start_nodes={"E:a"},
         max_hops=1,
@@ -153,7 +154,7 @@ def test_enumerate_candidate_paths_respects_max_hops_and_deduplicates():
         (("E:a", "r1", False, "E:b"),),
     }
 
-    paths_2 = enumerate_candidate_paths(
+    paths_2, _d2 = enumerate_candidate_paths(
         graph=graph,
         start_nodes={"E:a"},
         max_hops=2,

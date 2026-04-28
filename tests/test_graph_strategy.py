@@ -33,6 +33,11 @@ def test_graph_retriever_returns_ok_with_chunks():
     assert len(result.chunks) > 0
     assert "retrieval" in result.latency_ms
     assert "total" in result.latency_ms
+    assert result.debug_info is not None
+    gd = result.debug_info.get("graph_diagnostics")
+    assert gd is not None
+    assert gd.get("schema_version") == "surf-rag/graph_diag/v1"
+    assert "enumeration" in gd and "grounding" in gd
 
 
 def test_graph_retriever_returns_no_context_for_unmatched_entities():
@@ -50,6 +55,10 @@ def test_graph_retriever_returns_no_context_for_unmatched_entities():
 
     assert result.status == "NO_CONTEXT"
     assert result.chunks == []
+    assert result.debug_info is not None
+    gd = result.debug_info.get("graph_diagnostics")
+    assert gd is not None
+    assert gd.get("no_context_reason") == "no_start_nodes"
 
 
 def test_graph_retriever_is_deterministic_for_same_query():

@@ -12,7 +12,7 @@ from surf_rag.core.entity_alias_resolver import EntityAliasResolver
 from surf_rag.core.entity_index_store import EntityIndexStore
 from surf_rag.core.mapping import ChunkIdToText
 from surf_rag.core.scoring_config import DEFAULT_SCORING_CONFIG, ScoringConfig
-from surf_rag.graph.graph_grounding import ground_path
+from surf_rag.graph.graph_grounding import ground_path_report
 from surf_rag.graph.graph_paths import enumerate_candidate_paths
 from surf_rag.graph.graph_scoring import score_bundle
 from surf_rag.graph.graph_store import NetworkXGraphStore
@@ -282,7 +282,7 @@ class GraphRetriever(BranchRetriever):
         t0 = time.perf_counter()
         timings: Dict[str, float] = {}
         debug = bool(kwargs.get("debug", False))
-        debug_info: Optional[Dict[str, Any]] = {} if debug else None
+        debug_info: Dict[str, Any] = {}
 
         try:
             self._ensure_loaded()
@@ -293,7 +293,23 @@ class GraphRetriever(BranchRetriever):
                 extracted_norms
             )
 
-            if debug_info is not None:
+            graph_diag: Dict[str, Any] = {
+                "schema_version": "surf-rag/graph_diag/v1",
+                "retriever_config": {
+                    "max_hops": self.max_hops,
+                    "max_paths_per_start": self.max_paths_per_start,
+                    "bidirectional": self.bidirectional,
+                    "hop_support_threshold": self.hop_support_threshold,
+                    "top_k": self.top_k,
+                },
+                "seed": {
+                    "extracted_entity_count": len(extracted_norms),
+                    "start_node_count": len(start_nodes),
+                    "has_entity_index": self.entity_index_store is not None,
+                },
+            }
+
+            if debug:
                 debug_info.update(
                     {
                         "extracted_entities": extracted_norms,
@@ -302,25 +318,74 @@ class GraphRetriever(BranchRetriever):
                         "entity_index_matches": vector_matches,
                     }
                 )
+            else:
+                graph_diag["seed"].update(
+                    {
+                        "unmatched_entity_count": len(unmatched_entities),
+                        "entity_index_match_count": len(vector_matches),
+                    }
+                )
 
             if not start_nodes:
+                graph_diag["no_context_reason"] = "no_start_nodes"
+                debug_info["graph_diagnostics"] = graph_diag
                 return self._no_context_result(t0, r0, timings, query, debug_info)
 
-            candidate_paths = enumerate_candidate_paths(
+            candidate_paths, enum_diag = enumerate_candidate_paths(
                 graph=self._graph,
                 start_nodes=start_nodes,
                 max_hops=self.max_hops,
                 bidirectional=self.bidirectional,
                 max_paths_per_start=self.max_paths_per_start,
             )
+            graph_diag["enumeration"] = enum_diag.to_json()
 
             grounded_bundles: List[EvidenceBundle] = []
+            grounding_failed: Dict[str, int] = {}
+            weak_support_scores: List[float] = []
+
             for path in candidate_paths:
-                bundle = ground_path(path=path, graph=self._graph)
-                if bundle is not None and bundle.grounded_hops:
-                    grounded_bundles.append(bundle)
+                report = ground_path_report(
+                    self._graph,
+                    path,
+                    support_threshold=self.hop_support_threshold,
+                )
+                if report.bundle is not None and report.bundle.grounded_hops:
+                    grounded_bundles.append(report.bundle)
+                    continue
+                if report.failure_kind:
+                    grounding_failed[report.failure_kind] = (
+                        grounding_failed.get(report.failure_kind, 0) + 1
+                    )
+                    if (
+                        report.failure_kind == "weak_hop_support"
+                        and report.best_support_at_failure is not None
+                        and len(weak_support_scores) < 5
+                    ):
+                        weak_support_scores.append(
+                            float(report.best_support_at_failure)
+                        )
+
+            graph_diag["grounding"] = {
+                "candidate_paths": len(candidate_paths),
+                "grounded_paths_ok": len(grounded_bundles),
+                "grounding_failures_by_kind": grounding_failed,
+                "weak_support_sample_scores": weak_support_scores,
+            }
+
+            if not candidate_paths:
+                graph_diag["no_context_reason"] = "zero_candidate_paths"
 
             if not grounded_bundles:
+                graph_diag.setdefault(
+                    "no_context_reason",
+                    (
+                        "no_grounded_paths"
+                        if candidate_paths
+                        else graph_diag.get("no_context_reason", "no_grounded_paths")
+                    ),
+                )
+                debug_info["graph_diagnostics"] = graph_diag
                 return self._no_context_result(t0, r0, timings, query, debug_info)
 
             score_cache: Dict[Any, Any] = {}
@@ -345,6 +410,11 @@ class GraphRetriever(BranchRetriever):
             selected_bundles = self._select_ranked_bundles(
                 ranked_bundles, start_nodes, self.top_k
             )
+
+            graph_diag["ranking"] = {
+                "scored_bundles": len(scored_bundles),
+                "selected_bundles": len(selected_bundles),
+            }
 
             chunk_id_to_bundles: Dict[str, List[Tuple[EvidenceBundle, float]]] = {}
             for bundle, score, _ in selected_bundles:
@@ -376,7 +446,10 @@ class GraphRetriever(BranchRetriever):
                     )
                 )
 
-            if debug_info is not None:
+            graph_diag["ranking"]["unique_chunk_ids"] = len(chunk_id_to_bundles)
+            graph_diag["ranking"]["chunks_with_text"] = len(chunks)
+
+            if debug:
                 debug_info["bundle_trace"] = [
                     self._bundle_to_debug(b, s, d) for b, s, d in selected_bundles
                 ]
@@ -384,7 +457,10 @@ class GraphRetriever(BranchRetriever):
             timings["retrieval"] = (time.perf_counter() - r0) * 1000.0
             timings["total"] = (time.perf_counter() - t0) * 1000.0
 
+            debug_info["graph_diagnostics"] = graph_diag
+
             if not chunks:
+                graph_diag["no_context_reason"] = "no_chunk_text_in_corpus"
                 return self._no_context_result(t0, r0, timings, query, debug_info)
 
             return RetrievalResult(
