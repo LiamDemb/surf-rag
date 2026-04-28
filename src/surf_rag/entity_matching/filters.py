@@ -59,11 +59,12 @@ def resolve_and_filter(
     matches: List[RawPhraseMatch],
     resolver: EntityAliasResolver,
     query_matched_text: str,
-    max_df: int,
+    max_df: int | None,
     min_match_key_len: int = 3,
 ) -> List[FilteredEntity]:
     """
-    Map matched spans to canonical norms via the resolver, apply ``df`` hard max,
+    Map matched spans to canonical norms via the resolver, optionally apply ``df``
+    hard max (disabled when ``max_df`` is ``None`` for soft v03 extraction),
     then deduplicate by norm keeping the best record per the ranking rules.
     """
     if not matches:
@@ -77,7 +78,7 @@ def resolve_and_filter(
         if not final_norm:
             continue
         dfi = m.df
-        if dfi > max_df:
+        if max_df is not None and dfi > max_df:
             continue
         cands.append(
             FilteredEntity(
@@ -87,6 +88,7 @@ def resolve_and_filter(
                 span_len=m.end - m.start,
                 start=m.start,
                 end=m.end,
+                match_key=m.match_key,
             )
         )
     if not cands:

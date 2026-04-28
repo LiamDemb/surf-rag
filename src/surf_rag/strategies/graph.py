@@ -2,24 +2,29 @@ from __future__ import annotations
 
 import os
 import time
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Protocol, Set, Tuple
+from collections import defaultdict
+from dataclasses import dataclass, field, replace
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Protocol, Set, Tuple
 
 import networkx as nx
 
 from surf_rag.core.embedder import Embedder
-from surf_rag.core.entity_alias_resolver import EntityAliasResolver
-from surf_rag.core.entity_index_store import EntityIndexStore
 from surf_rag.core.mapping import ChunkIdToText
-from surf_rag.core.scoring_config import DEFAULT_SCORING_CONFIG, ScoringConfig
+from surf_rag.core.scoring_config import ScoringConfig, get_default_scoring_config
+from surf_rag.entity_matching.types import PhraseSource, SeedCandidate
+from surf_rag.graph.graph_beam_paths import enumerate_global_frontier_paths
 from surf_rag.graph.graph_grounding import ground_path_report
-from surf_rag.graph.graph_paths import enumerate_candidate_paths
-from surf_rag.graph.graph_scoring import score_bundle
-from surf_rag.graph.graph_store import NetworkXGraphStore
+from surf_rag.graph.graph_scoring import canonical_ppr_rank_chunks, score_bundle
+from surf_rag.graph.graph_seeds import compute_restart_distribution_canonical
+from surf_rag.graph.graph_specificity import node_specificity_score
 from surf_rag.graph.graph_types import EvidenceBundle, GraphPath
-from surf_rag.graph.query_entity_extractor import LLMQueryEntityExtractor
 from surf_rag.retrieval.base import BranchRetriever
 from surf_rag.retrieval.types import RetrievedChunk, RetrievalResult
+
+if TYPE_CHECKING:
+    from surf_rag.core.entity_alias_resolver import EntityAliasResolver
+    from surf_rag.core.entity_index_store import EntityIndexStore
+    from surf_rag.graph.graph_store import NetworkXGraphStore
 
 
 class QueryEntityExtractor(Protocol):
@@ -30,15 +35,31 @@ def _default_query_entity_extractor(
     alias_resolver: EntityAliasResolver,
 ) -> QueryEntityExtractor:
     """Return LLM-based query entity extractor."""
+    from surf_rag.graph.query_entity_extractor import LLMQueryEntityExtractor
+
     return LLMQueryEntityExtractor(alias_resolver=alias_resolver)
+
+
+def _seed_candidate_dict(c: SeedCandidate) -> Dict[str, Any]:
+    return {
+        "canonical_norm": c.canonical_norm,
+        "matched_text": c.matched_text,
+        "start": c.start,
+        "end": c.end,
+        "df": c.df,
+        "source": getattr(c.source, "value", str(c.source)),
+        "match_key": c.match_key,
+        "node_id": c.node_id,
+        "graph_present": c.graph_present,
+        "vector_score": c.vector_score,
+    }
 
 
 @dataclass
 class GraphRetriever(BranchRetriever):
     """
-    Graph-based retrieval: query -> entities -> paths -> grounded bundles -> ranked chunks.
-
-    Path provenance is stored in RetrievedChunk.metadata for prompt rendering.
+    Canonical graph retrieval: semantic softmax × IDF restart masses → frontier paths →
+    heterogeneous entity+chunk Personalized PageRank → chunk-node stationary masses.
     """
 
     name = "Graph"
@@ -53,7 +74,6 @@ class GraphRetriever(BranchRetriever):
 
     top_k: int = 10
     max_hops: int = int(os.getenv("GRAPH_MAX_HOPS", "2"))
-    max_paths_per_start: int = int(os.getenv("GRAPH_MAX_PATHS_PER_START", "50"))
 
     entity_vector_top_k: int = int(os.getenv("GRAPH_ENTITY_VECTOR_TOP_K", "3"))
     entity_vector_threshold: float = float(
@@ -68,9 +88,7 @@ class GraphRetriever(BranchRetriever):
         os.getenv("GRAPH_HOP_SUPPORT_THRESHOLD", "0.5")
     )
 
-    scoring_config: ScoringConfig = field(
-        default_factory=lambda: DEFAULT_SCORING_CONFIG
-    )
+    scoring_config: ScoringConfig = field(default_factory=get_default_scoring_config)
 
     _graph: Optional[nx.DiGraph] = field(default=None, init=False, repr=False)
 
@@ -87,6 +105,8 @@ class GraphRetriever(BranchRetriever):
                 raise ValueError(
                     "GraphRetriever requires alias_resolver when entity_extractor is not provided"
                 )
+            from surf_rag.graph.query_entity_extractor import LLMQueryEntityExtractor
+
             self.entity_extractor = LLMQueryEntityExtractor(
                 alias_resolver=self.alias_resolver
             )
@@ -99,41 +119,92 @@ class GraphRetriever(BranchRetriever):
     def _entity_display(node_id: str) -> str:
         return node_id[2:] if node_id.startswith("E:") else node_id
 
-    def _resolve_start_nodes(
-        self, extracted_norms: List[str]
-    ) -> Tuple[Set[str], List[str], List[Dict[str, Any]]]:
-        candidate_nodes = {f"E:{norm}" for norm in extracted_norms}
-        start_nodes = {node for node in candidate_nodes if self._graph.has_node(node)}
+    def _fallback_seed_candidates(self, norms: List[str]) -> List[SeedCandidate]:
+        """Build synthetic :class:`SeedCandidate` records when only norms are available."""
+        out: List[SeedCandidate] = []
+        pos = 0
+        for n in norms:
+            ln = max(1, len(n))
+            out.append(
+                SeedCandidate(
+                    canonical_norm=n,
+                    matched_text=n,
+                    start=pos,
+                    end=pos + ln,
+                    span_token_count=max(1, len(n.split())),
+                    df=0,
+                    source=PhraseSource.CANONICAL,
+                    match_key=n.casefold().replace(" ", "_"),
+                )
+            )
+            pos += ln + 1
+        return out
 
-        vector_matches: List[Dict[str, Any]] = []
-        unmatched_norms = sorted(
-            norm for norm in extracted_norms if f"E:{norm}" not in start_nodes
-        )
+    def _extract_seed_candidates(self, query: str) -> List[SeedCandidate]:
+        ex = self.entity_extractor
+        fn = getattr(ex, "extract_candidates", None)
+        if callable(fn):
+            return fn(query, soft_df=True)
+        norms = sorted(set(ex.extract(query)))
+        return self._fallback_seed_candidates(norms)
 
-        if unmatched_norms and self.entity_index_store:
-            for norm in unmatched_norms:
+    def _enrich_seed_candidates(
+        self, candidates: List[SeedCandidate]
+    ) -> Tuple[List[SeedCandidate], Set[str], List[Dict[str, Any]]]:
+        """Resolve ``E:{norm}`` and optional vector search; annotate graph presence."""
+        start_nodes: Set[str] = set()
+        vector_diag: List[Dict[str, Any]] = []
+        enriched: List[SeedCandidate] = []
+
+        pending: List[SeedCandidate] = []
+        for c in candidates:
+            node = f"E:{c.canonical_norm}"
+            if self._graph.has_node(node):
+                enriched.append(
+                    replace(c, node_id=node, graph_present=True),  # type: ignore[misc]
+                )
+                start_nodes.add(node)
+            else:
+                pending.append(c)
+
+        if pending and self.entity_index_store:
+            for c in pending:
                 matches = self.entity_index_store.search(
-                    norm,
+                    c.canonical_norm,
                     top_k=self.entity_vector_top_k,
                     threshold=self.entity_vector_threshold,
                 )
+                matched = False
                 for match_norm, score in matches:
                     node = f"E:{match_norm}"
                     if not self._graph.has_node(node):
                         continue
+                    enriched.append(
+                        replace(
+                            c,
+                            canonical_norm=match_norm,
+                            node_id=node,
+                            vector_score=float(score),
+                            graph_present=True,
+                        ),  # type: ignore[misc]
+                    )
                     start_nodes.add(node)
-                    vector_matches.append(
+                    vector_diag.append(
                         {
-                            "query_norm": norm,
+                            "query_norm": c.canonical_norm,
                             "matched_norm": match_norm,
                             "score": float(score),
                         }
                     )
+                    matched = True
+                    break
+                if not matched:
+                    enriched.append(replace(c, graph_present=False))  # type: ignore[misc]
+        else:
+            for c in pending:
+                enriched.append(replace(c, graph_present=False))  # type: ignore[misc]
 
-        unresolved = sorted(
-            norm for norm in extracted_norms if f"E:{norm}" not in start_nodes
-        )
-        return start_nodes, unresolved, vector_matches
+        return enriched, start_nodes, vector_diag
 
     def _format_path(self, path: GraphPath) -> str:
         if not path.hops:
@@ -148,19 +219,6 @@ class GraphRetriever(BranchRetriever):
             )
             parts.append(f"-[{relation}]-> {self._entity_display(hop.target)}")
         return " ".join(parts)
-
-    def _bundle_signature(self, bundle: EvidenceBundle) -> Tuple[Any, ...]:
-        hop_sig = tuple(
-            (
-                hop.source,
-                hop.relation,
-                bool(getattr(hop, "is_reverse", False)),
-                hop.target,
-            )
-            for hop in bundle.path.hops
-        )
-        chunk_sig = tuple(sorted(set(bundle.supporting_chunk_ids)))
-        return hop_sig, chunk_sig
 
     def _path_to_debug(self, path: GraphPath) -> Dict[str, Any]:
         return {
@@ -203,82 +261,57 @@ class GraphRetriever(BranchRetriever):
             ],
         }
 
-    def _bundle_start_entities(self, bundle: EvidenceBundle) -> Set[str]:
-        entities: Set[str] = set()
-        for hop in bundle.path.hops:
-            if hop.source.startswith("E:"):
-                entities.add(hop.source)
-            if hop.target.startswith("E:"):
-                entities.add(hop.target)
-        if bundle.path.start_node.startswith("E:"):
-            entities.add(bundle.path.start_node)
-        return entities
-
-    def _select_ranked_bundles(
-        self,
-        ranked_bundles: List[Tuple[EvidenceBundle, float, Dict[str, float]]],
-        start_nodes: Set[str],
-        top_k: int,
-    ) -> List[Tuple[EvidenceBundle, float, Dict[str, float]]]:
-        best_per_chunk: Dict[
-            Tuple[str, ...], Tuple[EvidenceBundle, float, Dict[str, float]]
-        ] = {}
-
-        for item in ranked_bundles:
-            bundle, score, _breakdown = item
-            chunk_key = tuple(sorted(set(bundle.supporting_chunk_ids)))
-
-            existing = best_per_chunk.get(chunk_key)
-            if existing is None:
-                best_per_chunk[chunk_key] = item
-            else:
-                if score > existing[1]:
-                    best_per_chunk[chunk_key] = item
-
-        deduped = sorted(
-            best_per_chunk.values(),
-            key=lambda item: (-item[1], self._bundle_signature(item[0])),
+    def _bundle_signature(self, bundle: EvidenceBundle) -> Tuple[Any, ...]:
+        hop_sig = tuple(
+            (
+                hop.source,
+                hop.relation,
+                bool(getattr(hop, "is_reverse", False)),
+                hop.target,
+            )
+            for hop in bundle.path.hops
         )
+        chunk_sig = tuple(sorted(set(bundle.supporting_chunk_ids)))
+        return hop_sig, chunk_sig
 
-        selected: List[Tuple[EvidenceBundle, float, Dict[str, float]]] = []
-        selected_signatures: Set[Tuple[Any, ...]] = set()
-        covered_start_nodes: Set[str] = set()
+    def _bundle_ppr_rank_score(
+        self, bundle: EvidenceBundle, pi_dict: Dict[str, float]
+    ) -> float:
+        """Explain bundle ranking using max entity PPR mass × mean hop specificity."""
+        masses: List[float] = []
+        specs: List[float] = []
+        for gh in bundle.grounded_hops:
+            hop = gh.hop
+            for nid in (hop.source, hop.target):
+                masses.append(float(pi_dict.get(nid, 0.0)))
+                specs.append(float(node_specificity_score(self._graph, nid)))
+        mass_max = max(masses) if masses else 0.0
+        smean = float(sum(specs) / len(specs)) if specs else 0.0
+        return mass_max * (0.5 + 0.5 * smean)
 
-        for start_node in sorted(start_nodes):
-            best_item = None
-            for item in deduped:
-                bundle, score, breakdown = item
-                sig = self._bundle_signature(bundle)
-                if sig in selected_signatures:
-                    continue
-                bundle_entities = self._bundle_start_entities(bundle)
-                if start_node in bundle_entities:
-                    best_item = item
-                    break
-
-            if best_item is not None:
-                bundle, score, breakdown = best_item
-                sig = self._bundle_signature(bundle)
-                selected.append(best_item)
-                selected_signatures.add(sig)
-                covered_start_nodes.add(start_node)
-
-                if len(selected) >= top_k:
-                    return selected
-
-        for item in deduped:
-            bundle, score, breakdown = item
-            sig = self._bundle_signature(bundle)
-            if sig in selected_signatures:
+    def _local_subgraph_edge_counts(self, entity_nodes: List[str]) -> Dict[str, int]:
+        g = self._graph
+        rel_edges = 0
+        chunk_edges = 0
+        ent_set = set(entity_nodes)
+        for u in entity_nodes:
+            if u not in g:
                 continue
-            selected.append(item)
-            selected_signatures.add(sig)
-            if len(selected) >= top_k:
-                break
-
-        return selected
+            for _, v, data in g.out_edges(u, data=True):
+                kind = data.get("kind")
+                if kind == "rel" and v in ent_set:
+                    rel_edges += 1
+                elif kind == "appears_in":
+                    chunk_edges += 1
+        return {
+            "relation_edges_within_entity_scope": rel_edges,
+            "appears_in_edges_from_scope_entities": chunk_edges,
+        }
 
     def retrieve(self, query: str, **kwargs) -> RetrievalResult:
+        return self._retrieve_canonical_ppr(query, **kwargs)
+
+    def _retrieve_canonical_ppr(self, query: str, **kwargs) -> RetrievalResult:
         t0 = time.perf_counter()
         timings: Dict[str, float] = {}
         debug = bool(kwargs.get("debug", False))
@@ -288,24 +321,42 @@ class GraphRetriever(BranchRetriever):
             self._ensure_loaded()
             r0 = time.perf_counter()
 
-            extracted_norms = sorted(set(self.entity_extractor.extract(query)))
-            start_nodes, unmatched_entities, vector_matches = self._resolve_start_nodes(
-                extracted_norms
+            raw_candidates = self._extract_seed_candidates(query)
+            extracted_norms = sorted({c.canonical_norm for c in raw_candidates})
+            enriched, start_nodes, vector_diag = self._enrich_seed_candidates(
+                raw_candidates
+            )
+
+            unmatched_entities = sorted(
+                n for n in extracted_norms if f"E:{n}" not in start_nodes
             )
 
             graph_diag: Dict[str, Any] = {
-                "schema_version": "surf-rag/graph_diag/v1",
+                "schema_version": "surf-rag/graph_diag/canonical_v1",
                 "retriever_config": {
+                    "graph_retrieval_mode": "canonical_ppr",
                     "max_hops": self.max_hops,
-                    "max_paths_per_start": self.max_paths_per_start,
                     "bidirectional": self.bidirectional,
                     "hop_support_threshold": self.hop_support_threshold,
                     "top_k": self.top_k,
+                    "ppr_alpha": self.scoring_config.ppr_alpha,
+                    "ppr_max_iter": self.scoring_config.ppr_max_iter,
+                    "ppr_tol": self.scoring_config.ppr_tol,
+                    "graph_transition_mode": self.scoring_config.graph_transition_mode,
+                    "graph_entity_chunk_edge_weight": self.scoring_config.graph_entity_chunk_edge_weight,
+                    "graph_seed_softmax_temperature": self.scoring_config.graph_seed_softmax_temperature,
+                    "graph_max_entities": self.scoring_config.graph_max_entities,
+                    "graph_max_paths": self.scoring_config.graph_max_paths,
+                    "graph_max_frontier_pops": self.scoring_config.graph_max_frontier_pops,
                 },
                 "seed": {
-                    "extracted_entity_count": len(extracted_norms),
+                    "extracted_entity_count": len(raw_candidates),
                     "start_node_count": len(start_nodes),
                     "has_entity_index": self.entity_index_store is not None,
+                    "extracted_candidates": [
+                        _seed_candidate_dict(c) for c in raw_candidates
+                    ],
+                    "resolved_candidates": [_seed_candidate_dict(c) for c in enriched],
                 },
             }
 
@@ -315,28 +366,51 @@ class GraphRetriever(BranchRetriever):
                         "extracted_entities": extracted_norms,
                         "start_nodes": sorted(start_nodes),
                         "unmatched_entities": unmatched_entities,
-                        "entity_index_matches": vector_matches,
+                        "entity_index_matches": vector_diag,
                     }
                 )
             else:
                 graph_diag["seed"].update(
                     {
                         "unmatched_entity_count": len(unmatched_entities),
-                        "entity_index_match_count": len(vector_matches),
+                        "entity_index_match_count": len(vector_diag),
                     }
                 )
+
+            embed_cache: Dict[str, Any] = {}
 
             if not start_nodes:
                 graph_diag["no_context_reason"] = "no_start_nodes"
                 debug_info["graph_diagnostics"] = graph_diag
                 return self._no_context_result(t0, r0, timings, query, debug_info)
 
-            candidate_paths, enum_diag = enumerate_candidate_paths(
+            posterior_masses, restart_diag = compute_restart_distribution_canonical(
+                self._graph,
+                query,
+                enriched,
+                extracted_norms,
+                self.embedder,
+                softmax_temperature=self.scoring_config.graph_seed_softmax_temperature,
+                cache=embed_cache,
+            )
+            graph_diag["seed"]["restart_mass"] = {
+                str(k): float(v) for k, v in posterior_masses.items()
+            }
+            graph_diag["seed"]["idf_components"] = restart_diag.get("per_node", {})
+            graph_diag["seed"]["df_reference"] = restart_diag.get("df_reference")
+            graph_diag["seed"]["semantic_restart_diag"] = restart_diag
+
+            if not posterior_masses:
+                nn = max(len(start_nodes), 1)
+                posterior_masses = {n: 1.0 / float(nn) for n in start_nodes}
+
+            candidate_paths, enum_diag = enumerate_global_frontier_paths(
                 graph=self._graph,
-                start_nodes=start_nodes,
+                seed_weights=posterior_masses,
                 max_hops=self.max_hops,
                 bidirectional=self.bidirectional,
-                max_paths_per_start=self.max_paths_per_start,
+                global_max_paths=int(self.scoring_config.graph_max_paths),
+                global_max_pops=int(self.scoring_config.graph_max_frontier_pops),
             )
             graph_diag["enumeration"] = enum_diag.to_json()
 
@@ -373,86 +447,130 @@ class GraphRetriever(BranchRetriever):
                 "weak_support_sample_scores": weak_support_scores,
             }
 
+            if debug:
+                debug_info["grounded_bundle_count"] = len(grounded_bundles)
+                debug_info["candidate_paths"] = [
+                    self._path_to_debug(p) for p in candidate_paths[:800]
+                ]
+
             if not candidate_paths:
                 graph_diag["no_context_reason"] = "zero_candidate_paths"
 
             if not grounded_bundles:
-                graph_diag.setdefault(
-                    "no_context_reason",
-                    (
-                        "no_grounded_paths"
-                        if candidate_paths
-                        else graph_diag.get("no_context_reason", "no_grounded_paths")
-                    ),
-                )
-                debug_info["graph_diagnostics"] = graph_diag
-                return self._no_context_result(t0, r0, timings, query, debug_info)
+                graph_diag["grounding"][
+                    "note"
+                ] = "no_grounded_paths; ranking uses heterogeneous chunk PPR only"
 
-            score_cache: Dict[Any, Any] = {}
-            scored_bundles: List[Tuple[EvidenceBundle, float, Dict[str, float]]] = []
-            for bundle in grounded_bundles:
-                score, breakdown = score_bundle(
-                    query=query,
-                    bundle=bundle,
-                    graph=self._graph,
-                    embedder=self.embedder,
-                    corpus=self.corpus,
-                    config=self.scoring_config,
-                    cache=score_cache,
-                    debug=debug,
-                )
-                scored_bundles.append((bundle, float(score), breakdown))
-
-            ranked_bundles = sorted(
-                scored_bundles,
-                key=lambda item: (-item[1], self._bundle_signature(item[0])),
-            )
-            selected_bundles = self._select_ranked_bundles(
-                ranked_bundles, start_nodes, self.top_k
+            chunk_scores, pi_dict, ppr_extra = canonical_ppr_rank_chunks(
+                self._graph,
+                candidate_paths,
+                start_nodes,
+                posterior_masses,
+                config=self.scoring_config,
             )
 
-            graph_diag["ranking"] = {
-                "scored_bundles": len(scored_bundles),
-                "selected_bundles": len(selected_bundles),
+            entity_nodes = sorted(pi_dict.keys())
+            locality = self._local_subgraph_edge_counts(entity_nodes)
+            graph_diag["local_subgraph"] = {
+                "entity_count": len(entity_nodes),
+                "relation_edge_count": locality["relation_edges_within_entity_scope"],
+                "appears_in_edge_count": locality[
+                    "appears_in_edges_from_scope_entities"
+                ],
+            }
+            graph_diag["ppr"] = ppr_extra.get("ppr", {})
+            chunk_scoring = ppr_extra.get("chunk_scoring", {})
+            top_preview = sorted(chunk_scores.items(), key=lambda kv: (-kv[1], kv[0]))[
+                : min(15, len(chunk_scores))
+            ]
+            graph_diag["chunk_projection"] = {
+                "top_chunks": [
+                    {"chunk_id": cid, "score": float(sc)} for cid, sc in top_preview
+                ],
+                "chunk_scoring": chunk_scoring,
             }
 
-            chunk_id_to_bundles: Dict[str, List[Tuple[EvidenceBundle, float]]] = {}
-            for bundle, score, _ in selected_bundles:
+            paths_by_chunk: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+            for bundle in grounded_bundles:
+                pd = self._path_to_debug(bundle.path)
                 for cid in set(bundle.supporting_chunk_ids):
-                    if cid not in chunk_id_to_bundles:
-                        chunk_id_to_bundles[cid] = []
-                    chunk_id_to_bundles[cid].append((bundle, score))
+                    if len(paths_by_chunk[cid]) < 8:
+                        paths_by_chunk[cid].append(pd)
+            graph_diag["explanations"] = {"paths_by_chunk": dict(paths_by_chunk)}
+
+            bundle_by_chunk: Dict[str, List[EvidenceBundle]] = defaultdict(list)
+            for bundle in grounded_bundles:
+                for cid in set(bundle.supporting_chunk_ids):
+                    bundle_by_chunk[cid].append(bundle)
+
+            ranked_chunk_ids = sorted(
+                chunk_scores.keys(),
+                key=lambda cid: (-float(chunk_scores.get(cid, 0.0)), cid),
+            )
 
             chunks: List[RetrievedChunk] = []
-            for cid, bundles in chunk_id_to_bundles.items():
-                bundles.sort(key=lambda x: x[1], reverse=True)
+            for cid in ranked_chunk_ids:
+                if len(chunks) >= self.top_k:
+                    break
                 text = self.corpus.get_text(cid)
                 if not text:
                     continue
+                bundles_here = bundle_by_chunk.get(cid, [])
+                bundles_here_sorted = sorted(
+                    bundles_here,
+                    key=lambda bb: (
+                        -self._bundle_ppr_rank_score(bb, pi_dict),
+                        self._bundle_signature(bb),
+                    ),
+                )
                 path_lines = [
-                    f"Path: {self._format_path(b.path)}" for b, _ in bundles[:3]
+                    f"Path: {self._format_path(b.path)}"
+                    for b in bundles_here_sorted[:3]
                 ]
-                score = bundles[0][1]
                 chunks.append(
                     RetrievedChunk(
                         chunk_id=cid,
                         text=text,
-                        score=float(score),
+                        score=float(chunk_scores.get(cid, 0.0)),
                         rank=0,
                         metadata={
                             "branch": "graph",
+                            "graph_retrieval_mode": "canonical_ppr",
                             "graph_path_lines": path_lines,
                         },
                     )
                 )
 
-            graph_diag["ranking"]["unique_chunk_ids"] = len(chunk_id_to_bundles)
-            graph_diag["ranking"]["chunks_with_text"] = len(chunks)
+            graph_diag["ranking"] = {
+                "mode": "canonical_ppr",
+                "chunk_scores_nonzero": sum(
+                    1 for v in chunk_scores.values() if v > 0.0
+                ),
+                "unique_chunk_ids_considered": len(chunk_scores),
+                "chunks_with_text": len(chunks),
+            }
+
+            graph_diag["ranking"]["top_chunk_scores"] = [
+                {"chunk_id": cid, "score": float(sc)} for cid, sc in top_preview
+            ]
 
             if debug:
-                debug_info["bundle_trace"] = [
-                    self._bundle_to_debug(b, s, d) for b, s, d in selected_bundles
-                ]
+                score_cache: Dict[Any, Any] = {}
+                debug_info["bundle_trace"] = []
+                for b in grounded_bundles[:80]:
+                    emb_score, bd = score_bundle(
+                        query=query,
+                        bundle=b,
+                        graph=self._graph,
+                        embedder=self.embedder,
+                        corpus=self.corpus,
+                        config=self.scoring_config,
+                        cache=score_cache,
+                        debug=False,
+                    )
+                    debug_info["bundle_trace"].append(
+                        self._bundle_to_debug(b, float(emb_score), bd)
+                    )
 
             timings["retrieval"] = (time.perf_counter() - r0) * 1000.0
             timings["total"] = (time.perf_counter() - t0) * 1000.0

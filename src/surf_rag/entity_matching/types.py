@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import List
+from typing import List, Optional
 
 
 class PhraseSource(str, Enum):
@@ -55,3 +55,21 @@ class FilteredEntity:
     span_len: int
     start: int
     end: int
+    match_key: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class SeedCandidate:
+    """Structured lexicon/vector seed with evidence preserved for graph-v03."""
+
+    canonical_norm: str
+    matched_text: str
+    start: int
+    end: int
+    span_token_count: int
+    df: int
+    source: PhraseSource
+    match_key: str
+    node_id: Optional[str] = None
+    vector_score: Optional[float] = None
+    graph_present: bool = False

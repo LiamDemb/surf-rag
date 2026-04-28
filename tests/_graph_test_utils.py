@@ -7,6 +7,8 @@ from typing import Dict, List, Optional
 import numpy as np
 from unittest.mock import MagicMock
 
+from surf_rag.entity_matching.types import PhraseSource, SeedCandidate
+
 
 class CorpusStub:
     def __init__(self, texts: Dict[str, str]):
@@ -32,6 +34,28 @@ class StaticExtractor:
 
     def extract(self, query: str) -> List[str]:
         return list(self._norms)
+
+    def extract_candidates(
+        self, query: str, *, soft_df: bool = False
+    ) -> List[SeedCandidate]:
+        out: List[SeedCandidate] = []
+        pos = 0
+        for n in self._norms:
+            ln = max(1, len(n))
+            out.append(
+                SeedCandidate(
+                    canonical_norm=n,
+                    matched_text=n,
+                    start=pos,
+                    end=pos + ln,
+                    span_token_count=max(1, len(n.split())),
+                    df=1,
+                    source=PhraseSource.CANONICAL,
+                    match_key=n.casefold().replace(" ", "_"),
+                )
+            )
+            pos += ln + 1
+        return out
 
 
 def strategy_embedder():

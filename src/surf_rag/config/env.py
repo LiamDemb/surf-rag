@@ -96,12 +96,23 @@ def apply_pipeline_env_from_config(config: object) -> None:
         os.environ["INCLUDE_GRAPH_PATHS_IN_PROMPT"] = "true"
     # Graph + scoring (downstream `strategies/graph.py` and `scoring_config.py`)
     os.environ["GRAPH_MAX_HOPS"] = str(r.graph_max_hops)
+    os.environ["GRAPH_MAX_PATHS_PER_START"] = str(r.graph_max_paths_per_start)
     os.environ["GRAPH_BIDIRECTIONAL"] = "true" if r.graph_bidirectional else "false"
     os.environ["GRAPH_ENTITY_VECTOR_TOP_K"] = str(r.graph_entity_vector_top_k)
     os.environ["GRAPH_ENTITY_VECTOR_THRESHOLD"] = str(r.graph_entity_vector_threshold)
+    os.environ["GRAPH_HOP_SUPPORT_THRESHOLD"] = str(r.graph_hop_support_threshold)
     os.environ["GRAPH_LOCAL_PRED_WEIGHT"] = str(r.graph_local_pred_weight)
     os.environ["GRAPH_BUNDLE_PRED_WEIGHT"] = str(r.graph_bundle_pred_weight)
     os.environ["GRAPH_LENGTH_PENALTY"] = str(r.graph_length_penalty)
+    os.environ["GRAPH_PPR_ALPHA"] = str(r.graph_ppr_alpha)
+    os.environ["GRAPH_PPR_MAX_ITER"] = str(r.graph_ppr_max_iter)
+    os.environ["GRAPH_PPR_TOL"] = str(r.graph_ppr_tol)
+    os.environ["GRAPH_TRANSITION_MODE"] = _env_s(r.graph_transition_mode)
+    os.environ["GRAPH_MAX_ENTITIES"] = str(r.graph_max_entities)
+    os.environ["GRAPH_MAX_PATHS"] = str(r.graph_max_paths)
+    os.environ["GRAPH_MAX_FRONTIER_POPS"] = str(r.graph_max_frontier_pops)
+    os.environ["GRAPH_SEED_SOFTMAX_TEMPERATURE"] = str(r.graph_seed_softmax_temperature)
+    os.environ["GRAPH_ENTITY_CHUNK_EDGE_WEIGHT"] = str(r.graph_entity_chunk_edge_weight)
     c = cfg.corpus
     os.environ["MAX_PAGES"] = str(c.max_pages)
     os.environ["MAX_HOPS"] = str(c.max_hops)

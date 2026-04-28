@@ -24,6 +24,7 @@ def build_graph(chunks: Iterable[dict]) -> nx.DiGraph:
             enode = f"E:{norm}"
             G.add_node(enode, kind="entity", type=ent.get("type"))
             G.add_edge(enode, chunk_node, kind="appears_in")
+            G.add_edge(chunk_node, enode, kind="appears_in")
 
         # Adding graph triples
         relations = chunk.get("metadata", {}).get("relations", []) or []

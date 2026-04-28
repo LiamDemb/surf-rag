@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import os
 
+from surf_rag.config.schema import PipelineConfig
 from surf_rag.core.embedder import SentenceTransformersEmbedder
-from surf_rag.core.scoring_config import DEFAULT_SCORING_CONFIG
+from surf_rag.core.scoring_config import (
+    get_default_scoring_config,
+    scoring_config_from_retrieval_section,
+)
 
 
 def build_dense_retriever(output_dir: str, top_k: int = 10):
@@ -27,8 +31,18 @@ def build_dense_retriever(output_dir: str, top_k: int = 10):
     )
 
 
-def build_graph_retriever(output_dir: str, top_k: int = 10):
-    """Build GraphRetriever with corpus, graph, entity resolution."""
+def build_graph_retriever(
+    output_dir: str,
+    top_k: int = 10,
+    *,
+    pipeline_config: PipelineConfig | None = None,
+):
+    """Build GraphRetriever with corpus, graph, entity resolution.
+
+    When ``pipeline_config`` is set, retrieval/scoring fields come from YAML (matches E2E graph-only runs).
+    Otherwise ``os.environ`` is used (after :func:`~surf_rag.config.env.apply_pipeline_env_from_config`
+    when running with ``--config``).
+    """
     from surf_rag.core.entity_index_store import EntityIndexStore
     from surf_rag.core.mapping import JsonCorpusLoader
     from surf_rag.entity_matching.pipeline import LexiconAliasEntityPipeline
@@ -65,13 +79,40 @@ def build_graph_retriever(output_dir: str, top_k: int = 10):
     #   entity_extractor=_default_query_entity_extractor(alias_resolver),
     entity_extractor = LexiconAliasEntityPipeline.from_artifacts(str(output_dir))
 
+    embed_name = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+    if pipeline_config is not None:
+        embed_name = pipeline_config.model_setup.embedding_model
+        r = pipeline_config.retrieval
+        scoring = scoring_config_from_retrieval_section(r)
+        return GraphRetriever(
+            graph_store=NetworkXGraphStore(graph_path=graph_path),
+            corpus=JsonCorpusLoader(jsonl_path=corpus_path),
+            entity_extractor=entity_extractor,
+            top_k=top_k,
+            max_hops=int(r.graph_max_hops),
+            bidirectional=bool(r.graph_bidirectional),
+            hop_support_threshold=float(r.graph_hop_support_threshold),
+            entity_vector_top_k=int(r.graph_entity_vector_top_k),
+            entity_vector_threshold=float(r.graph_entity_vector_threshold),
+            entity_index_store=entity_index_store,
+            embedder=SentenceTransformersEmbedder(model_name=embed_name),
+            scoring_config=scoring,
+        )
+
     return GraphRetriever(
         graph_store=NetworkXGraphStore(graph_path=graph_path),
         corpus=JsonCorpusLoader(jsonl_path=corpus_path),
         entity_extractor=entity_extractor,
         top_k=top_k,
-        max_hops=int(os.getenv("GRAPH_MAX_HOPS", "1")),
+        max_hops=int(os.getenv("GRAPH_MAX_HOPS", "2")),
+        bidirectional=os.getenv("GRAPH_BIDIRECTIONAL", "true").lower()
+        in ("1", "true", "yes"),
+        hop_support_threshold=float(os.getenv("GRAPH_HOP_SUPPORT_THRESHOLD", "0.5")),
+        entity_vector_top_k=int(os.getenv("GRAPH_ENTITY_VECTOR_TOP_K", "3")),
+        entity_vector_threshold=float(
+            os.getenv("GRAPH_ENTITY_VECTOR_THRESHOLD", "0.5")
+        ),
         entity_index_store=entity_index_store,
-        embedder=SentenceTransformersEmbedder(model_name="all-MiniLM-L6-v2"),
-        scoring_config=DEFAULT_SCORING_CONFIG,
+        embedder=SentenceTransformersEmbedder(model_name=embed_name),
+        scoring_config=get_default_scoring_config(),
     )

@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Dict, Iterator, List, Tuple
 
 from surf_rag.graph.graph_types import GraphHop, GraphPath
 
@@ -36,11 +36,18 @@ class GraphPathEnumerationDiagnostics:
     skip_incoming_not_rel: int = 0
     skip_incoming_instance_of_only: int = 0
 
+    enumeration_backend: str = "dfs"
+    beam_frontier_peak: int = 0
+    beam_pops: int = 0
+    beam_pushes: int = 0
+    beam_truncated: bool = False
+
     def to_json(self) -> Dict[str, Any]:
-        return {
+        out = {
             "start_nodes_used": self.start_nodes_used,
             "paths_emitted": self.paths_emitted,
             "starts_hit_path_budget": list(self.starts_hit_path_budget),
+            "enumeration_backend": self.enumeration_backend,
             "skip_outgoing": {
                 "visited": self.skip_outgoing_visited,
                 "degree_gt_cap": self.skip_outgoing_degree,
@@ -56,6 +63,89 @@ class GraphPathEnumerationDiagnostics:
                 "instance_of_only": self.skip_incoming_instance_of_only,
             },
         }
+        out["beam"] = {
+            "frontier_peak": self.beam_frontier_peak,
+            "pops": self.beam_pops,
+            "pushes": self.beam_pushes,
+            "truncated": self.beam_truncated,
+        }
+        return out
+
+
+def iter_valid_rel_expansions(
+    graph,
+    current_node: str,
+    visited: set[str],
+    *,
+    bidirectional: bool,
+    diag: GraphPathEnumerationDiagnostics | None = None,
+) -> Iterator[Tuple[str, GraphHop]]:
+    """Yield ``(next_entity, hop)`` for every valid one-hop relational expansion.
+
+    Mirrors the skip rules used by :func:`enumerate_candidate_paths` so DFS and
+    beam enumeration stay consistent.
+    """
+    d = diag if diag is not None else GraphPathEnumerationDiagnostics()
+
+    # Explore outgoing edges
+    for neighbour in graph.successors(current_node):
+        if neighbour in visited:
+            d.skip_outgoing_visited += 1
+            continue
+
+        if graph.degree(neighbour) > MAX_DEGREE:
+            d.skip_outgoing_degree += 1
+            continue
+        if count_appearances(graph, neighbour) > MAX_APPEARANCES:
+            d.skip_outgoing_appearances += 1
+            continue
+
+        outgoing_edge = graph[current_node][neighbour]
+        if outgoing_edge.get("kind") != "rel":
+            d.skip_outgoing_not_rel += 1
+            continue
+
+        preds = set(outgoing_edge["labels"])
+        if preds == {"instance_of"}:
+            d.skip_outgoing_instance_of_only += 1
+            continue
+
+        for pred in outgoing_edge["labels"]:
+            new_hop = GraphHop(source=current_node, relation=pred, target=neighbour)
+            yield neighbour, new_hop
+
+    # Explore incoming edges (reverse hops)
+    if bidirectional:
+        for prev_node in graph.predecessors(current_node):
+            if prev_node in visited:
+                d.skip_incoming_visited += 1
+                continue
+
+            if graph.degree(prev_node) > MAX_DEGREE:
+                d.skip_incoming_degree += 1
+                continue
+            if count_appearances(graph, prev_node) > MAX_APPEARANCES:
+                d.skip_incoming_appearances += 1
+                continue
+
+            incoming_edge = graph[prev_node][current_node]
+            if incoming_edge.get("kind") != "rel":
+                d.skip_incoming_not_rel += 1
+                continue
+
+            preds = set(incoming_edge["labels"])
+            if preds == {"instance_of"}:
+                d.skip_incoming_instance_of_only += 1
+                continue
+
+            for pred in incoming_edge["labels"]:
+                new_hop = GraphHop(
+                    source=current_node,
+                    relation=pred,
+                    target=prev_node,
+                    is_reverse=True,
+                )
+                yield prev_node, new_hop
 
 
 def enumerate_candidate_paths(
@@ -96,77 +186,14 @@ def enumerate_candidate_paths(
             if len(current_hops) >= max_hops:
                 return
 
-            # Explore outgoing edges
-            for neighbour in graph.successors(current_node):
-                if neighbour in visited:
-                    diag.skip_outgoing_visited += 1
-                    continue
-
-                if graph.degree(neighbour) > MAX_DEGREE:
-                    diag.skip_outgoing_degree += 1
-                    continue
-                if count_appearances(graph, neighbour) > MAX_APPEARANCES:
-                    diag.skip_outgoing_appearances += 1
-                    continue
-
-                outgoing_edge = graph[current_node][neighbour]
-                if outgoing_edge.get("kind") != "rel":
-                    diag.skip_outgoing_not_rel += 1
-                    continue
-
-                preds = set()
-                labels = outgoing_edge["labels"]
-                for pred in labels:
-                    preds.add(pred)
-                if preds == {"instance_of"}:
-                    diag.skip_outgoing_instance_of_only += 1
-                    continue
-
-                for pred in labels:
-                    new_hop = GraphHop(
-                        source=current_node, relation=pred, target=neighbour
-                    )
-                    dfs(neighbour, current_hops + [new_hop], visited | {neighbour})
-
-            # Explore incoming edges
-            if bidirectional:
-                for prev_node in graph.predecessors(current_node):
-                    if prev_node in visited:
-                        diag.skip_incoming_visited += 1
-                        continue
-
-                    if graph.degree(prev_node) > MAX_DEGREE:
-                        diag.skip_incoming_degree += 1
-                        continue
-                    if count_appearances(graph, prev_node) > MAX_APPEARANCES:
-                        diag.skip_incoming_appearances += 1
-                        continue
-
-                    incoming_edge = graph[prev_node][current_node]
-                    if incoming_edge.get("kind") != "rel":
-                        diag.skip_incoming_not_rel += 1
-                        continue
-
-                    preds = set()
-                    labels = incoming_edge["labels"]
-                    for pred in labels:
-                        preds.add(pred)
-                    if preds == {"instance_of"}:
-                        diag.skip_incoming_instance_of_only += 1
-                        continue
-
-                    for pred in labels:
-                        new_hop = GraphHop(
-                            source=current_node,
-                            relation=pred,
-                            target=prev_node,
-                            is_reverse=True,
-                        )
-                        dfs(
-                            prev_node,
-                            current_hops + [new_hop],
-                            visited | {prev_node},
-                        )
+            for next_ent, new_hop in iter_valid_rel_expansions(
+                graph,
+                current_node,
+                visited,
+                bidirectional=bidirectional,
+                diag=diag,
+            ):
+                dfs(next_ent, current_hops + [new_hop], visited | {next_ent})
 
         dfs(node, [], {node})
         if len(start_node_paths) >= max_paths_per_start:

@@ -10,7 +10,11 @@ from typing import List
 
 from surf_rag.core.entity_alias_resolver import EntityAliasResolver
 from surf_rag.entity_matching.artifacts import try_load_precomputed_matcher
-from surf_rag.entity_matching.filters import rank_and_cap, resolve_and_filter
+from surf_rag.entity_matching.filters import (
+    _SOURCE_RANK,
+    rank_and_cap,
+    resolve_and_filter,
+)
 from surf_rag.entity_matching.matcher import (
     PhraseMatcher,
     build_phrase_records,
@@ -18,6 +22,7 @@ from surf_rag.entity_matching.matcher import (
     records_to_matcher,
 )
 from surf_rag.entity_matching.normalization import normalize_for_query_match
+from surf_rag.entity_matching.types import FilteredEntity, SeedCandidate
 
 logger = logging.getLogger(__name__)
 
@@ -92,3 +97,54 @@ class LexiconAliasEntityPipeline:
             min_match_key_len=self.min_match_key_len,
         )
         return rank_and_cap(filtered, max_count=self.max_entities_per_query)
+
+    def extract_filtered_entities(
+        self, query: str, *, soft_df: bool = False
+    ) -> List[FilteredEntity]:
+        """Return filtered entities in rank order (span, df, source), capped."""
+        qn = normalize_for_query_match(query)
+        raw = greedy_nonoverlapping_matches(qn, self.matcher)
+        md = None if soft_df else self.max_df
+        filtered = resolve_and_filter(
+            raw,
+            self.resolver,
+            qn,
+            max_df=md,
+            min_match_key_len=self.min_match_key_len,
+        )
+        ordered = sorted(
+            filtered,
+            key=lambda e: (
+                -e.span_len,
+                e.df,
+                _SOURCE_RANK[e.source],
+                e.start,
+                e.canonical_norm,
+            ),
+        )
+        return ordered[: self.max_entities_per_query]
+
+    def extract_candidates(
+        self, query: str, *, soft_df: bool = False
+    ) -> List[SeedCandidate]:
+        """Structured seeds with spans for graph-v03; ``soft_df`` skips lexicon DF hard-drop."""
+        qn = normalize_for_query_match(query)
+        entities = self.extract_filtered_entities(query, soft_df=soft_df)
+        out: List[SeedCandidate] = []
+        for fe in entities:
+            span_text = qn[fe.start : fe.end]
+            tokens = [t for t in span_text.split() if t]
+            mk = fe.match_key or fe.canonical_norm.casefold().replace(" ", "_")
+            out.append(
+                SeedCandidate(
+                    canonical_norm=fe.canonical_norm,
+                    matched_text=span_text,
+                    start=fe.start,
+                    end=fe.end,
+                    span_token_count=max(1, len(tokens)),
+                    df=fe.df,
+                    source=fe.source,
+                    match_key=mk,
+                )
+            )
+        return out
