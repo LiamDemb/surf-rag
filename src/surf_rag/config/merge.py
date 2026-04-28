@@ -35,12 +35,16 @@ def merge_ingest_args(
         args.nq = rs.nq_path
     if not argv_provides(argv, "--2wiki"):
         args.wiki2 = rs.wiki2_path
+    if not argv_provides(argv, "--hotpotqa"):
+        args.hotpotqa = rs.hotpotqa_path
     if not argv_provides(argv, "--output-dir"):
         args.output_dir = str(rp.benchmark_dir)
     if not argv_provides(argv, "--nq-version") and rs.nq_version:
         args.nq_version = rs.nq_version
     if not argv_provides(argv, "--2wiki-version") and rs.wiki2_version:
         args.wiki2_version = rs.wiki2_version
+    if not argv_provides(argv, "--hotpotqa-version") and rs.hotpotqa_version:
+        args.hotpotqa_version = rs.hotpotqa_version
 
 
 def merge_fetch_wikipedia_args(
@@ -55,6 +59,8 @@ def merge_fetch_wikipedia_args(
         args.nq = rs.nq_path
     if not argv_provides(argv, "--2wiki"):
         args.wiki2 = rs.wiki2_path
+    if not argv_provides(argv, "--hotpotqa"):
+        args.hotpotqa = rs.hotpotqa_path
     if not argv_provides(argv, "--output-dir"):
         args.output_dir = str(rp.corpus_dir)
     if not argv_provides(argv, "--docstore"):
@@ -117,6 +123,8 @@ def merge_build_corpus_args(
         args.nq = cfg.raw_sources.nq_path
     if not argv_provides(argv, "--2wiki"):
         args.wiki2 = cfg.raw_sources.wiki2_path
+    if not argv_provides(argv, "--hotpotqa"):
+        args.hotpotqa = cfg.raw_sources.hotpotqa_path
     if not argv_provides(argv, "--output-dir"):
         args.output_dir = str(rp.corpus_dir)
     if not argv_provides(argv, "--docstore"):

@@ -23,6 +23,7 @@ def _cfg() -> PipelineConfig:
     return load_pipeline_config(
         Path(__file__).resolve().parents[1]
         / "configs"
+        / "dev"
         / "examples"
         / "surf-bench-200-pipeline.yaml"
     )
@@ -47,9 +48,11 @@ def test_merge_ingest_yaml_null_clears_nq() -> None:
     args = Namespace()
     args.nq = "/pretend/env/default"
     args.wiki2 = None
+    args.hotpotqa = None
     args.output_dir = None
     args.nq_version = None
     args.wiki2_version = None
+    args.hotpotqa_version = None
     merge_ingest_args(args, cfg, argv=["ingest", "--config", "c.yaml"])
     assert args.nq is None
     assert args.wiki2 == "data/w.jsonl"
@@ -60,13 +63,43 @@ def test_merge_ingest_fills_from_config() -> None:
     args = Namespace()
     args.nq = None
     args.wiki2 = None
+    args.hotpotqa = None
     args.output_dir = None
     args.nq_version = None
     args.wiki2_version = None
+    args.hotpotqa_version = None
     merge_ingest_args(args, cfg, argv=["prog", "--config", "x.yaml"])
     rp = resolve_paths(cfg)
     assert Path(args.output_dir) == rp.benchmark_dir
     assert args.nq == cfg.raw_sources.nq_path
+    assert args.hotpotqa == cfg.raw_sources.hotpotqa_path
+
+
+def test_merge_ingest_hotpotqa_path_from_yaml() -> None:
+    cfg = pipeline_config_from_dict(
+        {
+            "paths": {
+                "benchmark_name": "bn",
+                "benchmark_id": "bid",
+                "router_id": "r",
+            },
+            "raw_sources": {
+                "hotpotqa_path": "data/raw/hotpot.jsonl",
+                "hotpotqa_version": "v9",
+            },
+        }
+    )
+    args = Namespace()
+    args.nq = None
+    args.wiki2 = None
+    args.hotpotqa = None
+    args.output_dir = None
+    args.nq_version = None
+    args.wiki2_version = None
+    args.hotpotqa_version = None
+    merge_ingest_args(args, cfg, argv=["ingest", "--config", "c.yaml"])
+    assert args.hotpotqa == "data/raw/hotpot.jsonl"
+    assert args.hotpotqa_version == "v9"
 
 
 def test_merge_sweep_betas_from_config_when_flag_absent() -> None:

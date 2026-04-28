@@ -159,8 +159,10 @@ def _coerce_yaml_scalar_types(cfg: PipelineConfig) -> PipelineConfig:
         rs,
         nq_path=_raw_dataset_path(rs.nq_path),
         wiki2_path=_raw_dataset_path(rs.wiki2_path),
+        hotpotqa_path=_raw_dataset_path(rs.hotpotqa_path),
         nq_version=_opt_path_str(rs.nq_version),
         wiki2_version=_opt_path_str(rs.wiki2_version),
+        hotpotqa_version=_opt_path_str(rs.hotpotqa_version),
     )
     out = replace(cfg, paths=paths, raw_sources=raw_sources)
     if out.experiment_id is not None:

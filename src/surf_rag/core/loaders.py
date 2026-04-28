@@ -7,6 +7,7 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from surf_rag.benchmark import (
     extract_2wiki_support_lines,
+    extract_hotpotqa_support_lines,
     extract_nq_support_sentences,
     nq_document_title,
 )
@@ -316,6 +317,51 @@ def load_2wiki(
         if not supporting_facts:
             continue
         lines = extract_2wiki_support_lines(row)
+        support_sentences = [t[2] for t in lines]
+        if not support_sentences:
+            continue
+
+        yield BenchmarkItem(
+            question_id=sha256_text(question),
+            question=question,
+            gold_answers=answers,
+            dataset_source=source,
+            gold_support_sentences=support_sentences,
+            gold_support_titles=[t[0] for t in lines],
+            gold_support_sent_ids=[t[1] for t in lines],
+            dataset_version=dataset_version,
+        )
+        count += 1
+        if max_rows and count >= max_rows:
+            break
+
+
+def load_hotpotqa(
+    path: str,
+    dataset_version: Optional[str] = None,
+    max_rows: Optional[int] = None,
+) -> Iterator[BenchmarkItem]:
+    """
+    Load HotPotQA JSON/JSONL (Hugging Face ``hotpotqa/hotpot_qa`` export shape).
+
+    Uses the same ``context`` / ``supporting_facts`` dict layout as 2Wiki; see
+    :func:`surf_rag.benchmark.extract_hotpotqa_support_lines`.
+    """
+    source = "hotpotqa"
+    count = 0
+    for row in _iter_json_records(Path(path)):
+        question = row.get("question")
+        if not question or not str(question).strip():
+            continue
+        question = str(question).strip()
+        answers = _as_list(row.get("answer"))
+        if not answers:
+            continue
+
+        supporting_facts = row.get("supporting_facts")
+        if not supporting_facts:
+            continue
+        lines = extract_hotpotqa_support_lines(row)
         support_sentences = [t[2] for t in lines]
         if not support_sentences:
             continue

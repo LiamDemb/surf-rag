@@ -29,8 +29,10 @@ class RawSourcesSection:
     # None or "" in YAML = omit this dataset (no fallback to process env for --config runs).
     nq_path: str | None = "data/raw/nq_100.jsonl"
     wiki2_path: str | None = "data/raw/2wikimultihop_100.jsonl"
+    hotpotqa_path: str | None = None
     nq_version: str | None = None
     wiki2_version: str | None = None
+    hotpotqa_version: str | None = None
 
 
 @dataclass
@@ -122,6 +124,7 @@ class RetrievalSection:
 class GenerationSection:
     provider: str = "openai"
     model: str = "gpt-4o-mini"
+    reasoning_effort: str | None = None
     temperature: float = 0.0
     max_tokens: int = 512
     prompt_file: str = "prompts/generator.txt"

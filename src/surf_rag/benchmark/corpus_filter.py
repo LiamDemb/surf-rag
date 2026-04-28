@@ -111,7 +111,7 @@ def should_keep_benchmark_row(row: dict, matcher: CorpusSentenceMatcher) -> bool
     support_sentences = [str(s).strip() for s in support_sentences if str(s).strip()]
     if source == "nq":
         return _should_keep_nq(support_sentences, matcher)
-    if source == "2wiki":
+    if source in ("2wiki", "hotpotqa"):
         return _should_keep_2wiki(support_sentences, matcher)
     # Conservative default for unknown sources.
     return bool(support_sentences) and all(

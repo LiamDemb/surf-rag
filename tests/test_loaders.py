@@ -1,6 +1,6 @@
 import json
 
-from surf_rag.core.loaders import load_nq
+from surf_rag.core.loaders import load_hotpotqa, load_nq
 
 
 def test_load_nq_parses_minimal_jsonl(tmp_path):
@@ -166,3 +166,32 @@ def test_load_nq_short_answer_empty_text_without_clean_match_is_dropped(tmp_path
     path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
     items = list(load_nq(str(path), dataset_version="v1", max_rows=5))
     assert len(items) == 0
+
+
+def test_load_hotpotqa_minimal_jsonl(tmp_path):
+    path = tmp_path / "hotpot.jsonl"
+    payload = {
+        "question": "Who founded X?",
+        "answer": "Alice",
+        "context": {
+            "title": ["Article One", "Article Two"],
+            "sentences": [
+                ["Alice founded X in 2000.", "Other text."],
+                ["Unrelated sentence."],
+            ],
+        },
+        "supporting_facts": {
+            "title": ["Article One", "Article One"],
+            "sent_id": [0, 0],
+        },
+    }
+    path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+    items = list(load_hotpotqa(str(path), dataset_version="hp-v1", max_rows=5))
+    assert len(items) == 1
+    item = items[0]
+    assert item.dataset_source == "hotpotqa"
+    assert item.gold_answers == ["Alice"]
+    assert item.gold_support_sentences == ["Alice founded X in 2000."]
+    assert item.gold_support_titles == ["Article One"]
+    assert item.gold_support_sent_ids == [0]
+    assert item.dataset_version == "hp-v1"

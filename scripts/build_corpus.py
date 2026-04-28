@@ -39,7 +39,7 @@ from surf_rag.core.chunking import chunk_blocks
 from surf_rag.core.corpus_acquisition import (
     Budgets,
     ingest_nq,
-    load_2wiki_docs_from_docstore,
+    load_wiki_supporting_docs_from_docstore,
 )
 from surf_rag.core.corpus_schemas import CorpusChunk
 from surf_rag.core.docstore import DocStore
@@ -72,6 +72,7 @@ def main() -> int:
     parser.add_argument("--benchmark", default=os.getenv("BENCHMARK_PATH"))
     parser.add_argument("--nq", default=os.getenv("NQ_PATH"))
     parser.add_argument("--2wiki", dest="wiki2", default=os.getenv("2WIKI_PATH"))
+    parser.add_argument("--hotpotqa", default=os.getenv("HOTPOTQA_PATH"))
     parser.add_argument(
         "--output-dir", default=os.getenv("OUTPUT_DIR", "data/processed")
     )
@@ -143,6 +144,7 @@ def main() -> int:
         sources_in_benchmark,
         nq_path=args.nq,
         wiki2_path=args.wiki2,
+        hotpotqa_path=getattr(args, "hotpotqa", None),
     )
 
     if missing:
@@ -169,13 +171,13 @@ def main() -> int:
         logger.info(
             "Wikipedia Action API requests use OAuth2 (authenticated rate limits)"
         )
-    elif "2wiki" in paths_by_source:
+    elif paths_by_source.keys() & {"2wiki", "hotpotqa"}:
         logger.warning(
             "WIKIMEDIA_OAUTH2_ACCESS_TOKEN is not set; unauthenticated Wikipedia API "
-            "limits are low and large 2Wiki corpus builds may hit 429 errors"
+            "limits are low and large multi-hop wiki corpus builds may hit 429 errors"
         )
     logger.info(
-        "Loading %d benchmark questions from DocStore (2Wiki) + NQ raw HTML...",
+        "Loading %d benchmark questions from DocStore (wiki multi-hop) + NQ raw HTML...",
         len(samples),
     )
     all_docs = {}
@@ -185,8 +187,8 @@ def main() -> int:
         unit="question",
         dynamic_ncols=True,
     ):
-        if sample["source"] == "2wiki":
-            docs, missing_titles = load_2wiki_docs_from_docstore(
+        if sample["source"] in ("2wiki", "hotpotqa"):
+            docs, missing_titles = load_wiki_supporting_docs_from_docstore(
                 sample,
                 docstore,
                 wiki=wiki,

@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from surf_rag.config.env import load_app_env, apply_pipeline_env_from_config
 from surf_rag.config.loader import load_pipeline_config
 from surf_rag.config.merge import merge_ingest_args
-from surf_rag.core.loaders import load_2wiki, load_nq
+from surf_rag.core.loaders import load_2wiki, load_hotpotqa, load_nq
 from surf_rag.core.schemas import (
     BenchmarkItem,
     parse_benchmark_support_fields,
@@ -111,6 +111,11 @@ def main() -> int:
         help="Path to 2WikiMultiHopQA JSON/JSONL.",
     )
     parser.add_argument(
+        "--hotpotqa",
+        default=os.getenv("HOTPOTQA_PATH"),
+        help="Path to HotPotQA JSON/JSONL.",
+    )
+    parser.add_argument(
         "--output-dir",
         default=os.getenv("OUTPUT_DIR", "data/processed"),
         help="Output directory for processed artifacts.",
@@ -118,6 +123,10 @@ def main() -> int:
     parser.add_argument("--nq-version", default=os.getenv("NQ_VERSION"))
     parser.add_argument(
         "--2wiki-version", dest="wiki2_version", default=os.getenv("2WIKI_VERSION")
+    )
+    parser.add_argument(
+        "--hotpotqa-version",
+        default=os.getenv("HOTPOTQA_VERSION"),
     )
     args = parser.parse_args()
     if args.config:
@@ -128,11 +137,12 @@ def main() -> int:
     dataset_paths = [
         args.nq,
         args.wiki2,
+        getattr(args, "hotpotqa", None),
     ]
     if not any(p and str(p).strip() for p in dataset_paths):
         raise ValueError(
             "Provide at least one dataset path via CLI or env. "
-            "Example: --2wiki data/raw/2wikimultihop_50.jsonl"
+            "Example: --2wiki data/raw/2wikimultihop_50.jsonl or --hotpotqa data/raw/hotpotqa.jsonl"
         )
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -162,6 +172,14 @@ def main() -> int:
             if item.question_id not in seen_ids:
                 new_by_source[item.dataset_source].append(item)
         logger.info("Loaded 2WikiMultiHopQA from %s", args.wiki2)
+
+    hotpot_path = getattr(args, "hotpotqa", None)
+    hotpot_ver = getattr(args, "hotpotqa_version", None)
+    if hotpot_path and str(hotpot_path).strip():
+        for item in load_hotpotqa(hotpot_path, dataset_version=hotpot_ver):
+            if item.question_id not in seen_ids:
+                new_by_source[item.dataset_source].append(item)
+        logger.info("Loaded HotPotQA from %s", hotpot_path)
 
     novel_count = sum(len(v) for v in new_by_source.values())
     logger.info("Novel questions to add: %d", novel_count)

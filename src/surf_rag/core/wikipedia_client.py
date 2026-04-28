@@ -6,7 +6,7 @@ import os
 import random
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import requests
 
@@ -151,6 +151,48 @@ class WikipediaClient:
             if "missing" not in page:
                 return page.get("title")
         return None
+
+    def titles_are_direct_mainspace_pages(self, titles: List[str]) -> Tuple[bool, str]:
+        """
+        Return ``(True, "ok")`` if every title resolves to an existing main (ns0)
+        article that is **not** a redirect page (MediaWiki ``prop=info`` without
+        following redirects to targets).
+
+        Used to pre-filter HotPotQA (and similar) rows before writing raw JSONL.
+        """
+        uniq = list(dict.fromkeys(str(t).strip() for t in titles if str(t).strip()))
+        if not uniq:
+            return False, "empty_titles"
+        data = self._get(
+            {
+                "action": "query",
+                "format": "json",
+                "formatversion": "2",
+                "prop": "info",
+                "titles": "|".join(uniq),
+            }
+        )
+        raw_pages = data.get("query", {}).get("pages")
+        if isinstance(raw_pages, dict):
+            pages = list(raw_pages.values())
+        elif isinstance(raw_pages, list):
+            pages = raw_pages
+        else:
+            return False, "bad_api_response"
+        if len(pages) < len(uniq):
+            return False, "incomplete_response"
+        for p in pages:
+            if p.get("invalid"):
+                return False, f"invalid:{p.get('title', '')}"
+            if p.get("missing"):
+                return False, f"missing:{p.get('title', '')}"
+            if p.get("ns") != 0:
+                return False, f"non_main:{p.get('title', '')}"
+            # Redirect source pages expose ``redirect`` in ``prop=info`` when
+            # redirects are not being resolved into targets.
+            if p.get("redirect"):
+                return False, f"redirect:{p.get('title', '')}"
+        return True, "ok"
 
     def fetch_html(self, title: str) -> WikiPage:
         data = self._get(
