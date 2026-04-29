@@ -17,6 +17,7 @@ import json
 import logging
 import os
 from pathlib import Path
+from typing import Iterable
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -37,6 +38,9 @@ logger = logging.getLogger(__name__)
 BATCH_LIMIT_BYTES = 200 * 1024 * 1024  # 200 MB
 SHARD_PREFIX = "batch_input_ie"
 STATE_FILENAME = "batch_state_ie.json"
+IE_STATUS_SUCCESS = "success"
+IE_STATUS_FAILED = "failed"
+IE_STATUS_PENDING = "pending"
 
 
 def _iter_jsonl(path: Path):
@@ -46,6 +50,55 @@ def _iter_jsonl(path: Path):
             if not line:
                 continue
             yield json.loads(line)
+
+
+def _normalize_ie_metadata(meta: dict) -> dict:
+    entities = meta.get("entities", [])
+    relations = meta.get("relations", [])
+    has_extraction = bool(entities) or bool(relations)
+    status = str(meta.get("ie_status", "")).strip().lower()
+    if status not in (IE_STATUS_SUCCESS, IE_STATUS_FAILED, IE_STATUS_PENDING):
+        if has_extraction or bool(meta.get("ie_extracted", False)):
+            status = IE_STATUS_SUCCESS
+        else:
+            status = IE_STATUS_PENDING
+    attempts = int(meta.get("ie_attempts", 0) or 0)
+    if attempts < 0:
+        attempts = 0
+    last_error = meta.get("ie_last_error")
+    if status == IE_STATUS_SUCCESS:
+        last_error = None
+    meta["ie_status"] = status
+    meta["ie_attempts"] = attempts
+    meta["ie_last_error"] = None if last_error is None else str(last_error)
+    meta["ie_extracted"] = status == IE_STATUS_SUCCESS
+    return meta
+
+
+def _load_only_chunk_ids(path: Path) -> set[str]:
+    ids: set[str] = set()
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            cid = line.strip()
+            if cid:
+                ids.add(cid)
+    return ids
+
+
+def _is_chunk_pending(chunk: dict, only_chunk_ids: set[str] | None = None) -> bool:
+    chunk_id = str(chunk.get("chunk_id", "")).strip()
+    if not chunk_id:
+        return False
+    if only_chunk_ids is not None and chunk_id not in only_chunk_ids:
+        return False
+    meta = _normalize_ie_metadata(dict(chunk.get("metadata", {})))
+    return meta.get("ie_status") != IE_STATUS_SUCCESS
+
+
+def _iter_pending_chunks(
+    chunks: Iterable[dict], only_chunk_ids: set[str] | None = None
+) -> list[dict]:
+    return [c for c in chunks if _is_chunk_pending(c, only_chunk_ids=only_chunk_ids)]
 
 
 def main() -> int:
@@ -65,6 +118,17 @@ def main() -> int:
         "--completion-window",
         default="24h",
         help="Batch completion window (default: 24h).",
+    )
+    parser.add_argument(
+        "--only-chunk-ids",
+        default=None,
+        help="Optional newline-delimited chunk IDs file to submit exactly those chunks.",
+    )
+    parser.add_argument(
+        "--attempt",
+        type=int,
+        default=1,
+        help="Current retry attempt number (for state/reporting).",
     )
     args = parser.parse_args()
 
@@ -107,21 +171,37 @@ def main() -> int:
         logger.error("No chunks to process.")
         return 1
 
-    # Filter out already-extracted chunks (ie_extracted flag from build_corpus)
-    chunks = [
-        c for c in all_chunks if not c.get("metadata", {}).get("ie_extracted", False)
-    ]
+    only_chunk_ids: set[str] | None = None
+    if args.only_chunk_ids:
+        only_path = Path(args.only_chunk_ids)
+        if not only_path.is_file():
+            logger.error("--only-chunk-ids file not found: %s", only_path)
+            return 1
+        only_chunk_ids = _load_only_chunk_ids(only_path)
+        logger.info(
+            "Loaded %d explicit chunk IDs from %s",
+            len(only_chunk_ids),
+            only_path,
+        )
+
+    chunks = _iter_pending_chunks(all_chunks, only_chunk_ids=only_chunk_ids)
     skipped = len(all_chunks) - len(chunks)
     if skipped:
         logger.info(
-            "Skipping %d already-extracted chunks (%d remaining for batch).",
+            "Skipping %d chunks already resolved or not in scope (%d remaining for batch).",
             skipped,
             len(chunks),
         )
     if not chunks:
         logger.info("All chunks already extracted. Nothing to submit.")
         # Write empty state so downstream scripts can detect no work was needed
-        state = {"shards": [], "corpus_path": str(corpus_path), "total_requests": 0}
+        state = {
+            "shards": [],
+            "corpus_path": str(corpus_path),
+            "total_requests": 0,
+            "attempt": max(1, int(args.attempt)),
+            "submitted_chunk_ids": [],
+        }
         state_path = output_dir / STATE_FILENAME
         with state_path.open("w", encoding="utf-8") as f:
             json.dump(state, f, indent=2)
@@ -134,7 +214,7 @@ def main() -> int:
     shard_bytes = 0
     shard_file = output_dir / f"{SHARD_PREFIX}_{shard_idx:03d}.jsonl"
 
-    def _flush_shard(batch_out):
+    def _flush_shard(batch_out, submitted_chunk_ids: list[str]):
         nonlocal shard_idx, shard_count, shard_bytes, shard_file
         if shard_count == 0:
             return output_dir / f"{SHARD_PREFIX}_{shard_idx:03d}.jsonl"
@@ -158,6 +238,8 @@ def main() -> int:
                 "batch_id": batch.id,
                 "input_path": str(shard_file),
                 "request_count": shard_count,
+                "chunk_ids": submitted_chunk_ids,
+                "attempt": max(1, int(args.attempt)),
             }
         )
         logger.info("Shard %d batch created: %s", shard_idx, batch.id)
@@ -168,6 +250,8 @@ def main() -> int:
         return shard_file
 
     batch_out = shard_file.open("w", encoding="utf-8")
+    shard_chunk_ids: list[str] = []
+    submitted_chunk_ids: list[str] = []
     try:
         for chunk in chunks:
             chunk_id = (
@@ -202,15 +286,18 @@ def main() -> int:
                 shard_count >= limit_requests
                 or shard_bytes + line_bytes > BATCH_LIMIT_BYTES
             ):
-                next_file = _flush_shard(batch_out)
+                next_file = _flush_shard(batch_out, shard_chunk_ids)
                 batch_out = next_file.open("w", encoding="utf-8")
+                shard_chunk_ids = []
 
             batch_out.write(line_json)
             shard_count += 1
             shard_bytes += line_bytes
+            shard_chunk_ids.append(str(chunk_id))
+            submitted_chunk_ids.append(str(chunk_id))
     finally:
         if shard_count > 0:
-            _flush_shard(batch_out)
+            _flush_shard(batch_out, shard_chunk_ids)
         else:
             batch_out.close()
 
@@ -218,6 +305,8 @@ def main() -> int:
         "shards": shards,
         "corpus_path": str(corpus_path),
         "total_requests": sum(s["request_count"] for s in shards),
+        "attempt": max(1, int(args.attempt)),
+        "submitted_chunk_ids": submitted_chunk_ids,
     }
     state_path = output_dir / STATE_FILENAME
     with state_path.open("w", encoding="utf-8") as f:

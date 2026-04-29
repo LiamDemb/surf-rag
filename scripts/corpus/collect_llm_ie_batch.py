@@ -18,6 +18,7 @@ import json
 import logging
 import os
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -32,6 +33,10 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 DEFAULT_OUTPUT_FILENAME = "corpus_llm_ie.jsonl"
+RETRY_REPORT_FILENAME = "ie_retry_report.json"
+IE_STATUS_SUCCESS = "success"
+IE_STATUS_FAILED = "failed"
+IE_STATUS_PENDING = "pending"
 
 
 def _iter_jsonl(path: Path):
@@ -41,6 +46,29 @@ def _iter_jsonl(path: Path):
             if not line:
                 continue
             yield json.loads(line)
+
+
+def _normalize_ie_metadata(meta: dict[str, Any]) -> dict[str, Any]:
+    entities = meta.get("entities", [])
+    relations = meta.get("relations", [])
+    has_extraction = bool(entities) or bool(relations)
+    status = str(meta.get("ie_status", "")).strip().lower()
+    if status not in (IE_STATUS_SUCCESS, IE_STATUS_FAILED, IE_STATUS_PENDING):
+        if has_extraction or bool(meta.get("ie_extracted", False)):
+            status = IE_STATUS_SUCCESS
+        else:
+            status = IE_STATUS_PENDING
+    attempts = int(meta.get("ie_attempts", 0) or 0)
+    if attempts < 0:
+        attempts = 0
+    last_error = meta.get("ie_last_error")
+    if status == IE_STATUS_SUCCESS:
+        last_error = None
+    meta["ie_status"] = status
+    meta["ie_attempts"] = attempts
+    meta["ie_last_error"] = None if last_error is None else str(last_error)
+    meta["ie_extracted"] = status == IE_STATUS_SUCCESS
+    return meta
 
 
 def main() -> int:
@@ -66,6 +94,11 @@ def main() -> int:
         "--output-dir",
         default=os.getenv("OUTPUT_DIR", "data/processed"),
         help="Output directory.",
+    )
+    parser.add_argument(
+        "--retry-report",
+        default=None,
+        help=f"Retry report path (default: <output-dir>/{RETRY_REPORT_FILENAME}).",
     )
     args = parser.parse_args()
 
@@ -94,6 +127,12 @@ def main() -> int:
         Path(args.output) if args.output else output_dir / DEFAULT_OUTPUT_FILENAME
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    retry_report_path = (
+        Path(args.retry_report)
+        if args.retry_report
+        else output_dir / RETRY_REPORT_FILENAME
+    )
+    retry_report_path.parent.mkdir(parents=True, exist_ok=True)
 
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
@@ -103,13 +142,20 @@ def main() -> int:
     client = OpenAI(api_key=api_key)
 
     raw_by_id: dict[str, tuple[list, list]] = {}
+    errors_by_id: dict[str, str] = {}
     completed = 0
     failed = 0
+    submitted_chunk_ids: set[str] = set(state.get("submitted_chunk_ids") or [])
+    attempt = int(state.get("attempt", 1) or 1)
 
     for shard in shards:
         batch_id = shard.get("batch_id")
         if not batch_id:
             continue
+        shard_ids = {
+            str(x).strip() for x in (shard.get("chunk_ids") or []) if str(x).strip()
+        }
+        submitted_chunk_ids.update(shard_ids)
         batch = client.batches.retrieve(batch_id)
         if batch.status != "completed":
             logger.warning(
@@ -117,6 +163,8 @@ def main() -> int:
                 batch_id,
                 batch.status,
             )
+            for cid in shard_ids:
+                errors_by_id[cid] = f"batch_not_completed:{batch.status}"
             continue
 
         output_file_id = getattr(batch, "output_file_id", None) or getattr(
@@ -124,6 +172,8 @@ def main() -> int:
         )
         if not output_file_id:
             logger.warning("Shard batch %s has no output file.", batch_id)
+            for cid in shard_ids:
+                errors_by_id[cid] = "missing_batch_output_file"
             continue
 
         logger.info("Downloading shard output for %s...", batch_id)
@@ -141,11 +191,15 @@ def main() -> int:
                 continue
             if obj.get("error"):
                 failed += 1
-                raw_by_id[obj.get("custom_id", "")] = ([], [])
+                cid = str(obj.get("custom_id", "")).strip()
+                raw_by_id[cid] = ([], [])
+                err = obj.get("error")
+                errors_by_id[cid] = json.dumps(err, ensure_ascii=False)
                 continue
             completed += 1
             cid, raw_entities, raw_triples = parse_ie_batch_output_line(obj)
             raw_by_id[cid] = (raw_entities, raw_triples)
+            errors_by_id.pop(cid, None)
 
         error_file_id = getattr(batch, "error_file_id", None) or getattr(
             batch, "error_file", None
@@ -164,9 +218,26 @@ def main() -> int:
                     except json.JSONDecodeError:
                         continue
                     failed += 1
-                    raw_by_id[obj.get("custom_id", "")] = ([], [])
+                    cid = str(obj.get("custom_id", "")).strip()
+                    raw_by_id[cid] = ([], [])
+                    errors_by_id[cid] = json.dumps(obj.get("error"), ensure_ascii=False)
             except Exception as e:
                 logger.warning("Could not fetch error file for %s: %s", batch_id, e)
+
+    for cid in submitted_chunk_ids:
+        if cid not in raw_by_id and cid not in errors_by_id:
+            errors_by_id[cid] = "missing_batch_output"
+
+    success_ids_attempt = {
+        cid
+        for cid, (ents, rels) in raw_by_id.items()
+        if cid in submitted_chunk_ids and (ents or rels) and cid not in errors_by_id
+    }
+    failed_ids_attempt = {
+        cid
+        for cid in submitted_chunk_ids
+        if cid in errors_by_id or cid not in success_ids_attempt
+    }
 
     chunk_list = list(_iter_jsonl(corpus_path))
     empty_entities = 0
@@ -180,6 +251,9 @@ def main() -> int:
             chunk_id = chunk.get("chunk_id") or ""
             chunk = dict(chunk)
             meta = chunk.setdefault("metadata", {})
+            meta = _normalize_ie_metadata(meta)
+            if chunk_id in submitted_chunk_ids:
+                meta["ie_attempts"] = int(meta.get("ie_attempts", 0)) + 1
 
             if chunk_id in raw_by_id:
                 # This chunk was in the current batch – apply new extraction
@@ -190,18 +264,30 @@ def main() -> int:
                 )
                 meta["entities"] = entities
                 meta["relations"] = relations
-            elif meta.get("ie_extracted"):
+                if chunk_id in errors_by_id:
+                    meta["ie_status"] = IE_STATUS_FAILED
+                    meta["ie_last_error"] = errors_by_id[chunk_id]
+                else:
+                    meta["ie_status"] = IE_STATUS_SUCCESS
+                    meta["ie_last_error"] = None
+            elif meta.get("ie_status") == IE_STATUS_SUCCESS:
                 # Already extracted in a prior run – keep existing data
                 entities = meta.get("entities", [])
                 relations = meta.get("relations", [])
             else:
-                # Not in batch and not cached – leave empty
-                entities = []
-                relations = []
-                meta["entities"] = entities
-                meta["relations"] = relations
+                # Not newly extracted this attempt: preserve existing values.
+                entities = meta.get("entities", [])
+                relations = meta.get("relations", [])
+                meta.setdefault("entities", entities)
+                meta.setdefault("relations", relations)
+                if chunk_id in errors_by_id:
+                    meta["ie_status"] = IE_STATUS_FAILED
+                    meta["ie_last_error"] = errors_by_id[chunk_id]
+                elif meta.get("ie_status") != IE_STATUS_SUCCESS:
+                    meta["ie_status"] = IE_STATUS_PENDING
+                    meta["ie_last_error"] = meta.get("ie_last_error")
 
-            meta["ie_extracted"] = True
+            meta["ie_extracted"] = meta.get("ie_status") == IE_STATUS_SUCCESS
 
             if not entities:
                 empty_entities += 1
@@ -222,6 +308,26 @@ def main() -> int:
         total_entities,
         total_relations,
     )
+    unresolved_ids = []
+    for chunk in _iter_jsonl(output_path):
+        cid = str(chunk.get("chunk_id", "")).strip()
+        if not cid:
+            continue
+        meta = _normalize_ie_metadata(dict(chunk.get("metadata", {})))
+        if meta.get("ie_status") != IE_STATUS_SUCCESS:
+            unresolved_ids.append(cid)
+    retry_report = {
+        "attempt": attempt,
+        "submitted_count": len(submitted_chunk_ids),
+        "success_ids": sorted(success_ids_attempt),
+        "failed_ids": sorted(failed_ids_attempt),
+        "unresolved_ids": sorted(set(unresolved_ids)),
+    }
+    retry_report_path.write_text(
+        json.dumps(retry_report, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    logger.info("Wrote retry report: %s", retry_report_path)
     print(f"Output: {output_path}")
     return 0
 

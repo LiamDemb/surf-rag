@@ -290,7 +290,11 @@ def main() -> int:
 
             if prior is not None and has_extraction:
                 # Reuse the fully-extracted chunk from cache
-                prior.setdefault("metadata", {})["ie_extracted"] = True
+                prior_meta = prior.setdefault("metadata", {})
+                prior_meta["ie_extracted"] = True
+                prior_meta["ie_status"] = "success"
+                prior_meta["ie_attempts"] = int(prior_meta.get("ie_attempts", 1) or 1)
+                prior_meta["ie_last_error"] = None
                 chunks.append(prior)
                 chunk_texts.append(text_for_extraction)
                 cached_count += 1
@@ -306,6 +310,9 @@ def main() -> int:
                     "anchors": structured.anchors,
                     "relations": relations,
                     "ie_extracted": False,
+                    "ie_status": "pending",
+                    "ie_attempts": 0,
+                    "ie_last_error": None,
                 }
                 chunk = CorpusChunk(
                     chunk_id=chunk_id,
@@ -335,6 +342,9 @@ def main() -> int:
     stale_files = [
         "batch_state_ie.json",
         "corpus_llm_ie.jsonl",
+        "ie_retry_report.json",
+        "ie_pending_ids.txt",
+        "ie_failures_final.json",
     ]
     for name in stale_files:
         stale = output_dir / name
