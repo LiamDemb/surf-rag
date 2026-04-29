@@ -63,6 +63,6 @@ __pycache__/
 /data
 
 # Development Configs
-configs/dev
+/configs
 
 .file_tree.txt
