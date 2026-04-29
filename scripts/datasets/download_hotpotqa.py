@@ -7,6 +7,7 @@ import argparse
 import io
 import json
 import logging
+import os
 import random
 import sys
 from collections import defaultdict
@@ -14,20 +15,61 @@ from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
-import pyarrow.parquet as pq
 import requests
-from huggingface_hub import HfApi
-from huggingface_hub.utils import build_hf_headers
 
-from surf_rag.config.env import get_hf_hub_token, load_app_env
-from surf_rag.core.corpus_acquisition import (
-    supporting_titles_from_supporting_facts_sample,
-)
-from surf_rag.core.wikipedia_client import WikipediaClient
+_DATASETS_DIR = Path(__file__).resolve().parent
+_REPO_ROOT = _DATASETS_DIR.parents[1]
+_SRC_DIR = _REPO_ROOT / "src"
+if str(_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_SRC_DIR))
+
+if str(_DATASETS_DIR) not in sys.path:
+    sys.path.insert(0, str(_DATASETS_DIR))
+
+import _common  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
 DATASET_REPO = "hotpotqa/hotpot_qa"
+
+
+def _load_app_env() -> None:
+    try:
+        from surf_rag.config.env import load_app_env as _load
+
+        _load()
+        return
+    except Exception:
+        pass
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(override=False)
+    except Exception:
+        pass
+
+
+def _get_hf_hub_token() -> str | None:
+    try:
+        from surf_rag.config.env import get_hf_hub_token as _get
+
+        return _get()
+    except Exception:
+        pass
+    token = (os.environ.get("HF_TOKEN") or "").strip() or (
+        os.environ.get("HUGGING_FACE_HUB_TOKEN") or ""
+    ).strip()
+    return token or None
+
+
+class WikipediaClient:
+    """Compatibility adapter that delegates page checks to scripts/datasets/_common."""
+
+    def __init__(self, *, language: str = "en") -> None:
+        self._language = language
+
+    def titles_are_direct_mainspace_pages(self, titles: list[str]) -> tuple[bool, str]:
+        return _common.titles_direct_mainspace_status(titles, language=self._language)
 
 
 def _jsonify(obj: Any) -> Any:
@@ -50,7 +92,7 @@ def _jsonify(obj: Any) -> Any:
     return str(obj)
 
 
-def _resolve_revision(api: HfApi, revision: str | None) -> str:
+def _resolve_revision(api: Any, revision: str | None) -> str:
     if revision:
         return revision
     info = api.repo_info(repo_id=DATASET_REPO, repo_type="dataset")
@@ -58,7 +100,7 @@ def _resolve_revision(api: HfApi, revision: str | None) -> str:
 
 
 def _parquet_relpaths(
-    api: HfApi, *, config_name: str, split: str, revision: str
+    api: Any, *, config_name: str, split: str, revision: str
 ) -> list[str]:
     files = api.list_repo_files(
         repo_id=DATASET_REPO, repo_type="dataset", revision=revision
@@ -93,8 +135,13 @@ def iter_hotpotqa_examples(
     fail with ``Feature type 'List' not found`` when the local dataset builder
     cache has legacy ``dataset_infos`` metadata incompatible with ``datasets`` 3.x.
     """
-    load_app_env()
-    token = get_hf_hub_token()
+    _load_app_env()
+    # Lazy import so tests can import this module without requiring pyarrow binary.
+    import pyarrow.parquet as pq
+    from huggingface_hub import HfApi
+    from huggingface_hub.utils import build_hf_headers
+
+    token = _get_hf_hub_token()
     api = HfApi(token=token)
     rev = _resolve_revision(api, revision)
     relpaths = _parquet_relpaths(
@@ -150,8 +197,13 @@ def main() -> int:
     )
     parser.add_argument(
         "--split",
-        default="validation",
+        default="train",
         help="Dataset split name (default: validation).",
+    )
+    parser.add_argument(
+        "--wiki-language",
+        default="en",
+        help="Wikipedia language for title checks (default: en).",
     )
     parser.add_argument(
         "--revision",
@@ -161,7 +213,7 @@ def main() -> int:
     parser.add_argument(
         "--seed",
         type=int,
-        default=None,
+        default=42,
         help="Optional shuffle seed for shard order before scanning.",
     )
     parser.add_argument(
@@ -188,7 +240,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    load_app_env()
+    _load_app_env()
 
     if args.n < 1:
         parser.error("--n must be >= 1")
@@ -201,8 +253,11 @@ def main() -> int:
 
     max_scanned = args.max_scanned or max(10_000, 50 * args.n)
 
-    wiki = WikipediaClient()
-
+    try:
+        wiki = WikipediaClient(language=args.wiki_language)
+    except TypeError:
+        # Backward-compatible with tests/mocks that provide a no-arg fake class.
+        wiki = WikipediaClient()
     args.output.parent.mkdir(parents=True, exist_ok=True)
     skip_reasons: dict[str, int] = defaultdict(int)
     scanned = 0
@@ -231,8 +286,7 @@ def main() -> int:
                 )
                 break
 
-            sample = {"supporting_facts": ex.get("supporting_facts")}
-            titles = supporting_titles_from_supporting_facts_sample(sample)
+            titles = _common.twowiki_supporting_titles(ex)
             ok, reason = wiki.titles_are_direct_mainspace_pages(titles)
             if not ok:
                 prefix = reason.split(":", 1)[0] if reason else "skip"
