@@ -143,6 +143,7 @@ def main() -> int:
 
     raw_by_id: dict[str, tuple[list, list]] = {}
     errors_by_id: dict[str, str] = {}
+    failure_reason_counts: dict[str, int] = {}
     completed = 0
     failed = 0
     submitted_chunk_ids: set[str] = set(state.get("submitted_chunk_ids") or [])
@@ -165,6 +166,9 @@ def main() -> int:
             )
             for cid in shard_ids:
                 errors_by_id[cid] = f"batch_not_completed:{batch.status}"
+                failure_reason_counts["batch_not_completed"] = (
+                    failure_reason_counts.get("batch_not_completed", 0) + 1
+                )
             continue
 
         output_file_id = getattr(batch, "output_file_id", None) or getattr(
@@ -174,6 +178,9 @@ def main() -> int:
             logger.warning("Shard batch %s has no output file.", batch_id)
             for cid in shard_ids:
                 errors_by_id[cid] = "missing_batch_output_file"
+                failure_reason_counts["missing_batch_output_file"] = (
+                    failure_reason_counts.get("missing_batch_output_file", 0) + 1
+                )
             continue
 
         logger.info("Downloading shard output for %s...", batch_id)
@@ -195,11 +202,22 @@ def main() -> int:
                 raw_by_id[cid] = ([], [])
                 err = obj.get("error")
                 errors_by_id[cid] = json.dumps(err, ensure_ascii=False)
+                failure_reason_counts["api_error"] = (
+                    failure_reason_counts.get("api_error", 0) + 1
+                )
                 continue
             completed += 1
-            cid, raw_entities, raw_triples = parse_ie_batch_output_line(obj)
+            cid, raw_entities, raw_triples, parse_error = parse_ie_batch_output_line(
+                obj
+            )
             raw_by_id[cid] = (raw_entities, raw_triples)
-            errors_by_id.pop(cid, None)
+            if parse_error:
+                errors_by_id[cid] = f"parse_error:{parse_error}"
+                failure_reason_counts["parse_error"] = (
+                    failure_reason_counts.get("parse_error", 0) + 1
+                )
+            else:
+                errors_by_id.pop(cid, None)
 
         error_file_id = getattr(batch, "error_file_id", None) or getattr(
             batch, "error_file", None
@@ -221,12 +239,18 @@ def main() -> int:
                     cid = str(obj.get("custom_id", "")).strip()
                     raw_by_id[cid] = ([], [])
                     errors_by_id[cid] = json.dumps(obj.get("error"), ensure_ascii=False)
+                    failure_reason_counts["api_error"] = (
+                        failure_reason_counts.get("api_error", 0) + 1
+                    )
             except Exception as e:
                 logger.warning("Could not fetch error file for %s: %s", batch_id, e)
 
     for cid in submitted_chunk_ids:
         if cid not in raw_by_id and cid not in errors_by_id:
             errors_by_id[cid] = "missing_batch_output"
+            failure_reason_counts["missing_batch_output"] = (
+                failure_reason_counts.get("missing_batch_output", 0) + 1
+            )
 
     success_ids_attempt = {
         cid
@@ -322,6 +346,7 @@ def main() -> int:
         "success_ids": sorted(success_ids_attempt),
         "failed_ids": sorted(failed_ids_attempt),
         "unresolved_ids": sorted(set(unresolved_ids)),
+        "failure_reasons": failure_reason_counts,
     }
     retry_report_path.write_text(
         json.dumps(retry_report, indent=2, ensure_ascii=False) + "\n",

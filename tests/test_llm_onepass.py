@@ -7,6 +7,7 @@ import pytest
 from surf_rag.core.llm_ie import (
     _find_evidence_span,
     _post_process_ie,
+    parse_ie_batch_output_line,
 )
 
 
@@ -166,3 +167,49 @@ def test_post_process_dedupes_triples_by_norm_key() -> None:
     ]
     _, relations = _post_process_ie(raw_entities, raw_triples, "text", None)
     assert len(relations) == 1
+
+
+def test_parse_ie_batch_output_line_reports_parse_error() -> None:
+    line = {
+        "custom_id": "c1",
+        "response": {
+            "status_code": 200,
+            "body": {
+                "choices": [
+                    {
+                        "message": {
+                            "tool_calls": [
+                                {
+                                    "function": {
+                                        "name": "extract_entities_and_triples",
+                                        "arguments": '{"triples":[{"subj_surface":"a"',
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
+        },
+    }
+    cid, ents, triples, parse_error = parse_ie_batch_output_line(line)
+    assert cid == "c1"
+    assert ents == []
+    assert triples == []
+    assert parse_error is not None
+    assert "json_decode_error" in parse_error
+
+
+def test_parse_ie_batch_output_line_reports_missing_tool() -> None:
+    line = {
+        "custom_id": "c2",
+        "response": {
+            "status_code": 200,
+            "body": {"choices": [{"message": {"tool_calls": []}}]},
+        },
+    }
+    cid, ents, triples, parse_error = parse_ie_batch_output_line(line)
+    assert cid == "c2"
+    assert ents == []
+    assert triples == []
+    assert parse_error == "no_extract_tool_call"

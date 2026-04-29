@@ -309,30 +309,33 @@ def build_ie_batch_line(custom_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
 
 def parse_ie_batch_output_line(
     line: Dict[str, Any],
-) -> tuple[str, List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Parse a Batch API output line into (custom_id, entities, relations)."""
+) -> tuple[str, List[Dict[str, Any]], List[Dict[str, Any]], Optional[str]]:
+    """Parse a Batch API output line into ``(custom_id, entities, triples, parse_error)``."""
     custom_id = line.get("custom_id") or ""
     raw_entities: List[Dict[str, Any]] = []
     raw_triples: List[Dict[str, Any]] = []
 
     if line.get("error"):
-        return (custom_id, [], [])
+        return (custom_id, [], [], "line_error")
 
     response = line.get("response")
     if not response or response.get("status_code") != 200:
-        return (custom_id, [], [])
+        return (custom_id, [], [], "non_200_response")
 
     body = response.get("body") or {}
     choices = body.get("choices") or []
     if not choices:
-        return (custom_id, [], [])
+        return (custom_id, [], [], "no_choices")
 
     msg = choices[0].get("message") or {}
     tool_calls = msg.get("tool_calls") or []
+    saw_expected_tool = False
+    parse_errors: List[str] = []
     for tc in tool_calls:
         func = tc.get("function") or {}
         if func.get("name") != "extract_entities_and_triples":
             continue
+        saw_expected_tool = True
         args_str = func.get("arguments") or "{}"
         try:
             args = json.loads(args_str)
@@ -340,5 +343,10 @@ def parse_ie_batch_output_line(
             raw_triples.extend(args.get("triples", []))
         except json.JSONDecodeError as e:
             logger.warning("Failed to parse ie batch output for %s: %s", custom_id, e)
+            parse_errors.append(f"json_decode_error:{e}")
 
-    return (custom_id, raw_entities, raw_triples)
+    if parse_errors:
+        return (custom_id, raw_entities, raw_triples, ";".join(parse_errors))
+    if not saw_expected_tool:
+        return (custom_id, raw_entities, raw_triples, "no_extract_tool_call")
+    return (custom_id, raw_entities, raw_triples, None)
