@@ -112,15 +112,10 @@ class RouterSection:
 class RetrievalSection:
     dense_model: str = "all-MiniLM-L6-v2"
     graph_max_hops: int = 2
-    graph_max_paths_per_start: int = 50
     graph_bidirectional: bool = True
     graph_entity_vector_top_k: int = 3
     graph_entity_vector_threshold: float = 0.5
     graph_hop_support_threshold: float = 0.5
-    # Embedding bundle scorer weights / lengths (`score_bundle`); orthogonal to PPR retrieval.
-    graph_local_pred_weight: float = 0.7
-    graph_bundle_pred_weight: float = 0.6
-    graph_length_penalty: float = 0.05
     # Matches ``surf_rag.core.scoring_config.ScoringConfig`` / ``get_default_scoring_config``.
     graph_ppr_alpha: float = 0.85
     graph_ppr_max_iter: int = 64

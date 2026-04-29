@@ -7,13 +7,9 @@ import numpy as np
 from surf_rag.core.build_graph import build_graph
 from surf_rag.core.scoring_config import ScoringConfig
 from surf_rag.entity_matching.types import PhraseSource, SeedCandidate
-from surf_rag.graph.graph_beam_paths import (
-    enumerate_beam_candidate_paths,
-    enumerate_global_frontier_paths,
-)
+from surf_rag.graph.graph_beam_paths import enumerate_global_frontier_paths
 from surf_rag.graph.graph_paths import relation_labels_from_edge
 from surf_rag.graph.graph_scoring import (
-    aggregate_chunk_scores_average_incidence,
     canonical_ppr_rank_chunks,
     _build_heterogeneous_transition_matrix,
 )
@@ -142,59 +138,8 @@ def test_canonical_ppr_prefers_chunk_linked_to_high_mass_entity():
     assert "chunk_ppr_mass" in extra["chunk_scoring"]
 
 
-def test_beam_enumeration_emits_rel_paths():
-    graph = build_graph(
-        [
-            {
-                "chunk_id": "c1",
-                "metadata": {
-                    "entities": [{"norm": "a"}, {"norm": "b"}],
-                    "relations": [
-                        {"subj_norm": "a", "pred": "causes", "obj_norm": "b"}
-                    ],
-                },
-            }
-        ]
-    )
-    paths, diag = enumerate_beam_candidate_paths(
-        graph=graph,
-        start_nodes={"E:a"},
-        max_hops=1,
-        bidirectional=False,
-        max_paths_per_start=50,
-    )
-    assert diag.enumeration_backend == "beam"
-    assert len(paths) >= 1
-
-
 def test_relation_labels_helper_stable():
     assert relation_labels_from_edge({"labels": {"x"}, "label": "y"}) == ["x"]
-
-
-def test_average_incidence_legacy_divides_by_entity_count():
-    """Legacy incidence projection still penalizes entity-dense chunks."""
-    chunks = [
-        {
-            "chunk_id": "dense",
-            "metadata": {
-                "entities": [{"norm": "x"}, {"norm": "y"}, {"norm": "z"}],
-                "relations": [],
-            },
-        },
-        {
-            "chunk_id": "focused",
-            "metadata": {
-                "entities": [{"norm": "hub"}],
-                "relations": [],
-            },
-        },
-    ]
-    graph = build_graph(chunks)
-    entity_nodes = ["E:x", "E:y", "E:z", "E:hub"]
-    pi = np.asarray([0.2, 0.2, 0.2, 0.9], dtype=np.float64)
-    scores, _, diag = aggregate_chunk_scores_average_incidence(graph, entity_nodes, pi)
-    assert scores["focused"] >= scores["dense"]
-    assert "chunk_breakdown" in diag
 
 
 def test_restart_distribution_semantic_softmax_idf_sums_to_one():

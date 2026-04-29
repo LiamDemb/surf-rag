@@ -1,3 +1,11 @@
+"""Path grounding for canonical graph retrieval diagnostics.
+
+Maps each relational hop on a candidate path to chunk-level evidence using corpus
+provenance on relation edges (``chunk_ids_by_label``). Used for grounded evidence
+bundles and explanation traces only; final chunk ranking uses heterogeneous PPR
+masses on chunk nodes, not these hop support scores.
+"""
+
 from dataclasses import dataclass
 from typing import Optional
 
@@ -36,7 +44,7 @@ def candidate_chunk_ids_for_hop(graph, hop: GraphHop):
     for chunk_id in edge["chunk_ids_by_label"].get(hop.relation, []):
         chunks.add(chunk_id)
 
-    # No direct support found - might be rudundent if we don't have lexical scoring
+    # No direct support — fall back to entity co-occurrence in chunks
     if not chunks:
         chunks_source = {
             neighbour[2:]
@@ -86,7 +94,12 @@ def ground_path_report(
     *,
     support_threshold: float = 0.5,
 ) -> GroundPathReport:
-    """Ground a path to chunks per hop; report why grounding failed if applicable."""
+    """Ground each hop to chunk IDs for explanations (orthogonal to PPR chunk scores).
+
+    Canonical retrieval ranks chunks by stationary mass on ``C:*`` after
+    heterogeneous PPR. This function only builds human-readable / diagnostic
+    evidence linkage: it does **not** define final retrieval scores.
+    """
     grounded_hops = []
     supporting_chunk_ids = []
 

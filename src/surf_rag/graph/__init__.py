@@ -1,10 +1,7 @@
-from surf_rag.graph.graph_beam_paths import enumerate_beam_candidate_paths
+from surf_rag.graph.graph_beam_paths import enumerate_global_frontier_paths
 from surf_rag.graph.graph_grounding import ground_path, ground_path_report
-from surf_rag.graph.graph_paths import (
-    GraphPathEnumerationDiagnostics,
-    enumerate_candidate_paths,
-)
-from surf_rag.graph.graph_scoring import score_bundle
+from surf_rag.graph.graph_paths import GraphPathEnumerationDiagnostics
+from surf_rag.graph.graph_scoring import canonical_ppr_rank_chunks
 from surf_rag.graph.graph_types import EvidenceBundle, GraphHop, GraphPath, GroundedHop
 
 __all__ = [
@@ -15,11 +12,10 @@ __all__ = [
     "GroundedHop",
     "LLMQueryEntityExtractor",
     "NetworkXGraphStore",
-    "enumerate_beam_candidate_paths",
-    "enumerate_candidate_paths",
+    "canonical_ppr_rank_chunks",
+    "enumerate_global_frontier_paths",
     "ground_path",
     "ground_path_report",
-    "score_bundle",
 ]
 
 

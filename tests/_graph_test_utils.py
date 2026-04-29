@@ -59,7 +59,7 @@ class StaticExtractor:
 
 
 def strategy_embedder():
-    """Minimal embedder for score_bundle (384-d vectors)."""
+    """Minimal embedder for graph retrieval tests (384-d vectors)."""
     m = MagicMock()
 
     def embed_query(text: str):

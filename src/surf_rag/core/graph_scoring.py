@@ -1,19 +1,5 @@
-from surf_rag.graph.graph_scoring import (
-    clean_rel,
-    cosine,
-    get_cached_embedding,
-    node_text,
-    pred_sim,
-    score_bundle,
-    triple_sim,
-)
+"""Compatibility exports for canonical graph PPR scoring."""
 
-__all__ = [
-    "clean_rel",
-    "cosine",
-    "get_cached_embedding",
-    "node_text",
-    "pred_sim",
-    "score_bundle",
-    "triple_sim",
-]
+from surf_rag.graph.graph_scoring import canonical_ppr_rank_chunks, run_local_ppr
+
+__all__ = ["canonical_ppr_rank_chunks", "run_local_ppr"]

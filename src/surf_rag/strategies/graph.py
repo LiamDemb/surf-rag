@@ -14,7 +14,7 @@ from surf_rag.core.scoring_config import ScoringConfig, get_default_scoring_conf
 from surf_rag.entity_matching.types import PhraseSource, SeedCandidate
 from surf_rag.graph.graph_beam_paths import enumerate_global_frontier_paths
 from surf_rag.graph.graph_grounding import ground_path_report
-from surf_rag.graph.graph_scoring import canonical_ppr_rank_chunks, score_bundle
+from surf_rag.graph.graph_scoring import canonical_ppr_rank_chunks
 from surf_rag.graph.graph_seeds import compute_restart_distribution_canonical
 from surf_rag.graph.graph_specificity import node_specificity_score
 from surf_rag.graph.graph_types import EvidenceBundle, GraphPath
@@ -238,15 +238,12 @@ class GraphRetriever(BranchRetriever):
         self,
         bundle: EvidenceBundle,
         score: float,
-        score_breakdown: Dict[str, float],
+        score_breakdown: Dict[str, Any],
     ) -> Dict[str, Any]:
         return {
             "path": self._path_to_debug(bundle.path),
             "score": float(score),
-            "score_breakdown": {
-                k: [float(x) for x in v] if isinstance(v, list) else float(v)
-                for k, v in score_breakdown.items()
-            },
+            "score_breakdown": score_breakdown,
             "supporting_chunk_ids": list(bundle.supporting_chunk_ids),
             "grounded_hops": [
                 {
@@ -288,6 +285,41 @@ class GraphRetriever(BranchRetriever):
         mass_max = max(masses) if masses else 0.0
         smean = float(sum(specs) / len(specs)) if specs else 0.0
         return mass_max * (0.5 + 0.5 * smean)
+
+    def _bundle_ppr_trace_breakdown(
+        self, bundle: EvidenceBundle, pi_dict: Dict[str, float]
+    ) -> Dict[str, Any]:
+        """Diagnostics aligned with canonical heterogeneous PPR (entity masses from ``pi_dict``)."""
+        rank_score = self._bundle_ppr_rank_score(bundle, pi_dict)
+        masses: List[float] = []
+        specs: List[float] = []
+        per_hop: List[Dict[str, Any]] = []
+        for gh in bundle.grounded_hops:
+            hop = gh.hop
+            endpoints: List[Dict[str, Any]] = []
+            for nid in (hop.source, hop.target):
+                m = float(pi_dict.get(nid, 0.0))
+                s = float(node_specificity_score(self._graph, nid))
+                masses.append(m)
+                specs.append(s)
+                endpoints.append({"entity": nid, "ppr_mass": m, "specificity": s})
+            per_hop.append(
+                {
+                    "relation": hop.relation,
+                    "is_reverse": bool(getattr(hop, "is_reverse", False)),
+                    "ground_chunk_id": gh.chunk_id,
+                    "endpoints": endpoints,
+                }
+            )
+        return {
+            "method": "canonical_ppr_bundle_rank",
+            "bundle_rank_score": float(rank_score),
+            "max_endpoint_entity_ppr_mass": float(max(masses)) if masses else 0.0,
+            "mean_endpoint_specificity": (
+                float(sum(specs) / len(specs)) if specs else 0.0
+            ),
+            "per_hop": per_hop,
+        }
 
     def _local_subgraph_edge_counts(self, entity_nodes: List[str]) -> Dict[str, int]:
         g = self._graph
@@ -555,21 +587,11 @@ class GraphRetriever(BranchRetriever):
             ]
 
             if debug:
-                score_cache: Dict[Any, Any] = {}
                 debug_info["bundle_trace"] = []
                 for b in grounded_bundles[:80]:
-                    emb_score, bd = score_bundle(
-                        query=query,
-                        bundle=b,
-                        graph=self._graph,
-                        embedder=self.embedder,
-                        corpus=self.corpus,
-                        config=self.scoring_config,
-                        cache=score_cache,
-                        debug=False,
-                    )
+                    bd = self._bundle_ppr_trace_breakdown(b, pi_dict)
                     debug_info["bundle_trace"].append(
-                        self._bundle_to_debug(b, float(emb_score), bd)
+                        self._bundle_to_debug(b, float(bd["bundle_rank_score"]), bd)
                     )
 
             timings["retrieval"] = (time.perf_counter() - r0) * 1000.0

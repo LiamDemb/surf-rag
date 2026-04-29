@@ -82,8 +82,8 @@ def iter_valid_rel_expansions(
 ) -> Iterator[Tuple[str, GraphHop]]:
     """Yield ``(next_entity, hop)`` for every valid one-hop relational expansion.
 
-    Mirrors the skip rules used by :func:`enumerate_candidate_paths` so DFS and
-    beam enumeration stay consistent.
+    Mirrors the skip rules used by :func:`surf_rag.graph.graph_beam_paths.enumerate_global_frontier_paths`
+    so enumeration backends stay consistent.
     """
     d = diag if diag is not None else GraphPathEnumerationDiagnostics()
 
@@ -146,62 +146,6 @@ def iter_valid_rel_expansions(
                     is_reverse=True,
                 )
                 yield prev_node, new_hop
-
-
-def enumerate_candidate_paths(
-    graph,
-    start_nodes: set[str],
-    max_hops: int,
-    bidirectional: bool = True,
-    max_paths_per_start: int = 50,
-) -> tuple[list[GraphPath], GraphPathEnumerationDiagnostics]:
-    """Enumerate candidate relational paths from each start node via DFS.
-
-    Returns emitted paths and aggregation diagnostics for retrieval debugging.
-
-    Incoming-edge filtering uses ``prev_node`` (the predecessor being stepped to),
-    not the outgoing ``neighbour`` from the other branch — mixing those breaks
-    bidirectional traversal statistics and could skip valid predecessors incorrectly.
-    """
-    paths: list[GraphPath] = []
-    diag = GraphPathEnumerationDiagnostics()
-
-    for node in start_nodes:
-        if node not in graph:
-            continue
-
-        diag.start_nodes_used += 1
-        start_node_paths: List[GraphPath] = []
-
-        def dfs(current_node: str, current_hops: List[GraphHop], visited: set):
-            if len(start_node_paths) >= max_paths_per_start:
-                return
-
-            if current_hops:
-                start_node_paths.append(
-                    GraphPath(start_node=node, hops=tuple(current_hops))
-                )
-
-            # Stop at max_hops
-            if len(current_hops) >= max_hops:
-                return
-
-            for next_ent, new_hop in iter_valid_rel_expansions(
-                graph,
-                current_node,
-                visited,
-                bidirectional=bidirectional,
-                diag=diag,
-            ):
-                dfs(next_ent, current_hops + [new_hop], visited | {next_ent})
-
-        dfs(node, [], {node})
-        if len(start_node_paths) >= max_paths_per_start:
-            diag.starts_hit_path_budget.append(node)
-        paths.extend(start_node_paths)
-
-    diag.paths_emitted = len(paths)
-    return paths, diag
 
 
 def relation_labels_from_edge(data: dict) -> list[str]:

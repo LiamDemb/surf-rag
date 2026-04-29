@@ -12,11 +12,7 @@ def _int_env(name: str, default: int) -> int:
 
 @dataclass(frozen=True)
 class ScoringConfig:
-    """Embedding bundle scorer weights (``score_bundle``) + canonical graph PPR settings."""
-
-    local_pred_weight: float = 0.7
-    bundle_pred_weight: float = 0.6
-    length_penalty: float = 0.05
+    """Canonical heterogeneous graph PPR + semantic seed settings."""
 
     ppr_alpha: float = 0.85
     ppr_max_iter: int = 64
@@ -35,9 +31,6 @@ class ScoringConfig:
 
 def get_default_scoring_config() -> ScoringConfig:
     return ScoringConfig(
-        local_pred_weight=float(os.getenv("GRAPH_LOCAL_PRED_WEIGHT", "0.7")),
-        bundle_pred_weight=float(os.getenv("GRAPH_BUNDLE_PRED_WEIGHT", "0.6")),
-        length_penalty=float(os.getenv("GRAPH_LENGTH_PENALTY", "0.05")),
         ppr_alpha=float(os.getenv("GRAPH_PPR_ALPHA", "0.85")),
         ppr_max_iter=int(os.getenv("GRAPH_PPR_MAX_ITER", "64")),
         ppr_tol=float(os.getenv("GRAPH_PPR_TOL", "1e-6")),
@@ -68,9 +61,6 @@ def scoring_config_from_retrieval_section(r: RetrievalSection) -> ScoringConfig:
     if tm not in ("support", "uniform"):
         tm = "support"
     return ScoringConfig(
-        local_pred_weight=float(r.graph_local_pred_weight),
-        bundle_pred_weight=float(r.graph_bundle_pred_weight),
-        length_penalty=float(r.graph_length_penalty),
         ppr_alpha=float(r.graph_ppr_alpha),
         ppr_max_iter=int(r.graph_ppr_max_iter),
         ppr_tol=float(r.graph_ppr_tol),
