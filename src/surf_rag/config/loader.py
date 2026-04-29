@@ -20,6 +20,7 @@ from surf_rag.config.schema import (
     E2ESection,
     EntityMatchingSection,
     GenerationSection,
+    GraphRetrievalSweepSection,
     ModelSetupSection,
     OracleSection,
     PathsSection,
@@ -103,6 +104,11 @@ def pipeline_config_from_dict(raw: dict[str, Any]) -> PipelineConfig:
         ),
         e2e=_merge_dataclass(E2ESection, raw.get("e2e"), base.e2e),
         secrets=_merge_dataclass(SecretsSection, raw.get("secrets"), base.secrets),
+        graph_retrieval_sweep=_merge_dataclass(
+            GraphRetrievalSweepSection,
+            raw.get("graph_retrieval_sweep"),
+            base.graph_retrieval_sweep,
+        ),
     )
     e2e = out.e2e
     if e2e.completion_window is None:

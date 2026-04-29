@@ -205,8 +205,13 @@ def e2e_prepare_and_submit(
     router_inference_batch_size: int = 32,
     dev_sync: bool = False,
     pipeline_config_for_artifact: Optional["PipelineConfig"] = None,
+    run_paths_override: Optional[RunArtifactPaths] = None,
 ) -> int:
-    """Routed fusion retrieval + optional rerank + OpenAI batch submission."""
+    """Routed fusion retrieval + optional rerank + OpenAI batch submission.
+
+    When ``run_paths_override`` is set, artifacts are written there instead of under
+    ``evaluations/<policy>/<run_id>/`` (used by graph retrieval grid search).
+    """
     policy = (
         routing_policy
         if isinstance(routing_policy, RoutingPolicyName)
@@ -218,12 +223,16 @@ def e2e_prepare_and_submit(
         if not router_id or not str(router_id).strip():
             raise ValueError("router_id is required for learned routing policies")
 
-    paths = make_e2e_run_paths(
-        benchmark_base=benchmark_base,
-        benchmark_name=benchmark_name,
-        benchmark_id=benchmark_id,
-        policy=policy,
-        run_id=run_id,
+    paths = (
+        run_paths_override
+        if run_paths_override is not None
+        else make_e2e_run_paths(
+            benchmark_base=benchmark_base,
+            benchmark_name=benchmark_name,
+            benchmark_id=benchmark_id,
+            policy=policy,
+            run_id=run_id,
+        )
     )
     paths.ensure_dirs()
     run_root = paths.run_root.resolve()
@@ -265,7 +274,10 @@ def e2e_prepare_and_submit(
 
     logger.info("Building dense + graph retrievers from %s", asset_dir)
     dense_retriever = build_dense_retriever(str(asset_dir))
-    graph_retriever = build_graph_retriever(str(asset_dir))
+    graph_retriever = build_graph_retriever(
+        str(asset_dir),
+        pipeline_config=pipeline_config_for_artifact,
+    )
 
     loaded_router = None
     router_ctx = None

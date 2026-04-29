@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Final
 
@@ -38,6 +39,15 @@ def benchmark_bundle_dir(
 ) -> Path:
     """``benchmark_base`` should be ``default_benchmark_base()`` (not raw ``DATA_BASE``)."""
     return benchmark_base / benchmark_name / benchmark_id
+
+
+_BUNDLE_SUBPATH_SAFE = re.compile(r"[^a-zA-Z0-9._-]+")
+
+
+def safe_benchmark_bundle_subpath(segment: str) -> str:
+    """Single path component under a benchmark bundle (e.g. graph-rag tuning session name)."""
+    t = _BUNDLE_SUBPATH_SAFE.sub("-", str(segment).strip()).strip("-")
+    return t or "graph-rag-tuning"
 
 
 def benchmark_subdir(

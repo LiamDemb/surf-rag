@@ -177,6 +177,19 @@ class SecretsSection:
 
 
 @dataclass
+class GraphRetrievalSweepSection:
+    """Optional grid-search settings for ``scripts/dev/graph_retrieval_grid_search.py``.
+
+    Keys under ``grid`` are :class:`RetrievalSection` field names; each value is a list
+    (or a single scalar) of candidates. The sweep takes the Cartesian product.
+    """
+
+    grid: dict[str, Any] = field(default_factory=dict)
+    objective: str = "overlap.all.retrieval_at_k.10.ndcg"
+    sweep_id: str | None = None
+
+
+@dataclass
 class PipelineConfig:
     schema_version: str = "surf-rag/pipeline/v1"
     experiment_id: str | None = None
@@ -196,3 +209,6 @@ class PipelineConfig:
     generation: GenerationSection = field(default_factory=GenerationSection)
     e2e: E2ESection = field(default_factory=E2ESection)
     secrets: SecretsSection = field(default_factory=SecretsSection)
+    graph_retrieval_sweep: GraphRetrievalSweepSection = field(
+        default_factory=GraphRetrievalSweepSection
+    )
