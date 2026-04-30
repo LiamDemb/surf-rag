@@ -39,15 +39,15 @@ def test_yaml_unquoted_ids_coerce_to_str_for_paths_and_env() -> None:
 
 def test_load_example_pipeline(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[1]
-    cfg_path = root / "configs" / "examples" / "surf-bench-200-pipeline.yaml"
+    cfg_path = root / "configs" / "development" / "graph-rag-tuning.yaml"
     cfg = load_pipeline_config(cfg_path)
     assert cfg.schema_version == "surf-rag/pipeline/v1"
     assert cfg.paths.benchmark_name == "surf-bench"
-    assert cfg.paths.benchmark_id == "200-test"
+    assert cfg.paths.benchmark_id == "development"
     assert cfg.paths.router_id == "4000-test"
     rp = resolve_paths(cfg)
     assert rp.benchmark_path.name == "benchmark.jsonl"
-    assert (rp.bundle / "corpus").samefile(rp.corpus_dir)
+    assert rp.corpus_dir == rp.bundle / "corpus"
     d = config_to_resolved_dict(cfg, rp)
     assert "resolved_paths" in d
     assert d["resolved_paths"]["benchmark_path"] == str(rp.benchmark_path)
