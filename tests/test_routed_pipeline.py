@@ -72,7 +72,6 @@ def test_learned_soft_with_router() -> None:
         embed_proj_dim=2,
         feat_proj_dim=2,
         hidden_dim=4,
-        num_bins=11,
         dropout=0.0,
     )
     m = RouterMLP(cfg)

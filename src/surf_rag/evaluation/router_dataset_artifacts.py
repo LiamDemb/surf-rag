@@ -111,8 +111,7 @@ def write_router_dataset_manifest(
     benchmark_path: str,
     retrieval_asset_dir: str,
     oracle_run_root: str,
-    labels_selected_path: str,
-    selected_beta: float,
+    router_labels_path: str,
     feature_set_version: str,
     embedding_model: str,
     split_seed: int,
@@ -121,10 +120,10 @@ def write_router_dataset_manifest(
     test_ratio: float,
     extra: Optional[Dict[str, Any]] = None,
 ) -> None:
-    """Write ``manifest.json`` for a router dataset build (schema v2)."""
+    """Write ``manifest.json`` for a router dataset build (schema v3)."""
     paths.ensure_dirs()
     data: Dict[str, Any] = {
-        "schema_version": 2,
+        "schema_version": 3,
         "created_at": utc_now_iso(),
         "router_id": router_id,
         "dataset_id": router_id,
@@ -139,8 +138,8 @@ def write_router_dataset_manifest(
         "oracle": {
             "router_id": router_id,
             "run_root": oracle_run_root,
-            "labels_selected": labels_selected_path,
-            "selected_beta": float(selected_beta),
+            "router_labels": router_labels_path,
+            "labeling_strategy": "oracle-curve-v1",
         },
         "feature_set_version": feature_set_version,
         "embedding_model": embedding_model,

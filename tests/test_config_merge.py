@@ -14,7 +14,6 @@ from surf_rag.config.merge import (
     merge_e2e_common_args,
     merge_e2e_prepare_args,
     merge_ingest_args,
-    merge_sweep_beta_args,
 )
 from surf_rag.config.schema import PipelineConfig
 
@@ -100,17 +99,6 @@ def test_merge_ingest_hotpotqa_path_from_yaml() -> None:
     merge_ingest_args(args, cfg, argv=["ingest", "--config", "c.yaml"])
     assert args.hotpotqa == "data/raw/hotpot.jsonl"
     assert args.hotpotqa_version == "v9"
-
-
-def test_merge_sweep_betas_from_config_when_flag_absent() -> None:
-    cfg = _cfg()
-    args = Namespace()
-    args.router_id = None
-    args.min_entropy_nats = None
-    args.betas = None
-    args.router_base = None
-    merge_sweep_beta_args(args, cfg, argv=["prog", "--config", "x.yaml"])
-    assert args.betas == cfg.oracle.betas
 
 
 def test_e2e_prepare_cli_run_id_overrides_config() -> None:

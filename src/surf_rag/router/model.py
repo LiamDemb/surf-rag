@@ -1,4 +1,4 @@
-"""Compact MLP router: embedding and/or feature branch, 11-bin logits."""
+"""Compact MLP router: embedding and/or feature branch, scalar weight head."""
 
 from __future__ import annotations
 
@@ -57,7 +57,6 @@ class RouterMLPConfig:
     embed_proj_dim: int = 16
     feat_proj_dim: int = 16
     hidden_dim: int = 32
-    num_bins: int = 11
     dropout: float = 0.1
 
     def to_json(self) -> Dict[str, Any]:
@@ -68,7 +67,6 @@ class RouterMLPConfig:
             "embed_proj_dim": self.embed_proj_dim,
             "feat_proj_dim": self.feat_proj_dim,
             "hidden_dim": self.hidden_dim,
-            "num_bins": self.num_bins,
             "dropout": self.dropout,
         }
 
@@ -89,13 +87,12 @@ class RouterMLPConfig:
             embed_proj_dim=int(d.get("embed_proj_dim", 16)),
             feat_proj_dim=int(d.get("feat_proj_dim", 16)),
             hidden_dim=int(d.get("hidden_dim", 32)),
-            num_bins=int(d.get("num_bins", 11)),
             dropout=float(d.get("dropout", 0.1)),
         )
 
 
 class RouterMLP(nn.Module):
-    """Classifies over the weight grid; uses one or both input branches by ``input_mode``."""
+    """Predicts scalar dense weight using one or both input branches."""
 
     def __init__(self, config: RouterMLPConfig) -> None:
         super().__init__()
@@ -130,7 +127,7 @@ class RouterMLP(nn.Module):
             nn.Linear(in_h, d.hidden_dim),
             nn.GELU(),
             nn.Dropout(d.dropout),
-            nn.Linear(d.hidden_dim, d.num_bins),
+            nn.Linear(d.hidden_dim, 1),
         )
 
     def forward(
@@ -155,22 +152,13 @@ class RouterMLP(nn.Module):
             h = F.gelu(self.embed_proj(z))
         return self.head(h)
 
-    def predict_distribution(
+    def predict_weight(
         self,
         query_embedding: torch.Tensor,
         feature_vector: torch.Tensor,
     ) -> torch.Tensor:
-        return F.softmax(self(query_embedding, feature_vector), dim=-1)
-
-
-def expected_dense_weight(
-    distribution: torch.Tensor,
-    weight_grid: torch.Tensor,
-) -> torch.Tensor:
-    """Batch expected value ``sum p_i w_i``; ``weight_grid`` shape (num_bins,)."""
-    if distribution.dim() == 1:
-        distribution = distribution.unsqueeze(0)
-    return (distribution * weight_grid.unsqueeze(0)).sum(dim=-1)
+        logits = self(query_embedding, feature_vector).squeeze(-1)
+        return torch.sigmoid(logits)
 
 
 def stack_weight_grid(

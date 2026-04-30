@@ -1,11 +1,10 @@
-"""Materialize soft labels from an oracle run's saved score vectors."""
+"""Materialize deterministic router labels from an oracle run."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import logging
-import shutil
 import sys
 from pathlib import Path
 from typing import List
@@ -24,36 +23,23 @@ from surf_rag.evaluation.oracle_artifacts import (
     read_oracle_score_rows,
     update_manifest,
 )
-from surf_rag.router.soft_labels import materialize_soft_labels
+from surf_rag.router.soft_labels import materialize_router_labels
 
 logger = logging.getLogger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Materialize soft labels from an oracle run."
+        description="Materialize deterministic router labels from an oracle run."
     )
     parser.add_argument(
         "--config",
         type=Path,
         default=None,
-        help="YAML pipeline config (oracle.betas, paths.router_id).",
+        help="YAML pipeline config (paths.router_id).",
     )
     parser.add_argument(
         "--router-id", default=None, help="Router bundle id (oracle directory key)."
-    )
-    parser.add_argument(
-        "--beta",
-        action="append",
-        type=float,
-        default=None,
-        help="Beta value to materialize (repeatable).",
-    )
-    parser.add_argument(
-        "--selected-beta",
-        type=float,
-        default=None,
-        help="Beta whose label file becomes labels/selected.jsonl. Defaults to the first --beta.",
     )
     parser.add_argument(
         "--router-base",
@@ -81,8 +67,8 @@ def main() -> int:
         args._pipeline_cfg = pcfg
         apply_pipeline_env_from_config(pcfg)
         merge_create_soft_labels_args(args, pcfg)
-    if not args.router_id or not args.beta:
-        logger.error("Provide --config or --router-id and at least one --beta.")
+    if not args.router_id:
+        logger.error("Provide --config or --router-id.")
         return 2
 
     paths = _resolve_paths(args)
@@ -96,36 +82,15 @@ def main() -> int:
         logger.error("No oracle score rows found in %s.", paths.oracle_scores)
         return 1
 
-    written: List[dict] = []
-    for beta in args.beta:
-        out = paths.labels_for_beta(beta)
-        n = materialize_soft_labels(rows, beta=beta, output_path=out)
-        logger.info("beta=%s -> wrote %d labels to %s", beta, n, out)
-        written.append({"beta": float(beta), "path": out.name, "count": n})
-
-    selected_beta = (
-        args.selected_beta if args.selected_beta is not None else args.beta[0]
-    )
-    selected_src = paths.labels_for_beta(selected_beta)
-    if not selected_src.is_file():
-        logger.error(
-            "--selected-beta %s did not produce a label file (check --beta).",
-            selected_beta,
-        )
-        return 2
-
-    shutil.copyfile(selected_src, paths.labels_selected)
-    logger.info(
-        "labels/selected.jsonl <- %s (beta=%s)", selected_src.name, selected_beta
-    )
+    n = materialize_router_labels(rows, output_path=paths.router_labels)
+    logger.info("wrote %d labels to %s", n, paths.router_labels)
 
     update_manifest(
         paths,
         {
-            "soft_labels": {
-                "written": written,
-                "selected_beta": float(selected_beta),
-                "selected_file": paths.labels_selected.name,
+            "router_labels": {
+                "count": int(n),
+                "file": paths.router_labels.name,
             }
         },
     )

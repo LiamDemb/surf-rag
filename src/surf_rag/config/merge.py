@@ -172,34 +172,13 @@ def merge_oracle_prepare_args(
         args.router_base = rp.router_base
 
 
-def merge_sweep_beta_args(
-    args: Namespace, cfg: PipelineConfig, argv: list[str] | None = None
-) -> None:
-    argv = argv if argv is not None else sys.argv
-    rp = resolve_paths(cfg)
-    o = cfg.oracle
-    if not argv_provides(argv, "--router-id"):
-        args.router_id = cfg.paths.router_id
-    if not argv_provides(argv, "--min-entropy-nats"):
-        args.min_entropy_nats = o.min_entropy_nats
-    if not argv_provides(argv, "--betas"):
-        args.betas = o.betas
-    if not argv_provides(argv, "--router-base"):
-        args.router_base = rp.router_base
-
-
 def merge_create_soft_labels_args(
     args: Namespace, cfg: PipelineConfig, argv: list[str] | None = None
 ) -> None:
     argv = argv if argv is not None else sys.argv
     rp = resolve_paths(cfg)
-    o = cfg.oracle
     if not argv_provides(argv, "--router-id"):
         args.router_id = cfg.paths.router_id
-    if not args.beta and o.betas:
-        args.beta = list(o.betas)
-    if not argv_provides(argv, "--selected-beta") and o.selected_beta is not None:
-        args.selected_beta = o.selected_beta
     if not argv_provides(argv, "--router-base"):
         args.router_base = rp.router_base
 

@@ -1,21 +1,4 @@
-"""Oracle score generation pipeline.
-
-High-level flow for one oracle run (see ``docs/dev/oracle-pipeline.md``):
-
-1. Snapshot the benchmark rows used for this run.
-2. Populate the dense retrieval cache for any missing question_id.
-3. Populate the graph retrieval cache for any missing question_id.
-4. For each question still missing an oracle_scores row, sweep the fixed
-   11-bin dense-weight grid over the cached branch retrievals, fuse, and
-   compute stateful NDCG@k (plus diagnostic Hit@k / Recall@k).
-5. Pick the best dense weight under the primary NDCG@k for each question.
-6. Write a ``summary.json`` overview.
-
-Retrieval is the expensive part and is append-only, so adding new
-questions later only drives retrieval for the newly added ``question_id``
-values. Changing ``beta`` or the labeling utility never triggers this
-stage again.
-"""
+"""Oracle score generation pipeline."""
 
 from __future__ import annotations
 
@@ -329,7 +312,7 @@ def build_summary(
             "retrieval_dense": paths.retrieval_dense.name,
             "retrieval_graph": paths.retrieval_graph.name,
             "oracle_scores": paths.oracle_scores.name,
-            "labels_dir": paths.labels_dir.name,
+            "router_labels": paths.router_labels.name,
         },
     }
 

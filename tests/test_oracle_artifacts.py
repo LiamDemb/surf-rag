@@ -12,7 +12,6 @@ from surf_rag.evaluation.oracle_artifacts import (
     OracleRunPaths,
     OracleScoreRow,
     WeightBinScore,
-    _format_beta,
     append_oracle_score_rows,
     append_retrieval_line,
     build_oracle_run_root,
@@ -52,13 +51,6 @@ def test_default_oracle_base_matches_router_base(monkeypatch):
     assert default_oracle_base() == Path("/tmp/something")
 
 
-def test_format_beta_filename_component_is_stable():
-    assert _format_beta(1.0) == "1"
-    assert _format_beta(2.0) == "2"
-    assert _format_beta(0.5) == "0p5"
-    assert _format_beta(10.25) == "10p25"
-
-
 def test_make_run_paths_for_cli_builds_expected_layout(tmp_path, monkeypatch):
     monkeypatch.setenv("ROUTER_BASE", str(tmp_path))
     paths = make_run_paths_for_cli("runA")
@@ -66,7 +58,7 @@ def test_make_run_paths_for_cli_builds_expected_layout(tmp_path, monkeypatch):
     assert paths.manifest == paths.run_root / "manifest.json"
     assert paths.provenance == paths.run_root / "provenance.json"
     assert paths.oracle_scores == paths.run_root / "oracle_scores.jsonl"
-    assert paths.labels_selected == paths.run_root / "labels" / "selected.jsonl"
+    assert paths.router_labels == paths.run_root / "router_labels.jsonl"
 
 
 def test_write_and_read_manifest_round_trip(tmp_path):
@@ -89,7 +81,7 @@ def test_write_and_read_manifest_round_trip(tmp_path):
     assert data["router_id"] == "runA"
     assert data["oracle_run_id"] == "runA"
     assert data["benchmark_name"] == "nq"
-    assert data["schema_version"] == 2
+    assert data["schema_version"] == 3
     assert data["branch_top_k"] == 25
     assert data["oracle_metric_k"] == 10
     assert data["weight_grid"][0] == 0.0
@@ -205,10 +197,3 @@ def test_oracle_score_row_round_trips_through_jsonl(tmp_path):
     assert back["oracle_metric_k"] == 10
     assert back["scores"][0]["fused_chunk_ids"] == ["c1", "c2"]
     assert back["scores"][0]["diagnostic_ndcg"]["10"] == pytest.approx(0.5)
-
-
-def test_labels_for_beta_filename(tmp_path):
-    paths = _paths(tmp_path)
-    assert paths.labels_for_beta(2.0).name == "beta_2.jsonl"
-    assert paths.labels_for_beta(0.5).name == "beta_0p5.jsonl"
-    assert paths.labels_for_beta(1.25).name == "beta_1p25.jsonl"

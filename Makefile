@@ -1,6 +1,6 @@
 .PHONY: help print-resolved-config print-paths print-oracle-config print-router-config \
 	install install-hooks setup-models lock test ingest fetch-wikipedia-articles build-corpus align-2wiki-support align-2wiki-support-full filter-benchmark pipeline \
-	oracle-prepare oracle-sweep-beta oracle-create-soft-labels oracle-labels \
+	oracle-prepare oracle-create-router-labels oracle-labels \
 	router-build-dataset router-pipeline \
 	router-train router-eval router-train-ablations router-evaluate-ablations \
 	validate-oracle-config validate-router-config validate-router-train \
@@ -20,7 +20,6 @@ E2E_POLICY ?=
 E2E_SPLIT ?=
 E2E_DEV_SYNC ?=
 E2E_POLICIES ?= dense-only graph-only 50-50 learned-soft learned-hard
-SELECTED_BETA ?=
 ROUTER_INPUT_MODES ?= both query-features embedding
 ENTITY_MATCHING_FORCE ?=
 ALIGN_2WIKI_EXTRA ?=
@@ -49,7 +48,7 @@ help:
 	@echo ""
 	@echo "  make print-resolved-config   — merged config + absolute paths"
 	@echo "  make pipeline                — ingest → fetch → align → build-corpus"
-	@echo "  make oracle-labels            — oracle + sweep + soft labels"
+	@echo "  make oracle-labels            — oracle + router labels"
 	@echo "  make router-pipeline         — oracle-labels + router-build-dataset"
 	@echo "  make e2e-submit / e2e-collect / e2e-evaluate   (+ optional E2E_RUN_ID= E2E_POLICY=)"
 	@echo ""
@@ -112,14 +111,10 @@ pipeline:
 oracle-prepare: validate-oracle-config
 	$(PY) -m scripts.prepare_oracle_run --config "$(CONFIG)"
 
-oracle-sweep-beta: validate-oracle-config
-	$(PY) -m scripts.sweep_beta --config "$(CONFIG)"
+oracle-create-router-labels: validate-oracle-config
+	$(PY) -m scripts.create_soft_labels --config "$(CONFIG)"
 
-oracle-create-soft-labels: validate-oracle-config
-	$(PY) -m scripts.create_soft_labels --config "$(CONFIG)" \
-		$(if $(SELECTED_BETA),--selected-beta $(SELECTED_BETA),)
-
-oracle-labels: oracle-prepare oracle-sweep-beta oracle-create-soft-labels
+oracle-labels: oracle-prepare oracle-create-router-labels
 
 router-build-dataset: validate-router-config
 	$(PY) -m scripts.router.build_router_dataset --config "$(CONFIG)"
