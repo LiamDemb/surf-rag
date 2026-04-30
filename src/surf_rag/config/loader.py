@@ -146,6 +146,13 @@ def _raw_dataset_path(v: Any) -> str | None:
     return s if s else None
 
 
+def _id_str(v: Any) -> str:
+    """Normalize identifier scalars: ``None`` -> empty string, else ``str(v)``."""
+    if v is None:
+        return ""
+    return str(v)
+
+
 def _coerce_yaml_scalar_types(cfg: PipelineConfig) -> PipelineConfig:
     """YAML may parse unquoted numbers as int; path components must be strings."""
     p = cfg.paths
@@ -156,7 +163,7 @@ def _coerce_yaml_scalar_types(cfg: PipelineConfig) -> PipelineConfig:
         router_base=_opt_path_str(p.router_base),
         benchmark_name=str(p.benchmark_name),
         benchmark_id=str(p.benchmark_id),
-        router_id=str(p.router_id),
+        router_id=_id_str(p.router_id),
         hf_home=_opt_path_str(p.hf_home),
         transformers_cache=_opt_path_str(p.transformers_cache),
     )
