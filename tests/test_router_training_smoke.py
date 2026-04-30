@@ -31,14 +31,19 @@ import torch  # noqa: E402
 
 def _row(qid: str, split: str) -> dict:
     w = [float(x) for x in DEFAULT_DENSE_WEIGHT_GRID]
-    d = [1.0 / 11.0] * 11
+    c = [float(x) for x in DEFAULT_DENSE_WEIGHT_GRID]
     return {
         "question_id": qid,
         "split": split,
+        "dataset_source": "nq",
         "embedding_dim": 4,
         "query_embedding": [0.1, 0.2, 0.3, 0.4],
         "feature_vector_norm": [0.0] * 14,
-        "distribution": d,
+        "oracle_curve": c,
+        "oracle_best_weight": 1.0,
+        "oracle_best_score": 1.0,
+        "oracle_curve_std": 0.3,
+        "is_valid_for_router_training": True,
         "weight_grid": w,
         "feature_set_version": "1",
         "embedding_model": "m",
@@ -62,8 +67,7 @@ def test_train_smoke(tmp_path: Path) -> None:
         benchmark_path="/b.jsonl",
         retrieval_asset_dir="/c",
         oracle_run_root="/o",
-        labels_selected_path="/l",
-        selected_beta=1.0,
+        router_labels_path="/l",
         feature_set_version="1",
         embedding_model="m",
         split_seed=0,
@@ -117,8 +121,7 @@ def test_train_smoke_query_features(tmp_path: Path) -> None:
         benchmark_path="/b.jsonl",
         retrieval_asset_dir="/c",
         oracle_run_root="/o",
-        labels_selected_path="/l",
-        selected_beta=1.0,
+        router_labels_path="/l",
         feature_set_version="1",
         embedding_model="m",
         split_seed=0,

@@ -1,14 +1,4 @@
-"""Build router training dataset (features, embeddings, soft labels) as Parquet.
-
-Example::
-
-    python -m scripts.router.build_router_dataset \\
-        --router-id v01 \\
-        --benchmark-name mix \\
-        --benchmark-id v01 \\
-        --benchmark-path data/mix/v01/benchmark/benchmark.jsonl \\
-        --retrieval-asset-dir data/mix/v01/corpus
-"""
+"""Build router training dataset (features, embeddings, oracle curves) as Parquet."""
 
 from __future__ import annotations
 
@@ -73,7 +63,7 @@ def _resolve_entity_pipeline(
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Build router Parquet dataset from oracle labels."
+        description="Build router Parquet dataset from oracle curve labels."
     )
     p.add_argument(
         "--config",
@@ -107,12 +97,6 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=None,
         help="Corpus/alias dir for Graph entity pipeline (optional but recommended).",
-    )
-    p.add_argument(
-        "--selected-beta",
-        type=float,
-        default=None,
-        help="Beta used in labels/selected.jsonl; if omitted, read from label rows.",
     )
     p.add_argument(
         "--router-base",
@@ -172,22 +156,16 @@ def main() -> int:
     o_paths = OracleRunPaths(
         run_root=build_oracle_run_root(router_base, args.router_id)
     )
-    if not o_paths.labels_selected.is_file():
+    if not o_paths.router_labels.is_file():
         logger.error(
-            "Missing %s. Run create_soft_labels / oracle flow first.",
-            o_paths.labels_selected,
+            "Missing %s. Run router-label materialization first.",
+            o_paths.router_labels,
         )
         return 1
-    label_rows = read_jsonl(o_paths.labels_selected)
+    label_rows = read_jsonl(o_paths.router_labels)
     if not label_rows:
-        logger.error("Empty labels: %s", o_paths.labels_selected)
+        logger.error("Empty labels: %s", o_paths.router_labels)
         return 1
-
-    selected_beta = (
-        float(args.selected_beta)
-        if args.selected_beta is not None
-        else float(label_rows[0].get("beta", 0.0))
-    )
     bench = _load_benchmark(args.benchmark_path)
 
     r_paths = make_router_dataset_paths_for_cli(args.router_id, router_base=router_base)
@@ -241,7 +219,6 @@ def main() -> int:
         dev_ratio=dv,
         test_ratio=te,
         split_seed=split_seed,
-        selected_beta=selected_beta,
         router_id=args.router_id,
     )
 
@@ -266,8 +243,7 @@ def main() -> int:
             str(args.retrieval_asset_dir.resolve()) if args.retrieval_asset_dir else ""
         ),
         oracle_run_root=str(o_paths.run_root.resolve()),
-        labels_selected_path=str(o_paths.labels_selected.resolve()),
-        selected_beta=selected_beta,
+        router_labels_path=str(o_paths.router_labels.resolve()),
         feature_set_version=df["feature_set_version"].iloc[0] if len(df) else "1",
         embedding_model=emb_model,
         split_seed=split_seed,

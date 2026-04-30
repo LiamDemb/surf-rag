@@ -1,4 +1,4 @@
-"""Train RouterMLP from ``router_dataset.parquet``."""
+"""Train scalar RouterMLP from ``router_dataset.parquet``."""
 
 from __future__ import annotations
 
@@ -11,15 +11,12 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, TensorDataset, WeightedRandomSampler
 
 from surf_rag.evaluation.oracle_artifacts import DEFAULT_DENSE_WEIGHT_GRID
-from surf_rag.router.model import (
-    RouterMLP,
-    RouterMLPConfig,
-    parse_router_input_mode,
-)
-from surf_rag.router.router_metrics import aggregate_router_metrics, kl_divergence_torch
+from surf_rag.router.model import RouterMLP, RouterMLPConfig, parse_router_input_mode
+from surf_rag.router.regret import regret_loss
+from surf_rag.router.router_metrics import aggregate_router_metrics
 
 
 @dataclass
@@ -43,6 +40,7 @@ class RouterTrainConfig:
     dropout: float = 0.1
     num_workers: int = 0
     input_mode: str = "both"
+    balance_training_sources: bool = True
 
 
 def _seq_floats(val: object) -> List[float]:
@@ -55,28 +53,37 @@ def _seq_floats(val: object) -> List[float]:
 
 def _rows_to_arrays(
     df: pd.DataFrame,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, List[str]]:
-    """Stack embedding, feature_norm, distribution; return question_ids."""
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, List[str], List[str]]:
+    """Stack embedding, feature_norm, oracle_curve, validity, question_ids, source."""
     emb_rows: List[List[float]] = []
     feat_rows: List[List[float]] = []
-    dist_rows: List[List[float]] = []
+    curve_rows: List[List[float]] = []
+    valid_rows: List[float] = []
     qids: List[str] = []
+    sources: List[str] = []
     for _, row in df.iterrows():
         qids.append(str(row.get("question_id", "")))
         emb_rows.append(_seq_floats(row.get("query_embedding")))
         feat_rows.append(_seq_floats(row.get("feature_vector_norm")))
-        dist_rows.append(_seq_floats(row.get("distribution")))
+        curve_rows.append(_seq_floats(row.get("oracle_curve")))
+        valid_rows.append(
+            1.0 if bool(row.get("is_valid_for_router_training", False)) else 0.0
+        )
+        sources.append(str(row.get("dataset_source", "")))
     if not emb_rows:
         return (
             np.zeros((0, 0), dtype=np.float32),
             np.zeros((0, 0), dtype=np.float32),
             np.zeros((0, 0), dtype=np.float32),
+            np.zeros((0,), dtype=np.float32),
+            [],
             [],
         )
     x_e = np.asarray(emb_rows, dtype=np.float32)
     x_f = np.asarray(feat_rows, dtype=np.float32)
-    y = np.asarray(dist_rows, dtype=np.float32)
-    return x_e, x_f, y, qids
+    y = np.asarray(curve_rows, dtype=np.float32)
+    valid = np.asarray(valid_rows, dtype=np.float32)
+    return x_e, x_f, y, valid, qids, sources
 
 
 def _split_frame(df: pd.DataFrame, split: str) -> pd.DataFrame:
@@ -98,7 +105,6 @@ def build_model_config_from_df(
         embed_proj_dim=cfg.embed_proj_dim,
         feat_proj_dim=cfg.feat_proj_dim,
         hidden_dim=cfg.hidden_dim,
-        num_bins=11,
         dropout=cfg.dropout,
     )
 
@@ -140,28 +146,41 @@ def train_router(cfg: RouterTrainConfig) -> TrainRunResult:
         weight_decay=cfg.weight_decay,
     )
 
-    x_e, x_f, y, _ = _rows_to_arrays(train_df)
+    x_e, x_f, y, valid, _, sources = _rows_to_arrays(train_df)
     wg_np = _weight_grid_from_df(train_df)
-    wg = torch.tensor(wg_np, device=cfg.device, dtype=torch.float32)
 
     x_e_t = torch.tensor(x_e, device=cfg.device, dtype=torch.float32)
     x_f_t = torch.tensor(x_f, device=cfg.device, dtype=torch.float32)
     y_t = torch.tensor(y, device=cfg.device, dtype=torch.float32)
+    valid_t = torch.tensor(valid, device=cfg.device, dtype=torch.float32)
 
-    ds = TensorDataset(x_e_t, x_f_t, y_t)
+    ds = TensorDataset(x_e_t, x_f_t, y_t, valid_t)
+    sampler = None
+    if cfg.balance_training_sources and len(sources) == len(ds):
+        counts: Dict[str, int] = {}
+        for s in sources:
+            counts[s] = counts.get(s, 0) + 1
+        sw = [1.0 / max(1, counts.get(s, 1)) for s in sources]
+        sampler = WeightedRandomSampler(
+            weights=torch.tensor(sw, dtype=torch.float64),
+            num_samples=len(sw),
+            replacement=True,
+        )
     loader = DataLoader(
         ds,
         batch_size=min(cfg.batch_size, len(ds)),
-        shuffle=True,
+        shuffle=sampler is None,
+        sampler=sampler,
         num_workers=cfg.num_workers,
     )
 
-    x_ed, x_fd, yd, _ = _rows_to_arrays(dev_df)
+    x_ed, x_fd, yd, valid_d, _, _ = _rows_to_arrays(dev_df)
     has_dev = len(dev_df) > 0 and x_ed.shape[0] > 0
     if has_dev:
         x_ed = torch.tensor(x_ed, device=cfg.device, dtype=torch.float32)
         x_fd = torch.tensor(x_fd, device=cfg.device, dtype=torch.float32)
         yd = torch.tensor(yd, device=cfg.device, dtype=torch.float32)
+        valid_d = torch.tensor(valid_d, device=cfg.device, dtype=torch.float32)
 
     history: List[Dict[str, float]] = []
     best_dev = float("inf")
@@ -172,34 +191,42 @@ def train_router(cfg: RouterTrainConfig) -> TrainRunResult:
     for epoch in range(cfg.epochs):
         model.train()
         epoch_losses: List[float] = []
-        for xeb, xfb, yb in loader:
+        for xeb, xfb, yb, validb in loader:
             opt.zero_grad()
-            logits = model(xeb, xfb)
-            log_q = torch.log_softmax(logits, dim=-1)
-            loss = kl_divergence_torch(log_q, yb)
+            w_hat = model.predict_weight(xeb, xfb)
+            if bool((validb > 0.0).any().item()):
+                mask = validb > 0.0
+                loss = regret_loss(w_hat[mask], yb[mask])
+            else:
+                loss = regret_loss(w_hat, yb)
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             opt.step()
             epoch_losses.append(float(loss.item()))
 
-        train_kl = float(np.mean(epoch_losses)) if epoch_losses else 0.0
-        dev_kl: Optional[float] = None
+        train_regret = float(np.mean(epoch_losses)) if epoch_losses else 0.0
+        dev_regret: Optional[float] = None
         if has_dev:
             model.eval()
             with torch.no_grad():
-                log_qd = torch.log_softmax(model(x_ed, x_fd), dim=-1)
-                dev_kl = float(kl_divergence_torch(log_qd, yd).item())
+                w_hat_d = model.predict_weight(x_ed, x_fd)
+                if bool((valid_d > 0.0).any().item()):
+                    maskd = valid_d > 0.0
+                    dev_regret = float(regret_loss(w_hat_d[maskd], yd[maskd]).item())
+                else:
+                    dev_regret = float(regret_loss(w_hat_d, yd).item())
 
         row: Dict[str, float] = {
             "epoch": float(epoch + 1),
-            "train_kl": train_kl,
+            "train_regret": train_regret,
         }
-        if dev_kl is not None:
-            row["dev_kl"] = dev_kl
+        if dev_regret is not None:
+            row["dev_regret"] = dev_regret
         history.append(row)
 
-        if has_dev and dev_kl is not None:
-            if dev_kl < best_dev - cfg.early_stopping_min_delta:
-                best_dev = dev_kl
+        if has_dev and dev_regret is not None:
+            if dev_regret < best_dev - cfg.early_stopping_min_delta:
+                best_dev = dev_regret
                 best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
                 best_epoch = epoch
                 bad_epochs = 0
@@ -237,15 +264,18 @@ def _eval_splits(
         if len(sdf) == 0:
             out[split] = {"num_rows": 0}
             continue
-        x_e, x_f, y, _ = _rows_to_arrays(sdf)
+        x_e, x_f, y, valid, _, _ = _rows_to_arrays(sdf)
         x_e = torch.tensor(x_e, device=device, dtype=torch.float32)
         x_f = torch.tensor(x_f, device=device, dtype=torch.float32)
+        valid_np = np.asarray(valid, dtype=np.float32)
         with torch.no_grad():
-            log_p = torch.log_softmax(model(x_e, x_f), dim=-1)
-        log_np = log_p.cpu().numpy()
-        t_list: List[np.ndarray] = [y[i] for i in range(len(y))]
-        p_list: List[np.ndarray] = [log_np[i] for i in range(len(log_np))]
-        m = aggregate_router_metrics(t_list, p_list, wg_np)
+            pred_w = model.predict_weight(x_e, x_f).cpu().numpy()
+        m = aggregate_router_metrics(
+            oracle_curves=y,
+            predicted_weights=pred_w,
+            valid_mask=valid_np > 0.0,
+            weight_grid=wg_np,
+        )
         m["num_rows"] = float(len(sdf))
         out[split] = m
     out["config_summary"] = mcfg.to_json()
@@ -263,30 +293,28 @@ def export_split_predictions(
     sdf = _split_frame(df, split)
     if len(sdf) == 0:
         return []
-    x_e, x_f, y, qids = _rows_to_arrays(sdf)
+    x_e, x_f, y, valid, qids, _ = _rows_to_arrays(sdf)
     if x_e.shape[0] == 0:
         return []
     x_e = torch.tensor(x_e, device=device, dtype=torch.float32)
     x_f = torch.tensor(x_f, device=device, dtype=torch.float32)
-    wg = torch.tensor(weight_grid, device=device, dtype=torch.float32)
     model.eval()
     rows: List[Dict[str, Any]] = []
     with torch.no_grad():
-        log_p = torch.log_softmax(model(x_e, x_f), dim=-1)
-        dist_p = torch.exp(log_p)
-        ev_p = (dist_p * wg.unsqueeze(0)).sum(dim=-1).cpu().numpy()
-    y_t = y
-    ev_t = (y_t * weight_grid.reshape(1, -1)).sum(axis=1)
+        pred_w = model.predict_weight(x_e, x_f).cpu().numpy()
     for i in range(len(qids)):
-        pt = y_t[i]
-        pp = dist_p[i].cpu().numpy()
+        curve = y[i]
+        best_idx = int(np.argmax(curve)) if len(curve) else 0
+        best_weight = float(weight_grid[best_idx]) if len(weight_grid) else 0.0
+        best_score = float(np.max(curve)) if len(curve) else 0.0
         rows.append(
             {
                 "question_id": qids[i],
-                "target_distribution": pt.tolist(),
-                "predicted_distribution": pp.tolist(),
-                "target_expected_weight": float(ev_t[i]),
-                "predicted_expected_weight": float(ev_p[i]),
+                "oracle_curve": curve.tolist(),
+                "target_oracle_best_weight": best_weight,
+                "target_oracle_best_score": best_score,
+                "predicted_weight": float(pred_w[i]),
+                "is_valid_for_router_training": bool(valid[i] > 0.0),
             }
         )
     return rows

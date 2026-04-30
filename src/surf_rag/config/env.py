@@ -120,7 +120,6 @@ def apply_pipeline_env_from_config(config: object) -> None:
     o = cfg.oracle
     os.environ["ORACLE_BRANCH_TOP_K"] = str(o.branch_top_k)
     os.environ["ORACLE_FUSION_KEEP_K"] = str(o.fusion_keep_k)
-    os.environ["ORACLE_MIN_ENTROPY_NATS"] = str(o.min_entropy_nats)
     rd = cfg.router.dataset
     os.environ["SEED"] = str(cfg.seed)
     os.environ["TRAIN_RATIO"] = str(rd.train_ratio)

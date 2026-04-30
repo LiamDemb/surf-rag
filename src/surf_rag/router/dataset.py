@@ -1,4 +1,4 @@
-"""Join benchmark, oracle soft labels, features, and embeddings into training rows."""
+"""Join benchmark, oracle curve labels, features, and embeddings into training rows."""
 
 from __future__ import annotations
 
@@ -29,11 +29,9 @@ from surf_rag.router.splits import (
 )
 
 
-def _entropy_quantiles(
-    label_rows: Sequence[Mapping[str, Any]],
-) -> Tuple[float, float]:
-    entropies = [float(r["entropy"]) for r in label_rows if "entropy" in r]
-    return _quantiles(entropies)
+def _std_quantiles(label_rows: Sequence[Mapping[str, Any]]) -> Tuple[float, float]:
+    stds = [float(r["oracle_curve_std"]) for r in label_rows if "oracle_curve_std" in r]
+    return _quantiles(stds)
 
 
 def build_router_dataframe(
@@ -46,7 +44,6 @@ def build_router_dataframe(
     dev_ratio: float,
     test_ratio: float,
     split_seed: int,
-    selected_beta: float,
     router_id: str,
 ) -> Tuple[pd.DataFrame, FeatureNormalizerV1, Dict[str, Any]]:
     """Assemble a single dataframe with raw + norm features, embeddings, and splits.
@@ -60,7 +57,7 @@ def build_router_dataframe(
     if not by_q:
         raise ValueError("No label rows with question_id")
 
-    q1, q2 = _entropy_quantiles(list(by_q.values()))
+    q1, q2 = _std_quantiles(list(by_q.values()))
 
     aligned_bench: List[Mapping[str, Any]] = []
     aligned_labels: List[Mapping[str, Any]] = []
@@ -112,15 +109,16 @@ def build_router_dataframe(
         raw = raw_feature_rows[i]
         norm = transform_row(raw, normalizer)
         prefixed = prefix_raw_norm(raw, norm)
-        aw = float(lab.get("argmax_weight", 0.0))
-        ent = float(lab.get("entropy", 0.0))
-        stratum = stratum_key(aw, ent, q1, q2)
+        aw = float(lab.get("oracle_best_weight", 0.0))
+        std = float(lab.get("oracle_curve_std", 0.0))
+        stratum = stratum_key(aw, std, q1, q2)
         sp = qid_to_split.get(qid, "train")
-        dist = [float(x) for x in (lab.get("distribution") or [])]
-        if len(dist) != len(weight_grid):
+        curve = [float(x) for x in (lab.get("oracle_curve") or [])]
+        if len(curve) != len(weight_grid):
             raise ValueError(
-                f"Distribution length {len(dist)} != weight grid {len(weight_grid)}"
+                f"Oracle curve length {len(curve)} != weight grid {len(weight_grid)}"
             )
+        best_score = float(lab.get("oracle_best_score", 0.0))
         rec: Dict[str, Any] = {
             "question_id": qid,
             "question": b.get("question", ""),
@@ -129,16 +127,14 @@ def build_router_dataframe(
             "split_stratum": stratum,
             "split_seed": int(split_seed),
             "weight_grid": weight_grid,
-            "distribution": dist,
-            "expected_weight": float(lab.get("expected_weight", 0.0)),
-            "argmax_weight": aw,
-            "entropy": ent,
-            "argmax_index": int(lab.get("argmax_index", 0)),
-            "soft_label_scores": [float(s) for s in (lab.get("scores", []) or [])],
-            "beta": float(lab.get("beta", selected_beta)),
+            "oracle_curve": curve,
+            "oracle_best_weight": aw,
+            "oracle_best_score": best_score,
+            "oracle_curve_std": std,
+            "oracle_best_index": int(lab.get("oracle_best_index", 0)),
+            "is_valid_for_router_training": bool(best_score > 0.0),
             "router_id": router_id,
             "oracle_run_id": router_id,
-            "selected_beta": float(selected_beta),
             "feature_set_version": FEATURE_SET_VERSION,
             "embedding_model": embedding_model,
             "embedding_dim": int(emb.shape[1]) if len(emb.shape) > 1 else 0,

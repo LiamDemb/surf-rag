@@ -29,10 +29,10 @@ def validate_router_dataset(config_path: Path) -> int:
         return rc
     cfg = load_pipeline_config(config_path)
     r = resolve_paths(cfg)
-    sel = r.router_oracle_dir / "labels" / "selected.jsonl"
-    if not sel.is_file():
+    labels = r.router_oracle_dir / "router_labels.jsonl"
+    if not labels.is_file():
         return _fail(
-            f"Missing oracle labels {sel} — run make oracle-labels (CONFIG=...)"
+            f"Missing oracle labels {labels} — run make oracle-labels (CONFIG=...)"
         )
     return 0
 

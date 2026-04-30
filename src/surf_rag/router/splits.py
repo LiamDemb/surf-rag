@@ -1,4 +1,4 @@
-"""Deterministic train/dev/test assignment with soft-label-aware stratification."""
+"""Deterministic train/dev/test assignment with oracle-curve stratification."""
 
 from __future__ import annotations
 
@@ -7,13 +7,9 @@ import random
 from typing import Any, Dict, List, Sequence, Tuple
 
 
-def entropy_bucket(
-    entropy: float,
-    q1: float,
-    q2: float,
-) -> str:
+def std_bucket(oracle_curve_std: float, q1: float, q2: float) -> str:
     """Tertile bucket labels: low / mid / high."""
-    e = float(entropy)
+    e = float(oracle_curve_std)
     if e <= q1:
         return "low"
     if e <= q2:
@@ -42,11 +38,13 @@ def _quantiles(values: Sequence[float]) -> Tuple[float, float]:
     return q(1.0 / 3.0), q(2.0 / 3.0)
 
 
-def stratum_key(argmax_weight: float, ent: float, q1: float, q2: float) -> str:
-    w = float(argmax_weight)
+def stratum_key(
+    oracle_best_weight: float, curve_std: float, q1: float, q2: float
+) -> str:
+    w = float(oracle_best_weight)
     # One decimal for grid-aligned weights
     wk = f"{w:.1f}"
-    b = entropy_bucket(ent, q1, q2)
+    b = std_bucket(curve_std, q1, q2)
     return f"{wk}__{b}"
 
 
@@ -80,19 +78,19 @@ def assign_splits_stratified(
 ) -> Dict[str, str]:
     """Return ``question_id -> split`` where split is train|dev|test.
 
-    Uses ``argmax_weight`` + tertile ``entropy`` buckets for strata.
+    Uses ``oracle_best_weight`` + tertile ``oracle_curve_std`` buckets for strata.
     Rows missing ``question_id`` or target fields are assigned ``train`` (defensive).
     """
-    entropies = [float(r["entropy"]) for r in label_rows if "entropy" in r]
-    q1, q2 = _quantiles(entropies)
+    stds = [float(r["oracle_curve_std"]) for r in label_rows if "oracle_curve_std" in r]
+    q1, q2 = _quantiles(stds)
     by_stratum: Dict[str, List[str]] = {}
     for r in label_rows:
         qid = str(r.get("question_id", "")).strip()
         if not qid:
             continue
         try:
-            aw = float(r.get("argmax_weight", 0.0))
-            ent = float(r.get("entropy", 0.0))
+            aw = float(r.get("oracle_best_weight", 0.0))
+            ent = float(r.get("oracle_curve_std", 0.0))
         except (TypeError, ValueError):
             by_stratum.setdefault("unknown__mid", []).append(qid)
             continue

@@ -75,11 +75,6 @@ class EntityMatchingSection:
 class OracleSection:
     branch_top_k: int = 20
     fusion_keep_k: int = 20
-    betas: list[float] = field(
-        default_factory=lambda: [0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
-    )
-    min_entropy_nats: float = 0.1
-    selected_beta: float | None = None
 
 
 @dataclass

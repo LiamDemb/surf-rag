@@ -74,8 +74,7 @@ class RoutedFusionPipeline:
         from surf_rag.router.inference import predict_batch
 
         t0 = time.perf_counter()
-        pred_dist: Optional[np.ndarray] = None
-        wg = self.router.weight_grid if self.router else None
+        pred_weight: Optional[float] = None
         if policy in (
             RoutingPolicyName.LEARNED_SOFT,
             RoutingPolicyName.LEARNED_HARD,
@@ -86,10 +85,10 @@ class RoutedFusionPipeline:
                 raise ValueError(
                     "learned policies require query_embedding and feature_vector"
                 )
-            pred_dist, _ = predict_batch(self.router, query_embedding, feature_vector)
-            pred_dist = pred_dist.reshape(-1)
+            pred = predict_batch(self.router, query_embedding, feature_vector)
+            pred_weight = float(pred.reshape(-1)[0])
 
-        decision = decide_routing(policy, predicted_dist=pred_dist, weight_grid=wg)
+        decision = decide_routing(policy, predicted_weight=pred_weight)
         debug = decision_to_debug_info(decision)
 
         if not decision.run_graph:
@@ -144,8 +143,6 @@ class RoutedFusionPipeline:
             total_ms=(time.perf_counter() - t0) * 1000.0,
         )
         di = _merge_debug(fused.debug_info, {"routing": debug})
-        if pred_dist is not None:
-            di["routing"]["predicted_distribution"] = pred_dist.tolist()
         return RetrievalResult(
             query=fused.query,
             retriever_name=FUSED_RETRIEVER_NAME,

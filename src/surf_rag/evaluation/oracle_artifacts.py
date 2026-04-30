@@ -64,37 +64,16 @@ class OracleRunPaths:
         return self.run_root / "oracle_scores.jsonl"
 
     @property
-    def beta_sweep(self) -> Path:
-        return self.run_root / "beta_sweep.jsonl"
-
-    @property
-    def recommended_beta(self) -> Path:
-        return self.run_root / "recommended_beta.json"
-
-    @property
-    def labels_dir(self) -> Path:
-        return self.run_root / "labels"
+    def router_labels(self) -> Path:
+        return self.run_root / "router_labels.jsonl"
 
     @property
     def reports_dir(self) -> Path:
         return self.run_root / "reports"
 
-    def labels_for_beta(self, beta: float) -> Path:
-        return self.labels_dir / f"beta_{_format_beta(beta)}.jsonl"
-
-    @property
-    def labels_selected(self) -> Path:
-        return self.labels_dir / "selected.jsonl"
-
     def ensure_dirs(self) -> None:
         self.run_root.mkdir(parents=True, exist_ok=True)
-        self.labels_dir.mkdir(parents=True, exist_ok=True)
         self.reports_dir.mkdir(parents=True, exist_ok=True)
-
-
-def _format_beta(beta: float) -> str:
-    """Stable filename component for a beta value (e.g. 2.0 -> '2p0')."""
-    return f"{float(beta):.4f}".rstrip("0").rstrip(".").replace(".", "p") or "0"
 
 
 def utc_now_iso() -> str:
@@ -174,7 +153,7 @@ def write_manifest(
     """Write ``manifest.json`` for a router-scoped oracle run."""
     paths.ensure_dirs()
     data: Dict[str, Any] = {
-        "schema_version": 2,
+        "schema_version": 3,
         "created_at": utc_now_iso(),
         "router_id": router_id,
         "benchmark_name": benchmark_name,
@@ -196,10 +175,7 @@ def write_manifest(
             "retrieval_dense": paths.retrieval_dense.name,
             "retrieval_graph": paths.retrieval_graph.name,
             "oracle_scores": paths.oracle_scores.name,
-            "beta_sweep": paths.beta_sweep.name,
-            "recommended_beta": paths.recommended_beta.name,
-            "labels_dir": paths.labels_dir.name,
-            "labels_selected": str(paths.labels_selected.relative_to(paths.run_root)),
+            "router_labels": paths.router_labels.name,
             "reports_dir": paths.reports_dir.name,
         },
     }
@@ -428,5 +404,5 @@ def overwrite_oracle_score_rows(
 
 
 def read_oracle_score_rows(paths: OracleRunPaths) -> List[Dict[str, Any]]:
-    """Return raw oracle score rows as dicts (stable for soft-label/beta code)."""
+    """Return raw oracle score rows as dicts."""
     return list(_read_jsonl(paths.oracle_scores))

@@ -11,8 +11,8 @@ def test_assign_splits_produces_all_splits() -> None:
         rows.append(
             {
                 "question_id": f"q{i}",
-                "argmax_weight": float(f"{(i % 11) / 10:.1f}"),
-                "entropy": 0.1 * i,
+                "oracle_best_weight": float(f"{(i % 11) / 10:.1f}"),
+                "oracle_curve_std": 0.1 * i,
             }
         )
     m = assign_splits_stratified(

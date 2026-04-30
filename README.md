@@ -2,7 +2,7 @@
 
 ## Router training (MLP) and input ablations
 
-The router is trained on a Parquet dataset built from oracle soft labels. One run id (`ROUTER_ID`) shares a single `dataset/`; trained checkpoints, metrics, and per-split predictions are stored under a **per-input ablation** directory:
+The router is trained on a Parquet dataset built from oracle performance curves. One run id (`ROUTER_ID`) shares a single `dataset/`; trained checkpoints, metrics, and per-split predictions are stored under a **per-input ablation** directory:
 
 ```text
 $DATA_BASE/router/$ROUTER_ID/
