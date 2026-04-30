@@ -1,0 +1,153 @@
+schema_version: surf-rag/pipeline/v1
+experiment_id: graph-rag-tuning
+seed: 42
+paths:
+  data_base: data
+  benchmark_base: data/benchmarks
+  router_base: data/router
+  benchmark_name: surf-bench
+  benchmark_id: development
+  router_id: ''
+  hf_home: null
+  transformers_cache: null
+raw_sources:
+  nq_path: data/raw/nq/validation/500_v01.jsonl
+  wiki2_path: data/raw/2wiki/validation/500_v01.jsonl
+  hotpotqa_path: null
+  nq_version: null
+  wiki2_version: null
+  hotpotqa_version: null
+model_setup:
+  spacy_model: en_core_web_sm
+  embedding_model: all-MiniLM-L6-v2
+  cross_encoder_model: cross-encoder/ms-marco-MiniLM-L-12-v2
+corpus:
+  max_pages: 12
+  max_hops: 2
+  max_list_pages: 2
+  max_country_pages: 1
+  chunk_min_tokens: 500
+  chunk_max_tokens: 800
+  chunk_overlap_tokens: 100
+  fetch_missing: false
+alignment:
+  full_report: false
+  keep_unresolved: false
+  tau_sem: null
+  tau_lex: null
+entity_matching:
+  build_artifacts: true
+  force: false
+  max_df: 8
+  max_per_query: 12
+  min_key_len: 3
+oracle:
+  branch_top_k: 20
+  fusion_keep_k: 20
+router:
+  dataset:
+    embedding_model: all-MiniLM-L6-v2
+    train_ratio: 0.6
+    dev_ratio: 0.2
+    test_ratio: 0.2
+  train:
+    epochs: 100
+    batch_size: 32
+    learning_rate: 0.001
+    device: cpu
+    input_mode: both
+    input_modes:
+    - both
+    - query-features
+    - embedding
+retrieval:
+  dense_model: all-MiniLM-L6-v2
+  graph_max_hops: 2
+  graph_bidirectional: true
+  graph_entity_vector_top_k: 3
+  graph_entity_vector_threshold: 0.5
+  graph_hop_support_threshold: 0.5
+  graph_ppr_alpha: 0.85
+  graph_ppr_max_iter: 64
+  graph_ppr_tol: 1.0e-06
+  graph_transition_mode: support
+  graph_max_entities: 256
+  graph_max_paths: 500
+  graph_max_frontier_pops: 50000
+  graph_seed_softmax_temperature: 0.1
+  graph_entity_chunk_edge_weight: 0.5
+generation:
+  provider: openai
+  model: gpt-4.1-mini
+  reasoning_effort: null
+  temperature: 0.0
+  max_tokens: 512
+  prompt_file: prompts/generator_simplified.txt
+  include_graph_provenance: false
+  completion_window: 24h
+  batch_max_requests: 2000
+e2e:
+  run_id: null
+  split: validation
+  policy: graph-only
+  policies:
+  - dense-only
+  - graph-only
+  - 50-50
+  - learned-soft
+  - learned-hard
+  branch_top_k: 20
+  fusion_keep_k: 20
+  reranker: cross_encoder
+  rerank_top_k: 10
+  cross_encoder_model: cross-encoder/ms-marco-MiniLM-L-12-v2
+  router_device: cpu
+  router_input_mode: both
+  router_inference_batch_size: 32
+  limit: null
+  only_question_ids: []
+  dry_run: true
+  include_graph_provenance: false
+  completion_window: 24h
+secrets:
+  openai_api_key_env: OPENAI_API_KEY
+  wikimedia_token_env: WIKIMEDIA_OAUTH2_ACCESS_TOKEN
+graph_retrieval_sweep:
+  grid:
+    graph_seed_softmax_temperature:
+    - 0.02
+    - 0.05
+    - 0.1
+    - 0.2
+    - 0.5
+    graph_entity_chunk_edge_weight:
+    - 0.1
+    - 0.3
+    - 0.5
+    - 0.7
+    - 0.9
+    graph_ppr_alpha:
+    - 0.7
+    - 0.8
+    - 0.9
+    graph_transition_mode:
+    - support
+    - uniform
+  objective: overlap.all.retrieval_at_k.10.ndcg
+  sweep_id: graph-rag-tuning
+  use_router_overlap_splits: false
+resolved_paths:
+  data_base: /Users/liamdemb/Projects/Honours Research/surf-rag/data
+  benchmark_base: /Users/liamdemb/Projects/Honours Research/surf-rag/data/benchmarks
+  router_base: /Users/liamdemb/Projects/Honours Research/surf-rag/data/router
+  bundle: /Users/liamdemb/Projects/Honours Research/surf-rag/data/benchmarks/surf-bench/development
+  benchmark_path: /Users/liamdemb/Projects/Honours Research/surf-rag/data/benchmarks/surf-bench/development/benchmark/benchmark.jsonl
+  corpus_dir: /Users/liamdemb/Projects/Honours Research/surf-rag/data/benchmarks/surf-bench/development/corpus
+  docstore_path: /Users/liamdemb/Projects/Honours Research/surf-rag/data/benchmarks/surf-bench/development/corpus/docstore.sqlite
+  corpus_path: /Users/liamdemb/Projects/Honours Research/surf-rag/data/benchmarks/surf-bench/development/corpus/corpus.jsonl
+  evaluations_dir: /Users/liamdemb/Projects/Honours Research/surf-rag/data/benchmarks/surf-bench/development/evaluations
+  hf_home: /Users/liamdemb/Projects/Honours Research/surf-rag/data/benchmarks/surf-bench/development/corpus/hf_cache
+  transformers_cache: /Users/liamdemb/Projects/Honours Research/surf-rag/data/benchmarks/surf-bench/development/corpus/hf_cache/transformers
+  router_oracle_dir: /Users/liamdemb/Projects/Honours Research/surf-rag/data/router/oracle
+  router_dataset_dir: /Users/liamdemb/Projects/Honours Research/surf-rag/data/router/dataset
+  router_model_dir: /Users/liamdemb/Projects/Honours Research/surf-rag/data/router/model

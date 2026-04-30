@@ -1,0 +1,77 @@
+schema_version: surf-rag/pipeline/v1
+experiment_id: graph-rag-tuning
+seed: 42
+
+paths:
+    data_base: data
+    benchmark_base: data/benchmarks
+    router_base: data/router
+    benchmark_name: surf-bench
+    benchmark_id: development
+    router_id: null
+    hf_home: null
+    transformers_cache: null
+
+raw_sources:
+    nq_path: data/raw/nq/validation/500_v01.jsonl
+    wiki2_path: data/raw/2wiki/validation/500_v01.jsonl
+    hotpotqa_path: null
+
+model_setup:
+    embedding_model: all-MiniLM-L6-v2
+    cross_encoder_model: cross-encoder/ms-marco-MiniLM-L-12-v2
+
+corpus:
+    max_pages: 12
+    max_hops: 2
+    chunk_min_tokens: 500
+    chunk_max_tokens: 800
+    chunk_overlap_tokens: 100
+    fetch_missing: false
+alignment: { full_report: false, keep_unresolved: false }
+entity_matching:
+    {
+        build_artifacts: true,
+        force: false,
+        max_df: 8,
+        max_per_query: 12,
+        min_key_len: 3,
+    }
+oracle: {}
+router: { dataset: {}, train: {} }
+retrieval: {}
+generation:
+    model: gpt-4.1-mini
+    max_tokens: 512
+    temperature: 0.0
+    prompt_file: prompts/generator_simplified.txt
+    completion_window: 24h
+    batch_max_requests: 2000
+    include_graph_provenance: false
+
+# E2E defaults for prepare/evaluate (grid search forces prepare dry_run regardless).
+e2e:
+    split: validation
+    policy: graph-only
+    branch_top_k: 20
+    fusion_keep_k: 20
+    reranker: cross_encoder
+    rerank_top_k: 10
+    router_device: cpu
+    router_input_mode: both
+    router_inference_batch_size: 32
+    limit: null
+    dry_run: true
+
+# Grid search: Cartesian product of the lists below (scripts/dev/graph_retrieval_grid_search.py).
+graph_retrieval_sweep:
+    sweep_id: graph-rag-tuning
+    objective: overlap.all.retrieval_at_k.10.ndcg
+    grid:
+        graph_seed_softmax_temperature: [0.02, 0.05, 0.1, 0.2, 0.5]
+        graph_entity_chunk_edge_weight: [0.1, 0.3, 0.5, 0.7, 0.9]
+        graph_ppr_alpha: [0.7, 0.8, 0.9]
+        graph_transition_mode: ["support", "uniform"]
+
+secrets:
+    openai_api_key_env: OPENAI_API_KEY

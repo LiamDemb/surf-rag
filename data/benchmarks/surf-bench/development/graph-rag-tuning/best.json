@@ -1,0 +1,14 @@
+{
+    "sweep_id": "graph-rag-tuning",
+    "objective_path": "overlap.all.retrieval_at_k.10.ndcg",
+    "best_trial_index": 88,
+    "best_retrieval_overrides": {
+        "graph_seed_softmax_temperature": 0.1,
+        "graph_entity_chunk_edge_weight": 0.9,
+        "graph_ppr_alpha": 0.9,
+        "graph_transition_mode": "support"
+    },
+    "best_score": 0.7748085602118783,
+    "best_combo_key": "456eb403b036fb27",
+    "best_run_root": "data/benchmarks/surf-bench/development/graph-rag-tuning/trial-0088"
+}
