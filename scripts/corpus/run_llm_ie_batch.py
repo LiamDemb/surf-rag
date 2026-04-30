@@ -25,6 +25,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from surf_rag.config.env import apply_pipeline_env_from_config
+from surf_rag.config.loader import load_pipeline_config, resolve_paths
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -87,7 +90,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Orchestrate LLM IE extraction batch.",
     )
-    parser.add_argument("--corpus", required=True, help="Path to corpus.jsonl.")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Pipeline config; resolves corpus/output paths unless overridden.",
+    )
+    parser.add_argument("--corpus", default=None, help="Path to corpus.jsonl.")
     parser.add_argument(
         "--output-dir",
         default=os.getenv("OUTPUT_DIR", "data/processed"),
@@ -109,6 +118,18 @@ def main() -> int:
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
+    if args.config:
+        cfg = load_pipeline_config(args.config.resolve())
+        apply_pipeline_env_from_config(cfg)
+        rp = resolve_paths(cfg)
+        if args.corpus is None:
+            args.corpus = str(rp.corpus_path)
+        if args.output_dir == os.getenv("OUTPUT_DIR", "data/processed"):
+            args.output_dir = str(rp.corpus_dir)
+
+    if not args.corpus:
+        parser.error("Pass --corpus or --config with resolved corpus path.")
 
     corpus_path = Path(args.corpus)
     if not corpus_path.is_file():

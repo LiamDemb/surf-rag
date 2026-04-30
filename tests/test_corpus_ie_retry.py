@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+from surf_rag.core.corpus_finalize import write_corpus_finalize_manifest
+
 
 def _load_script_module(module_name: str, rel_path: str):
     repo_root = Path(__file__).resolve().parents[1]
@@ -52,3 +54,45 @@ def test_collect_normalize_metadata_pending_when_empty():
     assert out["ie_status"] == "pending"
     assert out["ie_extracted"] is False
     assert out["ie_attempts"] == 0
+
+
+def test_retry_report_with_unresolved_can_be_finalized_separately(tmp_path: Path):
+    corpus = tmp_path / "corpus.jsonl"
+    corpus.write_text(
+        '{"chunk_id":"c1","text":"x","metadata":{"ie_status":"failed","entities":[],"relations":[]}}\n',
+        encoding="utf-8",
+    )
+    vm = tmp_path / "vector_meta.parquet"
+    lex = tmp_path / "entity_lexicon.parquet"
+    import pandas as pd
+
+    pd.DataFrame([{"row_id": 0, "chunk_id": "c1"}]).to_parquet(vm, index=False)
+    pd.DataFrame(
+        [{"norm": "x", "surface_forms": ["x"], "qid_candidates": [], "df": 1}]
+    ).to_parquet(lex, index=False)
+    manifest = write_corpus_finalize_manifest(
+        output_dir=tmp_path,
+        corpus_path=corpus,
+        chunks_count=1,
+        produced_artifacts={"vector_meta": vm, "entity_lexicon": lex},
+    )
+    assert manifest.is_file()
+
+
+def test_parse_failure_rows_remain_failed_but_do_not_block_finalize_script():
+    collect_mod = _load_script_module(
+        "collect_llm_ie_batch_failure_test",
+        "scripts/corpus/collect_llm_ie_batch.py",
+    )
+    out = collect_mod._normalize_ie_metadata(
+        {
+            "ie_status": "failed",
+            "ie_last_error": "parse_error:json_decode_error",
+            "entities": [],
+            "relations": [],
+            "ie_extracted": False,
+        }
+    )
+    assert out["ie_status"] == "failed"
+    assert out["ie_extracted"] is False
+    assert "parse_error" in str(out["ie_last_error"])

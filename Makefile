@@ -6,7 +6,7 @@
 	validate-oracle-config validate-router-config validate-router-train \
 	e2e-print-config e2e-prepare e2e-submit e2e-collect e2e-evaluate e2e-run \
 	e2e-run-all-policies e2e-collect-all-policies e2e-evaluate-all-policies e2e-smoke-test-v01 \
-	build-entity-matching-artifacts corpus-ie-run corpus-ie-retry
+	build-entity-matching-artifacts corpus-ie-run corpus-ie-retry corpus-finalize corpus-ie-retry-and-finalize
 
 # Default experiment recipe (override per run: make build-corpus CONFIG=configs/e2e/.../x.yaml)
 CONFIG ?= configs/pipelines/surf-bench-200.yaml
@@ -85,10 +85,16 @@ build-corpus:
 	$(PY) scripts/build_corpus.py --config "$(CONFIG)"
 
 corpus-ie-run:
-	$(PY) scripts/corpus/run_llm_ie_batch.py --corpus data/processed/corpus.jsonl --output-dir data/processed
+	$(PY) scripts/corpus/run_llm_ie_batch.py --config "$(CONFIG)"
 
 corpus-ie-retry:
-	$(PY) scripts/corpus/run_llm_ie_batch.py --corpus data/processed/corpus.jsonl --output-dir data/processed
+	$(PY) scripts/corpus/run_llm_ie_batch.py --config "$(CONFIG)"
+
+corpus-finalize:
+	$(PY) scripts/corpus/finalize_corpus_artifacts.py --config "$(CONFIG)"
+
+corpus-ie-retry-and-finalize:
+	$(MAKE) corpus-ie-retry CONFIG="$(CONFIG)" && $(MAKE) corpus-finalize CONFIG="$(CONFIG)"
 
 build-entity-matching-artifacts:
 	$(PY) -m scripts.build_entity_matching_artifacts --config "$(CONFIG)" \
