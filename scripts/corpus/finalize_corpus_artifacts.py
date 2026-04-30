@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
 
 from surf_rag.config.env import apply_pipeline_env_from_config
 from surf_rag.config.loader import load_pipeline_config, resolve_paths
+from surf_rag.config.resolved import write_resolved_config_yaml
 from surf_rag.core.benchmark_samples import iter_jsonl
 from surf_rag.core.corpus_finalize import (
     finalize_corpus_artifacts,
@@ -25,6 +27,43 @@ def _load_samples(path: Path | None) -> list[dict] | None:
     if not path.is_file():
         raise FileNotFoundError(f"Benchmark file not found: {path}")
     return list(iter_jsonl(str(path)))
+
+
+def _remaining_failed_chunk_ids(chunks: list[dict]) -> list[str]:
+    out: list[str] = []
+    for row in chunks:
+        cid = str(row.get("chunk_id", "")).strip()
+        if not cid:
+            continue
+        meta = row.get("metadata") or {}
+        if str(meta.get("ie_status", "")).strip().lower() == "failed":
+            out.append(cid)
+    return sorted(set(out))
+
+
+def _reconcile_ie_failure_artifacts(
+    corpus_dir: Path, failed_chunk_ids: list[str]
+) -> None:
+    failures_path = corpus_dir / "ie_failures_final.json"
+    pending_path = corpus_dir / "ie_pending_ids.txt"
+    if failed_chunk_ids:
+        payload = {
+            "max_attempts": None,
+            "remaining_unresolved_ids": failed_chunk_ids,
+            "source": "corpus-finalize-reconciled",
+        }
+        failures_path.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        pending_path.write_text(
+            "".join(f"{cid}\n" for cid in failed_chunk_ids), encoding="utf-8"
+        )
+        return
+    if failures_path.exists():
+        failures_path.unlink()
+    if pending_path.exists():
+        pending_path.unlink()
 
 
 def main() -> int:
@@ -92,6 +131,12 @@ def main() -> int:
             chunks_count=len(chunks),
             produced_artifacts=artifacts,
         )
+        _reconcile_ie_failure_artifacts(
+            corpus_dir=corpus_dir,
+            failed_chunk_ids=_remaining_failed_chunk_ids(chunks),
+        )
+        if args.config:
+            write_resolved_config_yaml(corpus_dir / "resolved_config.yaml", cfg, rp)
     except (FileNotFoundError, ValueError) as e:
         logger.error("%s", e)
         return 1

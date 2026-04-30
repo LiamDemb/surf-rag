@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+import yaml
 
 from surf_rag.core.corpus_finalize import (
     finalize_corpus_artifacts,
@@ -162,3 +163,93 @@ def test_finalize_script_fails_on_missing_or_empty_corpus(
         ["finalize_corpus_artifacts.py", "--corpus-dir", str(tmp_path)],
     )
     assert script_mod.main() == 1
+
+
+def test_finalize_script_writes_resolved_config_when_config_used(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    script_mod = _load_script_module(
+        "finalize_corpus_artifacts_script_config",
+        "scripts/corpus/finalize_corpus_artifacts.py",
+    )
+    data_base = tmp_path / "data"
+    corpus_dir = data_base / "benchmarks" / "b" / "dev" / "corpus"
+    corpus_dir.mkdir(parents=True, exist_ok=True)
+    (corpus_dir / "corpus.jsonl").write_text(
+        '{"chunk_id":"c1","text":"x","metadata":{"ie_status":"success"}}\n',
+        encoding="utf-8",
+    )
+    cfg_path = tmp_path / "cfg.yaml"
+    cfg_path.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "surf-rag/pipeline/v1",
+                "paths": {
+                    "data_base": str(data_base),
+                    "benchmark_name": "b",
+                    "benchmark_id": "dev",
+                    "router_id": "r1",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def _fake_finalize(**kwargs):
+        out = kwargs["output_dir"]
+        files = {
+            "vector_index": out / "vector_index.faiss",
+            "vector_meta": out / "vector_meta.parquet",
+            "graph": out / "graph.pkl",
+            "entity_lexicon": out / "entity_lexicon.parquet",
+            "entity_index": out / "entity_index.faiss",
+            "entity_index_meta": out / "entity_index_meta.parquet",
+        }
+        for p in files.values():
+            if p.suffix == ".parquet":
+                pd.DataFrame([{"x": 1}]).to_parquet(p, index=False)
+            else:
+                p.write_bytes(b"x")
+        return files
+
+    def _fake_manifest(**kwargs):
+        p = kwargs["output_dir"] / "corpus_finalize_manifest.json"
+        p.write_text("{}", encoding="utf-8")
+        return p
+
+    monkeypatch.setattr(script_mod, "finalize_corpus_artifacts", _fake_finalize)
+    monkeypatch.setattr(script_mod, "write_corpus_finalize_manifest", _fake_manifest)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "finalize_corpus_artifacts.py",
+            "--config",
+            str(cfg_path),
+            "--skip-quality-report",
+        ],
+    )
+    assert script_mod.main() == 0
+    assert (corpus_dir / "resolved_config.yaml").is_file()
+
+
+def test_reconcile_ie_failure_artifacts_updates_stale_files(tmp_path: Path) -> None:
+    script_mod = _load_script_module(
+        "finalize_corpus_artifacts_script_reconcile",
+        "scripts/corpus/finalize_corpus_artifacts.py",
+    )
+    fail_path = tmp_path / "ie_failures_final.json"
+    pending_path = tmp_path / "ie_pending_ids.txt"
+    fail_path.write_text(
+        json.dumps({"remaining_unresolved_ids": ["old1", "old2"]}),
+        encoding="utf-8",
+    )
+    pending_path.write_text("old1\nold2\n", encoding="utf-8")
+
+    script_mod._reconcile_ie_failure_artifacts(tmp_path, ["new1"])
+    payload = json.loads(fail_path.read_text(encoding="utf-8"))
+    assert payload["remaining_unresolved_ids"] == ["new1"]
+    assert pending_path.read_text(encoding="utf-8").strip() == "new1"
+
+    script_mod._reconcile_ie_failure_artifacts(tmp_path, [])
+    assert not fail_path.exists()
+    assert not pending_path.exists()
