@@ -42,11 +42,10 @@ def get_generator_prompt() -> str:
 
 
 # Information Extraction Prompt for KG Construction
-DEFAULT_IE_PROMPT = """You are a High-Fidelity Knowledge Graph Extractor. In a SINGLE pass, extract BOTH the entity inventory AND the relational triples from the text. You are the sole authority on what entities and relations exist in the chunk.
+DEFAULT_IE_PROMPT = """You are a High-Recall Knowledge Graph Extractor. In a SINGLE pass, extract relational triples from the text.
 
 YOUR TASK:
-1. ENTITY INVENTORY: Identify all named entities (people, organizations, places, events, works, concepts) that appear in the text.
-2. RELATIONAL TRIPLES: Extract subject-predicate-object triples that connect these entities.
+1. RELATIONAL TRIPLES: Extract subject-predicate-object triples for factual relationships grounded in the text.
 
 SEED ANCHORING (Wikipedia titles):
 The following Wikipedia page titles were detected in this chunk. When an entity in the text matches one of these titles (or is an obvious variant), PREFER using that exact title as the entity surface form. This improves consistency with the knowledge base.
@@ -63,9 +62,7 @@ EXTRACTION STRATEGY:
 
 STRICT GROUNDING (Anti-Hallucination):
 1. ZERO EXTERNAL KNOWLEDGE: Extract exact, verbatim strings from the text. Do NOT canonicalize names, use real names instead of stage names, or resolve aliases.
-2. VERBATIM EVIDENCE: The `evidence` field is mandatory for every triple. Quote the exact phrase that proves it.
-   - If Subject/Object do not appear in your evidence quote, you have hallucinated. Fix or drop the triple.
-3. Extract ALL valid relational pairs you can find, from the first word to the last line.
+2. Extract ALL valid relational pairs you can find, from the first word to the last line.
 
 PREDICATE RULES:
 - Predicates must be concise snake_case (e.g., born_in, ceo_of, member_of).
@@ -73,8 +70,7 @@ PREDICATE RULES:
 - EXCEPTION: instance_of, subclass_of, has_profession ONLY when the text explicitly assigns a category.
 
 OUTPUT VIA THE STRUCTURED TOOL:
-- entities: list of {{surface, type}} for each entity (type: PERSON, ORG, GPE, LOC, EVENT, WORK_OF_ART, or NOUN_CHUNK for other).
-- triples: list of {{subj_surface, pred, obj_surface, confidence, evidence}}.
+- triples: list of {{subj_surface, pred, obj_surface, confidence}}.
 
 PAGE TITLE (for context):
 {title}

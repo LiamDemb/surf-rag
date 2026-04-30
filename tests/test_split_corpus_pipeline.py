@@ -12,7 +12,10 @@ from surf_rag.core.benchmark_samples import (
     load_benchmark_by_source,
     resolve_raw_paths_for_benchmark_sources,
 )
-from surf_rag.core.corpus_acquisition import load_2wiki_docs_from_docstore
+from surf_rag.core.corpus_acquisition import (
+    load_2wiki_docs_from_docstore,
+    load_wiki_supporting_docs_from_docstore,
+)
 from surf_rag.core.docstore import DocRecord, DocStore
 from surf_rag.core.docstore_sentence_index import (
     build_title_to_candidate_sentences_from_docstore,
@@ -27,6 +30,27 @@ def test_resolve_raw_paths_for_benchmark_sources() -> None:
     )
     assert paths == {"nq": "a.jsonl", "2wiki": "b.jsonl"}
     assert missing == []
+
+
+def test_resolve_raw_paths_hotpotqa() -> None:
+    paths, missing = resolve_raw_paths_for_benchmark_sources(
+        {"hotpotqa"},
+        nq_path=None,
+        wiki2_path=None,
+        hotpotqa_path="h.jsonl",
+    )
+    assert paths == {"hotpotqa": "h.jsonl"}
+    assert missing == []
+
+
+def test_resolve_raw_paths_missing_hotpotqa() -> None:
+    _, missing = resolve_raw_paths_for_benchmark_sources(
+        {"hotpotqa"},
+        nq_path=None,
+        wiki2_path=None,
+        hotpotqa_path=None,
+    )
+    assert missing == ["HOTPOTQA_PATH"]
 
 
 def test_build_samples_joins_benchmark_to_raw(tmp_path: Path) -> None:
@@ -66,6 +90,47 @@ def test_build_samples_joins_benchmark_to_raw(tmp_path: Path) -> None:
     assert samples[0]["supporting_facts"]["title"] == ["T"]
 
 
+def test_build_samples_joins_hotpotqa_benchmark_to_raw(tmp_path: Path) -> None:
+    raw = tmp_path / "hotpot.jsonl"
+    from surf_rag.core.schemas import sha256_text
+
+    qid = sha256_text("Bridge question?")
+    bench = tmp_path / "bench_hp.jsonl"
+    bench.write_text(
+        json.dumps(
+            {
+                "question_id": qid,
+                "question": "Bridge question?",
+                "gold_answers": ["yes"],
+                "dataset_source": "hotpotqa",
+                "gold_support_sentences": ["Gold line."],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    raw.write_text(
+        json.dumps(
+            {
+                "question": "Bridge question?",
+                "answer": "yes",
+                "supporting_facts": {"title": ["T"], "sent_id": [0]},
+                "context": {
+                    "title": ["T"],
+                    "sentences": [["Gold line.", "Other."]],
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    by_src = load_benchmark_by_source(bench)
+    samples = build_samples(by_src, {"hotpotqa": str(raw)})
+    assert len(samples) == 1
+    assert samples[0]["source"] == "hotpotqa"
+    assert samples[0]["question_id"] == qid
+
+
 def test_load_2wiki_docs_from_docstore_missing_without_fetch(tmp_path: Path) -> None:
     ds = DocStore(str(tmp_path / "d.sqlite"))
     sample = {
@@ -77,6 +142,36 @@ def test_load_2wiki_docs_from_docstore_missing_without_fetch(tmp_path: Path) -> 
     ds.close()
     assert docs == []
     assert missing == ["MissingTitle"]
+
+
+def test_load_wiki_supporting_docs_hotpotqa_provenance(tmp_path: Path) -> None:
+    ds = DocStore(str(tmp_path / "hp.sqlite"))
+    sample = {
+        "source": "hotpotqa",
+        "supporting_facts": {"title": ["HP"], "sent_id": [0]},
+    }
+    ds.put(
+        "title:HP",
+        DocRecord(
+            title="HP",
+            page_id="9",
+            revision_id="1",
+            url="u",
+            html="<p>x</p>",
+            cleaned_text=None,
+            anchors={"outgoing_titles": [], "incoming_stub": []},
+            source="hotpotqa",
+            dataset_origin="hotpotqa",
+        ),
+    )
+    docs, missing = load_wiki_supporting_docs_from_docstore(
+        sample, ds, wiki=None, fetch_missing=False
+    )
+    ds.close()
+    assert missing == []
+    assert len(docs) == 1
+    assert docs[0].source == "hotpotqa"
+    assert docs[0].dataset_origin == "hotpotqa"
 
 
 def test_build_title_index_from_docstore_matches_chunk_path(tmp_path: Path) -> None:
@@ -136,6 +231,45 @@ def test_align_drops_unresolved_2wiki_row(tmp_path: Path) -> None:
         bench,
         backup_path=tmp_path / "b.bak",
         report_path=tmp_path / "r.md",
+        docstore_path=ds_path,
+        corpus_path=None,
+        embedder=emb,
+        tau_sem=0.99,
+        tau_lex=0.99,
+        drop_unresolved=True,
+    )
+    out = [
+        json.loads(l)
+        for l in bench.read_text(encoding="utf-8").splitlines()
+        if l.strip()
+    ]
+    assert out == []
+
+
+def test_align_drops_unresolved_hotpotqa_row(tmp_path: Path) -> None:
+    bench = tmp_path / "benchmark_hp.jsonl"
+    ds_path = tmp_path / "docstore_hp.sqlite"
+    bench.write_text(
+        json.dumps(
+            {
+                "question_id": "h1",
+                "question": "Q?",
+                "gold_answers": ["A"],
+                "dataset_source": "hotpotqa",
+                "gold_support_sentences": ["No match in corpus."],
+                "gold_support_titles": ["T"],
+                "gold_support_sent_ids": [0],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    DocStore(str(ds_path)).close()
+    emb = MagicMock()
+    run_2wiki_support_alignment(
+        bench,
+        backup_path=tmp_path / "hp.bak",
+        report_path=tmp_path / "hp.md",
         docstore_path=ds_path,
         corpus_path=None,
         embedder=emb,

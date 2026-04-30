@@ -14,8 +14,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
-
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -25,7 +23,6 @@ def main() -> int:
     from surf_rag.config.loader import load_pipeline_config, resolve_paths
 
     load_app_env()
-    load_dotenv()
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
         "--config",

@@ -20,6 +20,7 @@ from surf_rag.config.schema import (
     E2ESection,
     EntityMatchingSection,
     GenerationSection,
+    GraphRetrievalSweepSection,
     ModelSetupSection,
     OracleSection,
     PathsSection,
@@ -103,6 +104,11 @@ def pipeline_config_from_dict(raw: dict[str, Any]) -> PipelineConfig:
         ),
         e2e=_merge_dataclass(E2ESection, raw.get("e2e"), base.e2e),
         secrets=_merge_dataclass(SecretsSection, raw.get("secrets"), base.secrets),
+        graph_retrieval_sweep=_merge_dataclass(
+            GraphRetrievalSweepSection,
+            raw.get("graph_retrieval_sweep"),
+            base.graph_retrieval_sweep,
+        ),
     )
     e2e = out.e2e
     if e2e.completion_window is None:
@@ -140,6 +146,13 @@ def _raw_dataset_path(v: Any) -> str | None:
     return s if s else None
 
 
+def _id_str(v: Any) -> str:
+    """Normalize identifier scalars: ``None`` -> empty string, else ``str(v)``."""
+    if v is None:
+        return ""
+    return str(v)
+
+
 def _coerce_yaml_scalar_types(cfg: PipelineConfig) -> PipelineConfig:
     """YAML may parse unquoted numbers as int; path components must be strings."""
     p = cfg.paths
@@ -150,7 +163,7 @@ def _coerce_yaml_scalar_types(cfg: PipelineConfig) -> PipelineConfig:
         router_base=_opt_path_str(p.router_base),
         benchmark_name=str(p.benchmark_name),
         benchmark_id=str(p.benchmark_id),
-        router_id=str(p.router_id),
+        router_id=_id_str(p.router_id),
         hf_home=_opt_path_str(p.hf_home),
         transformers_cache=_opt_path_str(p.transformers_cache),
     )
@@ -159,8 +172,10 @@ def _coerce_yaml_scalar_types(cfg: PipelineConfig) -> PipelineConfig:
         rs,
         nq_path=_raw_dataset_path(rs.nq_path),
         wiki2_path=_raw_dataset_path(rs.wiki2_path),
+        hotpotqa_path=_raw_dataset_path(rs.hotpotqa_path),
         nq_version=_opt_path_str(rs.nq_version),
         wiki2_version=_opt_path_str(rs.wiki2_version),
+        hotpotqa_version=_opt_path_str(rs.hotpotqa_version),
     )
     out = replace(cfg, paths=paths, raw_sources=raw_sources)
     if out.experiment_id is not None:

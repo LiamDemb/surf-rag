@@ -10,7 +10,6 @@ from surf_rag.retrieval.fusion import (
     min_max_normalize,
 )
 from surf_rag.retrieval.pipeline import SingleBranchPipeline
-from surf_rag.retrieval.routed import RoutedFusionPipeline, trim_retrieval_top_k
 from surf_rag.retrieval.types import RetrievedChunk, RetrievalResult
 
 __all__ = [
@@ -29,3 +28,20 @@ __all__ = [
     "RoutedFusionPipeline",
     "trim_retrieval_top_k",
 ]
+
+
+def __getattr__(name: str):
+    """Lazy-import routed fusion (pulls router stack including torch)."""
+    if name == "RoutedFusionPipeline":
+        from surf_rag.retrieval.routed import RoutedFusionPipeline
+
+        return RoutedFusionPipeline
+    if name == "trim_retrieval_top_k":
+        from surf_rag.retrieval.routed import trim_retrieval_top_k
+
+        return trim_retrieval_top_k
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    return sorted(set(__all__))

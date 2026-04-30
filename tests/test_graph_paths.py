@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 from surf_rag.core.build_graph import build_graph
-from surf_rag.graph.graph_paths import (
-    enumerate_candidate_paths,
-    relation_labels_from_edge,
-)
-from surf_rag.graph.graph_types import GraphHop
+from surf_rag.graph.graph_beam_paths import enumerate_global_frontier_paths
+from surf_rag.graph.graph_paths import relation_labels_from_edge
 
 
 def _sig(path) -> tuple:
@@ -24,7 +21,7 @@ def test_relation_labels_from_edge_uses_labels_then_falls_back_to_label():
     assert relation_labels_from_edge({}) == []
 
 
-def test_enumerate_candidate_paths_skips_appears_in_and_returns_rel_paths_only():
+def test_global_frontier_skips_appears_in_and_returns_rel_paths_only():
     graph = build_graph(
         [
             {
@@ -39,20 +36,23 @@ def test_enumerate_candidate_paths_skips_appears_in_and_returns_rel_paths_only()
         ]
     )
 
-    paths = enumerate_candidate_paths(
+    paths, diag = enumerate_global_frontier_paths(
         graph=graph,
-        start_nodes={"E:a"},
+        seed_weights={"E:a": 1.0},
         max_hops=1,
         bidirectional=False,
-        max_paths_per_start=50,
+        global_max_paths=50,
+        global_max_pops=5000,
     )
 
     assert {_sig(p) for p in paths} == {
         (("E:a", "causes", False, "E:b"),),
     }
+    assert diag.paths_emitted == len(paths)
+    assert diag.enumeration_backend == "global_canonical"
 
 
-def test_enumerate_candidate_paths_respects_bidirectionality():
+def test_global_frontier_respects_bidirectionality():
     graph = build_graph(
         [
             {
@@ -71,12 +71,13 @@ def test_enumerate_candidate_paths_respects_bidirectionality():
         ]
     )
 
-    paths = enumerate_candidate_paths(
+    paths, _diag = enumerate_global_frontier_paths(
         graph=graph,
-        start_nodes={"E:director"},
+        seed_weights={"E:director": 1.0},
         max_hops=1,
         bidirectional=True,
-        max_paths_per_start=50,
+        global_max_paths=50,
+        global_max_pops=5000,
     )
 
     assert {_sig(p) for p in paths} == {
@@ -84,7 +85,7 @@ def test_enumerate_candidate_paths_respects_bidirectionality():
     }
 
 
-def test_enumerate_candidate_paths_expands_multiple_labels_on_same_edge():
+def test_global_frontier_expands_multiple_labels_on_same_edge():
     graph = build_graph(
         [
             {
@@ -108,12 +109,13 @@ def test_enumerate_candidate_paths_expands_multiple_labels_on_same_edge():
         ]
     )
 
-    paths = enumerate_candidate_paths(
+    paths, _diag = enumerate_global_frontier_paths(
         graph=graph,
-        start_nodes={"E:film"},
+        seed_weights={"E:film": 1.0},
         max_hops=1,
         bidirectional=False,
-        max_paths_per_start=50,
+        global_max_paths=50,
+        global_max_pops=5000,
     )
 
     assert {_sig(p) for p in paths} == {
@@ -122,7 +124,7 @@ def test_enumerate_candidate_paths_expands_multiple_labels_on_same_edge():
     }
 
 
-def test_enumerate_candidate_paths_respects_max_hops_and_deduplicates():
+def test_global_frontier_respects_max_hops():
     graph = build_graph(
         [
             {
@@ -142,23 +144,25 @@ def test_enumerate_candidate_paths_respects_max_hops_and_deduplicates():
         ]
     )
 
-    paths_1 = enumerate_candidate_paths(
+    paths_1, _d1 = enumerate_global_frontier_paths(
         graph=graph,
-        start_nodes={"E:a"},
+        seed_weights={"E:a": 1.0},
         max_hops=1,
         bidirectional=False,
-        max_paths_per_start=50,
+        global_max_paths=50,
+        global_max_pops=5000,
     )
     assert {_sig(p) for p in paths_1} == {
         (("E:a", "r1", False, "E:b"),),
     }
 
-    paths_2 = enumerate_candidate_paths(
+    paths_2, _d2 = enumerate_global_frontier_paths(
         graph=graph,
-        start_nodes={"E:a"},
+        seed_weights={"E:a": 1.0},
         max_hops=2,
         bidirectional=False,
-        max_paths_per_start=50,
+        global_max_paths=50,
+        global_max_pops=5000,
     )
     assert {_sig(p) for p in paths_2} == {
         (("E:a", "r1", False, "E:b"),),

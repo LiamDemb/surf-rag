@@ -85,7 +85,8 @@ def raw_doc_from_docrecord(record: DocRecord) -> RawDoc:
     )
 
 
-def supporting_titles_from_2wiki_sample(sample: dict) -> List[str]:
+def supporting_titles_from_supporting_facts_sample(sample: dict) -> List[str]:
+    """Unique ordered titles from ``sample['supporting_facts']['title']``."""
     supporting_facts = sample.get("supporting_facts") or {}
     raw_titles = supporting_facts.get("title")
     if not isinstance(raw_titles, list):
@@ -93,7 +94,18 @@ def supporting_titles_from_2wiki_sample(sample: dict) -> List[str]:
     return list(dict.fromkeys(str(t).strip() for t in raw_titles if str(t).strip()))
 
 
-def load_2wiki_docs_from_docstore(
+def supporting_titles_from_2wiki_sample(sample: dict) -> List[str]:
+    """Backward-compatible alias for :func:`supporting_titles_from_supporting_facts_sample`."""
+    return supporting_titles_from_supporting_facts_sample(sample)
+
+
+def _wiki_doc_source_labels(sample: dict) -> Tuple[str, str]:
+    """``(source, dataset_origin)`` for RawDoc metadata (chunk provenance)."""
+    src = str(sample.get("source") or "").strip() or "2wiki"
+    return src, src
+
+
+def load_wiki_supporting_docs_from_docstore(
     sample: dict,
     docstore: DocStore,
     *,
@@ -101,16 +113,13 @@ def load_2wiki_docs_from_docstore(
     fetch_missing: bool = False,
 ) -> Tuple[List[RawDoc], List[str]]:
     """
-    Resolve 2Wiki supporting articles from DocStore (``title:{title}`` keys).
+    Resolve supporting Wikipedia articles from DocStore (``title:{title}`` keys).
 
-    Returns ``(docs, missing_titles)``. If ``fetch_missing`` and ``wiki`` are set,
-    missing titles are fetched and stored before building docs.
-
-    ``missing_titles`` is empty when every title resolved to HTML.
+    Used for any benchmark whose raw row includes dict ``supporting_facts`` with a
+    ``title`` list (2WikiMultiHopQA, HotPotQA, etc.).
     """
-    source = "2wiki"
-    dataset_origin = "2wiki"
-    titles = supporting_titles_from_2wiki_sample(sample)
+    source, dataset_origin = _wiki_doc_source_labels(sample)
+    titles = supporting_titles_from_supporting_facts_sample(sample)
     if not titles:
         return [], []
 
@@ -131,6 +140,26 @@ def load_2wiki_docs_from_docstore(
     return _dedupe_docs(docs), missing
 
 
+def load_2wiki_docs_from_docstore(
+    sample: dict,
+    docstore: DocStore,
+    *,
+    wiki: Optional[WikipediaClient] = None,
+    fetch_missing: bool = False,
+) -> Tuple[List[RawDoc], List[str]]:
+    """
+    Resolve 2Wiki (or legacy) supporting articles from DocStore.
+
+    Prefer :func:`load_wiki_supporting_docs_from_docstore` for new code; this
+    wrapper ensures ``sample`` without ``source`` still uses ``2wiki`` labels.
+    """
+    if not str(sample.get("source") or "").strip():
+        sample = {**sample, "source": "2wiki"}
+    return load_wiki_supporting_docs_from_docstore(
+        sample, docstore, wiki=wiki, fetch_missing=fetch_missing
+    )
+
+
 def _dedupe_docs(docs: Iterable[RawDoc]) -> List[RawDoc]:
     seen = set()
     unique: List[RawDoc] = []
@@ -142,6 +171,27 @@ def _dedupe_docs(docs: Iterable[RawDoc]) -> List[RawDoc]:
     return unique
 
 
+def ingest_wiki_supporting_pages(
+    sample: dict,
+    budgets: Budgets,
+    docstore: DocStore,
+    wiki: WikipediaClient,
+) -> List[RawDoc]:
+    """Fetch supporting Wikipedia pages listed in ``sample['supporting_facts']``."""
+    source, dataset_origin = _wiki_doc_source_labels(sample)
+    supporting_facts = sample.get("supporting_facts") or {}
+    raw_titles = supporting_facts.get("title")
+    if not isinstance(raw_titles, list):
+        return []
+    titles = list(dict.fromkeys(str(t).strip() for t in raw_titles if str(t).strip()))
+
+    docs = [
+        _cached_wiki_page(title, source, dataset_origin, docstore, wiki)
+        for title in titles
+    ]
+    return _dedupe_docs(docs)
+
+
 def ingest_2wiki(
     sample: dict,
     budgets: Budgets,
@@ -149,20 +199,9 @@ def ingest_2wiki(
     wiki: WikipediaClient,
 ) -> List[RawDoc]:
     """Fetch only the supporting Wikipedia pages for a 2WikiMultiHopQA question."""
-    source = "2wiki"
-    dataset_origin = "2wiki"
-    supporting_facts = sample.get("supporting_facts") or {}
-    titles = list(
-        dict.fromkeys(
-            str(t).strip() for t in supporting_facts["title"] if str(t).strip()
-        )
-    )
-
-    docs = [
-        _cached_wiki_page(title, source, dataset_origin, docstore, wiki)
-        for title in titles
-    ]
-    return _dedupe_docs(docs)
+    if not str(sample.get("source") or "").strip():
+        sample = {**sample, "source": "2wiki"}
+    return ingest_wiki_supporting_pages(sample, budgets, docstore, wiki)
 
 
 def ingest_nq(

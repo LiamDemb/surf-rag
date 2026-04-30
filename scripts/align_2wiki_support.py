@@ -19,7 +19,12 @@ from surf_rag.config.env import load_app_env, apply_pipeline_env_from_config
 from surf_rag.config.loader import load_pipeline_config
 from surf_rag.config.merge import merge_align_2wiki_args
 
+from surf_rag.benchmark.corpus_filter import iter_jsonl
 from surf_rag.benchmark.align_2wiki import run_2wiki_support_alignment
+from surf_rag.benchmark.pipeline_audit import (
+    resolve_pipeline_run_id,
+    write_pipeline_step_report,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +132,11 @@ def main() -> int:
         type=int,
         default=int(os.getenv("CHUNK_OVERLAP_TOKENS", "100")),
     )
+    parser.add_argument(
+        "--pipeline-run-id",
+        default=os.getenv("PIPELINE_RUN_ID"),
+        help="Optional shared run id for cross-step benchmark count reporting.",
+    )
     args = parser.parse_args()
     if args.config:
         cfg = load_pipeline_config(args.config.resolve())
@@ -149,7 +159,10 @@ def main() -> int:
         Path(args.report) if args.report else _default_report_path(benchmark_path)
     )
 
-    run_2wiki_support_alignment(
+    before_count = (
+        len(list(iter_jsonl(benchmark_path))) if benchmark_path.is_file() else 0
+    )
+    stats = run_2wiki_support_alignment(
         benchmark_path,
         backup_path=backup_path,
         report_path=report_path,
@@ -164,6 +177,25 @@ def main() -> int:
         chunk_max_tokens=args.chunk_max_tokens,
         chunk_overlap_tokens=args.chunk_overlap_tokens,
     )
+    after_count = len(list(iter_jsonl(benchmark_path)))
+    run_id = resolve_pipeline_run_id(args.pipeline_run_id)
+    counts_report_path = write_pipeline_step_report(
+        benchmark_path=benchmark_path,
+        step_name="align_2wiki_support",
+        before=before_count,
+        after=after_count,
+        run_id=run_id,
+        details={
+            "total_rows": stats["total_rows"],
+            "two_wiki_rows": stats["two_wiki_rows"],
+            "two_wiki_kept": stats["two_wiki_kept"],
+            "two_wiki_dropped": stats["two_wiki_dropped"],
+            "facts_replaced": stats["facts_replaced"],
+            "skipped_no_provenance": stats["skipped_no_provenance"],
+            "drop_unresolved": not args.keep_unresolved,
+        },
+    )
+    logger.info("Wrote pipeline counts report: %s", counts_report_path)
     return 0
 
 

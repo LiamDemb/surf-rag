@@ -1,4 +1,4 @@
-"""Warm DocStore with Wikipedia HTML for all benchmark-backed 2Wiki (and NQ) samples."""
+"""Warm DocStore with Wikipedia HTML for benchmark-backed NQ and wiki multi-hop samples."""
 
 from __future__ import annotations
 
@@ -23,9 +23,9 @@ from surf_rag.core.benchmark_samples import (
 )
 from surf_rag.core.corpus_acquisition import (
     Budgets,
-    ingest_2wiki,
     ingest_nq,
-    supporting_titles_from_2wiki_sample,
+    ingest_wiki_supporting_pages,
+    supporting_titles_from_supporting_facts_sample,
 )
 from surf_rag.core.docstore import DocStore
 from surf_rag.core.wikipedia_client import WikipediaClient
@@ -51,6 +51,7 @@ def main() -> int:
     parser.add_argument("--benchmark", default=os.getenv("BENCHMARK_PATH"))
     parser.add_argument("--nq", default=os.getenv("NQ_PATH"))
     parser.add_argument("--2wiki", dest="wiki2", default=os.getenv("2WIKI_PATH"))
+    parser.add_argument("--hotpotqa", default=os.getenv("HOTPOTQA_PATH"))
     parser.add_argument(
         "--output-dir", default=os.getenv("OUTPUT_DIR", "data/processed")
     )
@@ -82,6 +83,7 @@ def main() -> int:
         sources_in_benchmark,
         nq_path=args.nq,
         wiki2_path=args.wiki2,
+        hotpotqa_path=getattr(args, "hotpotqa", None),
     )
     if missing:
         raise ValueError(
@@ -95,7 +97,7 @@ def main() -> int:
     wiki = WikipediaClient()
     if wiki.oauth2_authenticated:
         logger.info("Wikipedia Action API uses OAuth2 (authenticated rate limits)")
-    elif "2wiki" in paths_by_source:
+    elif paths_by_source.keys() & {"2wiki", "hotpotqa"}:
         logger.warning(
             "WIKIMEDIA_OAUTH2_ACCESS_TOKEN is not set; unauthenticated limits may cause 429s"
         )
@@ -103,16 +105,17 @@ def main() -> int:
     stats = {
         "questions_total": len(samples),
         "questions_2wiki": sum(1 for s in samples if s["source"] == "2wiki"),
+        "questions_hotpotqa": sum(1 for s in samples if s["source"] == "hotpotqa"),
         "questions_nq": sum(1 for s in samples if s["source"] == "nq"),
         "title_cache_hits": 0,
         "title_fetches": 0,
     }
 
     for sample in tqdm(samples, desc="Fetch Wikipedia", unit="question"):
-        if sample["source"] == "2wiki":
-            titles = supporting_titles_from_2wiki_sample(sample)
+        if sample["source"] in ("2wiki", "hotpotqa"):
+            titles = supporting_titles_from_supporting_facts_sample(sample)
             cached_before = [docstore.get(f"title:{t}") is not None for t in titles]
-            ingest_2wiki(sample, budgets, docstore, wiki)
+            ingest_wiki_supporting_pages(sample, budgets, docstore, wiki)
             for was_cached in cached_before:
                 if was_cached:
                     stats["title_cache_hits"] += 1

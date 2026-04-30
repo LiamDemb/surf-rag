@@ -65,3 +65,18 @@ def extract_2wiki_support_lines(row: Dict[str, Any]) -> List[Tuple[str, int, str
 def extract_2wiki_support_sentences(row: Dict[str, Any]) -> List[str]:
     """Sentence strings only, deduped (same order as :func:`extract_2wiki_support_lines`)."""
     return [t[2] for t in extract_2wiki_support_lines(row)]
+
+
+def extract_hotpotqa_support_lines(row: Dict[str, Any]) -> List[Tuple[str, int, str]]:
+    """
+    Extract ordered (title, sent_id, sentence) tuples from a HotPotQA row.
+
+    Hugging Face ``hotpotqa/hotpot_qa`` uses the same dict-shaped ``context`` and
+    ``supporting_facts`` layout as 2WikiMultiHopQA exports.
+    """
+    return extract_2wiki_support_lines(row)
+
+
+def extract_hotpotqa_support_sentences(row: Dict[str, Any]) -> List[str]:
+    """Sentence strings only (same order as :func:`extract_hotpotqa_support_lines`)."""
+    return [t[2] for t in extract_hotpotqa_support_lines(row)]

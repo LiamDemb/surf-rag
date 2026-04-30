@@ -6,13 +6,44 @@ import os
 
 from dotenv import load_dotenv
 
+# Hugging Face Hub accepts either name; keep .env single-sourced and mirror here.
+HF_TOKEN_ENV = "HF_TOKEN"
+HUGGING_FACE_HUB_TOKEN_ENV = "HUGGING_FACE_HUB_TOKEN"
+
+
+def sync_hf_hub_token_env() -> None:
+    """Mirror the Hub token between ``HF_TOKEN`` and ``HUGGING_FACE_HUB_TOKEN``.
+
+    ``huggingface_hub`` resolves ``HF_TOKEN`` first, then ``HUGGING_FACE_HUB_TOKEN``.
+    Syncing avoids tools that only read one of the two missing auth after ``load_dotenv``.
+    """
+    hf = (os.environ.get(HF_TOKEN_ENV) or "").strip()
+    hub = (os.environ.get(HUGGING_FACE_HUB_TOKEN_ENV) or "").strip()
+    if hf and not hub:
+        os.environ[HUGGING_FACE_HUB_TOKEN_ENV] = hf
+    elif hub and not hf:
+        os.environ[HF_TOKEN_ENV] = hub
+
+
+def get_hf_hub_token() -> str | None:
+    """Return a Hub token if available: env (after sync) or Hugging Face CLI cache.
+
+    Call :func:`load_app_env` early in CLIs so ``.env`` is loaded first.
+    """
+    sync_hf_hub_token_env()
+    from huggingface_hub.utils import get_token  # local import: heavy deps
+
+    return get_token()
+
 
 def load_app_env(*, override: bool = False) -> None:
     """Load ``.env`` from the current working directory if present.
 
     ``override=False`` matches python-dotenv defaults: existing process env wins.
+    After loading, normalizes Hugging Face token env aliases.
     """
     load_dotenv(override=override)
+    sync_hf_hub_token_env()
 
 
 def _env_s(value: object) -> str:
@@ -68,9 +99,16 @@ def apply_pipeline_env_from_config(config: object) -> None:
     os.environ["GRAPH_BIDIRECTIONAL"] = "true" if r.graph_bidirectional else "false"
     os.environ["GRAPH_ENTITY_VECTOR_TOP_K"] = str(r.graph_entity_vector_top_k)
     os.environ["GRAPH_ENTITY_VECTOR_THRESHOLD"] = str(r.graph_entity_vector_threshold)
-    os.environ["GRAPH_LOCAL_PRED_WEIGHT"] = str(r.graph_local_pred_weight)
-    os.environ["GRAPH_BUNDLE_PRED_WEIGHT"] = str(r.graph_bundle_pred_weight)
-    os.environ["GRAPH_LENGTH_PENALTY"] = str(r.graph_length_penalty)
+    os.environ["GRAPH_HOP_SUPPORT_THRESHOLD"] = str(r.graph_hop_support_threshold)
+    os.environ["GRAPH_PPR_ALPHA"] = str(r.graph_ppr_alpha)
+    os.environ["GRAPH_PPR_MAX_ITER"] = str(r.graph_ppr_max_iter)
+    os.environ["GRAPH_PPR_TOL"] = str(r.graph_ppr_tol)
+    os.environ["GRAPH_TRANSITION_MODE"] = _env_s(r.graph_transition_mode)
+    os.environ["GRAPH_MAX_ENTITIES"] = str(r.graph_max_entities)
+    os.environ["GRAPH_MAX_PATHS"] = str(r.graph_max_paths)
+    os.environ["GRAPH_MAX_FRONTIER_POPS"] = str(r.graph_max_frontier_pops)
+    os.environ["GRAPH_SEED_SOFTMAX_TEMPERATURE"] = str(r.graph_seed_softmax_temperature)
+    os.environ["GRAPH_ENTITY_CHUNK_EDGE_WEIGHT"] = str(r.graph_entity_chunk_edge_weight)
     c = cfg.corpus
     os.environ["MAX_PAGES"] = str(c.max_pages)
     os.environ["MAX_HOPS"] = str(c.max_hops)
@@ -82,7 +120,6 @@ def apply_pipeline_env_from_config(config: object) -> None:
     o = cfg.oracle
     os.environ["ORACLE_BRANCH_TOP_K"] = str(o.branch_top_k)
     os.environ["ORACLE_FUSION_KEEP_K"] = str(o.fusion_keep_k)
-    os.environ["ORACLE_MIN_ENTROPY_NATS"] = str(o.min_entropy_nats)
     rd = cfg.router.dataset
     os.environ["SEED"] = str(cfg.seed)
     os.environ["TRAIN_RATIO"] = str(rd.train_ratio)

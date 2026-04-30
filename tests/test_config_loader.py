@@ -39,15 +39,16 @@ def test_yaml_unquoted_ids_coerce_to_str_for_paths_and_env() -> None:
 
 def test_load_example_pipeline(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[1]
-    cfg_path = root / "configs" / "examples" / "surf-bench-200-pipeline.yaml"
+    cfg_path = root / "configs" / "development" / "graph-rag-tuning.yaml"
     cfg = load_pipeline_config(cfg_path)
     assert cfg.schema_version == "surf-rag/pipeline/v1"
     assert cfg.paths.benchmark_name == "surf-bench"
-    assert cfg.paths.benchmark_id == "200-test"
-    assert cfg.paths.router_id == "4000-test"
+    assert cfg.paths.benchmark_id == "development"
+    assert cfg.paths.router_id == ""
+    assert cfg.graph_retrieval_sweep.use_router_overlap_splits is False
     rp = resolve_paths(cfg)
     assert rp.benchmark_path.name == "benchmark.jsonl"
-    assert (rp.bundle / "corpus").samefile(rp.corpus_dir)
+    assert rp.corpus_dir == rp.bundle / "corpus"
     d = config_to_resolved_dict(cfg, rp)
     assert "resolved_paths" in d
     assert d["resolved_paths"]["benchmark_path"] == str(rp.benchmark_path)
@@ -57,6 +58,7 @@ def test_pipeline_config_from_dict_empty() -> None:
     cfg = pipeline_config_from_dict({})
     assert isinstance(cfg, PipelineConfig)
     assert cfg.seed == 42
+    assert cfg.graph_retrieval_sweep.use_router_overlap_splits is False
 
 
 def test_e2e_fusion_keep_inherits_oracle_when_unset() -> None:
@@ -109,3 +111,14 @@ def test_minimal_yaml_roundtrip(tmp_path: Path) -> None:
     rp = resolve_paths(cfg)
     assert rp.benchmark_name == "b"
     assert rp.router_id == "r1"
+
+
+def test_graph_retrieval_sweep_bool_parsed() -> None:
+    cfg = pipeline_config_from_dict(
+        {
+            "graph_retrieval_sweep": {
+                "use_router_overlap_splits": True,
+            }
+        }
+    )
+    assert cfg.graph_retrieval_sweep.use_router_overlap_splits is True

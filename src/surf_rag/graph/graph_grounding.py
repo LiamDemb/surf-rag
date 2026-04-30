@@ -1,3 +1,14 @@
+"""Path grounding for canonical graph retrieval diagnostics.
+
+Maps each relational hop on a candidate path to chunk-level evidence using corpus
+provenance on relation edges (``chunk_ids_by_label``). Used for grounded evidence
+bundles and explanation traces only; final chunk ranking uses heterogeneous PPR
+masses on chunk nodes, not these hop support scores.
+"""
+
+from dataclasses import dataclass
+from typing import Optional
+
 from surf_rag.graph.graph_types import GraphHop, GraphPath, GroundedHop, EvidenceBundle
 
 
@@ -33,7 +44,7 @@ def candidate_chunk_ids_for_hop(graph, hop: GraphHop):
     for chunk_id in edge["chunk_ids_by_label"].get(hop.relation, []):
         chunks.add(chunk_id)
 
-    # No direct support found - might be rudundent if we don't have lexical scoring
+    # No direct support — fall back to entity co-occurrence in chunks
     if not chunks:
         chunks_source = {
             neighbour[2:]
@@ -67,16 +78,40 @@ def hop_support_score(graph, hop: GraphHop, chunk: str):
     return 0.0
 
 
-def ground_path(graph, path: GraphPath) -> EvidenceBundle:
-    """Convert a graph path into a grounded evidence bundle"""
+@dataclass(frozen=True)
+class GroundPathReport:
+    """Outcome of grounding one path; includes failure detail for diagnostics."""
+
+    bundle: Optional[EvidenceBundle]
+    failure_kind: Optional[str] = None  # missing_rel_edge | weak_hop_support
+    failure_hop_index: Optional[int] = None
+    best_support_at_failure: Optional[float] = None
+
+
+def ground_path_report(
+    graph,
+    path: GraphPath,
+    *,
+    support_threshold: float = 0.5,
+) -> GroundPathReport:
+    """Ground each hop to chunk IDs for explanations (orthogonal to PPR chunk scores).
+
+    Canonical retrieval ranks chunks by stationary mass on ``C:*`` after
+    heterogeneous PPR. This function only builds human-readable / diagnostic
+    evidence linkage: it does **not** define final retrieval scores.
+    """
     grounded_hops = []
     supporting_chunk_ids = []
 
-    for hop in path.hops:
-        # Find best chunk score
+    for hop_index, hop in enumerate(path.hops):
         candidate_chunks = candidate_chunk_ids_for_hop(graph, hop)
         if candidate_chunks is None:
-            return None
+            return GroundPathReport(
+                bundle=None,
+                failure_kind="missing_rel_edge",
+                failure_hop_index=hop_index,
+                best_support_at_failure=None,
+            )
         best_score, best_chunk = max(
             (
                 (hop_support_score(graph, hop, chunk), chunk)
@@ -84,18 +119,34 @@ def ground_path(graph, path: GraphPath) -> EvidenceBundle:
             ),
             key=lambda item: item[0],
         )
-        # If best chunk score is lower than the threshold -> Path fails
-        if best_score < 0.5:
-            return None
-        else:
-            grounded_hop = GroundedHop(
-                hop=hop, chunk_id=best_chunk, support_score=best_score
+        if best_score < support_threshold:
+            return GroundPathReport(
+                bundle=None,
+                failure_kind="weak_hop_support",
+                failure_hop_index=hop_index,
+                best_support_at_failure=float(best_score),
             )
-            grounded_hops.append(grounded_hop)
-            supporting_chunk_ids.append(best_chunk)
+        grounded_hop = GroundedHop(
+            hop=hop, chunk_id=best_chunk, support_score=best_score
+        )
+        grounded_hops.append(grounded_hop)
+        supporting_chunk_ids.append(best_chunk)
 
-    return EvidenceBundle(
-        path=path,
-        grounded_hops=grounded_hops,
-        supporting_chunk_ids=supporting_chunk_ids,
+    return GroundPathReport(
+        bundle=EvidenceBundle(
+            path=path,
+            grounded_hops=grounded_hops,
+            supporting_chunk_ids=supporting_chunk_ids,
+        ),
+        failure_kind=None,
+        failure_hop_index=None,
+        best_support_at_failure=None,
     )
+
+
+def ground_path(
+    graph, path: GraphPath, support_threshold: float = 0.5
+) -> EvidenceBundle:
+    """Convert a graph path into a grounded evidence bundle."""
+    rep = ground_path_report(graph, path, support_threshold=support_threshold)
+    return rep.bundle

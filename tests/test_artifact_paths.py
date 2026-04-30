@@ -18,6 +18,7 @@ from surf_rag.evaluation.artifact_paths import (
     router_dataset_dir,
     router_model_dir,
     router_oracle_dir,
+    safe_benchmark_bundle_subpath,
 )
 
 
@@ -53,3 +54,9 @@ def test_default_bases_respect_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert default_benchmark_base() == Path("/b")
     monkeypatch.setenv("ROUTER_BASE", "/r")
     assert default_router_base() == Path("/r")
+
+
+def test_safe_benchmark_bundle_subpath_sanitizes() -> None:
+    assert safe_benchmark_bundle_subpath("graph rag tuning!") == "graph-rag-tuning"
+    assert safe_benchmark_bundle_subpath("already-safe_name.1") == "already-safe_name.1"
+    assert safe_benchmark_bundle_subpath("   ") == "graph-rag-tuning"

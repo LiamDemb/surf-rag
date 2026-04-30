@@ -52,7 +52,7 @@ def test_validate_oracle_ok_with_minimal_tree(tmp_path: Path) -> None:
     assert validate_oracle(p) == 0
 
 
-def test_validate_router_dataset_requires_selected(tmp_path: Path) -> None:
+def test_validate_router_dataset_requires_router_labels(tmp_path: Path) -> None:
     bundle = tmp_path / "benchmarks" / "bn" / "bid"
     (bundle / "benchmark").mkdir(parents=True)
     (bundle / "corpus").mkdir(parents=True)
@@ -71,3 +71,28 @@ def test_validate_router_dataset_requires_selected(tmp_path: Path) -> None:
     p = tmp_path / "cfg.yaml"
     p.write_text(yaml.safe_dump(cfg), encoding="utf-8")
     assert validate_router_dataset(p) != 0
+
+
+def test_validate_router_dataset_ok_with_router_labels(tmp_path: Path) -> None:
+    bundle = tmp_path / "benchmarks" / "bn" / "bid"
+    (bundle / "benchmark").mkdir(parents=True)
+    (bundle / "corpus").mkdir(parents=True)
+    (bundle / "benchmark" / "benchmark.jsonl").write_text("{}\n", encoding="utf-8")
+    (tmp_path / "router" / "rid" / "oracle").mkdir(parents=True)
+    (tmp_path / "router" / "rid" / "oracle" / "router_labels.jsonl").write_text(
+        "{}\n", encoding="utf-8"
+    )
+    cfg = {
+        "schema_version": "surf-rag/pipeline/v1",
+        "paths": {
+            "data_base": str(tmp_path),
+            "benchmark_base": str(tmp_path / "benchmarks"),
+            "router_base": str(tmp_path / "router"),
+            "benchmark_name": "bn",
+            "benchmark_id": "bid",
+            "router_id": "rid",
+        },
+    }
+    p = tmp_path / "cfg.yaml"
+    p.write_text(yaml.safe_dump(cfg), encoding="utf-8")
+    assert validate_router_dataset(p) == 0

@@ -1,4 +1,4 @@
-"""Router package: feature extraction, soft labels, MLP, training (see submodules)."""
+"""Router package: feature extraction, labels, MLP, training (see submodules)."""
 
 from __future__ import annotations
 
@@ -17,22 +17,14 @@ from surf_rag.router.query_features import (
     feature_vector_ordered,
 )
 from surf_rag.router.soft_labels import (
-    beta_scaled_softmax,
-    entropy,
-    expected_weight,
-    kl_divergence,
-    materialize_soft_labels,
-    soft_label_from_scores,
+    materialize_router_labels,
+    oracle_label_from_curve,
 )
 from surf_rag.router.splits import assign_splits_stratified
 
 __all__ = [
-    "beta_scaled_softmax",
-    "entropy",
-    "expected_weight",
-    "kl_divergence",
-    "materialize_soft_labels",
-    "soft_label_from_scores",
+    "materialize_router_labels",
+    "oracle_label_from_curve",
     "FEATURE_SET_VERSION",
     "V1_FEATURE_NAMES",
     "QueryFeatureContext",

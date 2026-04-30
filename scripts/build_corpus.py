@@ -9,7 +9,6 @@ import sys
 from pathlib import Path
 from typing import Dict, List
 
-import pandas as pd
 from tqdm.auto import tqdm
 
 from dotenv import load_dotenv
@@ -17,9 +16,6 @@ from dotenv import load_dotenv
 from surf_rag.config.env import load_app_env, apply_pipeline_env_from_config
 from surf_rag.config.loader import load_pipeline_config
 from surf_rag.config.merge import merge_build_corpus_args
-from surf_rag.core.build_entity_index import build_entity_index
-from surf_rag.core.build_faiss import build_faiss_index
-from surf_rag.core.build_graph import build_graph
 from surf_rag.core.alias_map import (
     CURATED_ALIASES,
     build_alias_map_from_redirects,
@@ -39,13 +35,15 @@ from surf_rag.core.chunking import chunk_blocks
 from surf_rag.core.corpus_acquisition import (
     Budgets,
     ingest_nq,
-    load_2wiki_docs_from_docstore,
+    load_wiki_supporting_docs_from_docstore,
 )
 from surf_rag.core.corpus_schemas import CorpusChunk
+from surf_rag.core.corpus_finalize import (
+    finalize_corpus_artifacts,
+    write_corpus_finalize_manifest,
+)
 from surf_rag.core.docstore import DocStore
 from surf_rag.core.wiki_title_matcher import build_wiki_title_matcher, write_wiki_titles
-from surf_rag.core.entity_lexicon import build_entity_lexicon
-from surf_rag.core.quality_gates import run_quality_gates
 from surf_rag.core.schemas import sha256_text
 from surf_rag.core.wikipedia_client import WikipediaClient
 
@@ -57,6 +55,80 @@ def _write_jsonl(path: Path, items: List[dict]) -> None:
     with path.open("w", encoding="utf-8") as handle:
         for item in items:
             handle.write(json.dumps(item, ensure_ascii=False) + "\n")
+
+
+def _run_ie_batch_pipeline(
+    *, corpus_path: Path, output_dir: Path, script_dir: Path
+) -> int:
+    ie_script = script_dir / "corpus" / "run_llm_ie_batch.py"
+    if not ie_script.is_file():
+        logger.error("IE batch script not found: %s", ie_script)
+        return 1
+    logger.info(
+        "Running LLM information extraction batch (submit -> wait -> collect -> replace corpus)..."
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ie_script),
+            "--corpus",
+            str(corpus_path),
+            "--output-dir",
+            str(output_dir),
+        ],
+        cwd=str(script_dir.parent),
+    )
+    return int(result.returncode)
+
+
+def _finalize_corpus_outputs(
+    *,
+    chunks: List[dict],
+    output_dir: Path,
+    corpus_path: Path,
+    model_name: str,
+    samples: List[dict],
+) -> None:
+    artifacts = finalize_corpus_artifacts(
+        chunks=chunks,
+        output_dir=output_dir,
+        model_name=model_name,
+        samples=samples,
+        quality_report=True,
+    )
+    write_corpus_finalize_manifest(
+        output_dir=output_dir,
+        corpus_path=corpus_path,
+        chunks_count=len(chunks),
+        produced_artifacts=artifacts,
+    )
+
+
+def _complete_post_ie(
+    *,
+    corpus_path: Path,
+    output_dir: Path,
+    model_name: str,
+    samples: List[dict],
+    script_dir: Path,
+) -> int:
+    ie_code = _run_ie_batch_pipeline(
+        corpus_path=corpus_path,
+        output_dir=output_dir,
+        script_dir=script_dir,
+    )
+    if ie_code != 0:
+        logger.error("IE batch pipeline failed with exit code %d", ie_code)
+        return ie_code
+    chunks = list(iter_jsonl(str(corpus_path)))
+    _finalize_corpus_outputs(
+        chunks=chunks,
+        output_dir=output_dir,
+        corpus_path=corpus_path,
+        model_name=model_name,
+        samples=samples,
+    )
+    return 0
 
 
 def main() -> int:
@@ -72,6 +144,7 @@ def main() -> int:
     parser.add_argument("--benchmark", default=os.getenv("BENCHMARK_PATH"))
     parser.add_argument("--nq", default=os.getenv("NQ_PATH"))
     parser.add_argument("--2wiki", dest="wiki2", default=os.getenv("2WIKI_PATH"))
+    parser.add_argument("--hotpotqa", default=os.getenv("HOTPOTQA_PATH"))
     parser.add_argument(
         "--output-dir", default=os.getenv("OUTPUT_DIR", "data/processed")
     )
@@ -143,6 +216,7 @@ def main() -> int:
         sources_in_benchmark,
         nq_path=args.nq,
         wiki2_path=args.wiki2,
+        hotpotqa_path=getattr(args, "hotpotqa", None),
     )
 
     if missing:
@@ -169,13 +243,13 @@ def main() -> int:
         logger.info(
             "Wikipedia Action API requests use OAuth2 (authenticated rate limits)"
         )
-    elif "2wiki" in paths_by_source:
+    elif paths_by_source.keys() & {"2wiki", "hotpotqa"}:
         logger.warning(
             "WIKIMEDIA_OAUTH2_ACCESS_TOKEN is not set; unauthenticated Wikipedia API "
-            "limits are low and large 2Wiki corpus builds may hit 429 errors"
+            "limits are low and large multi-hop wiki corpus builds may hit 429 errors"
         )
     logger.info(
-        "Loading %d benchmark questions from DocStore (2Wiki) + NQ raw HTML...",
+        "Loading %d benchmark questions from DocStore (wiki multi-hop) + NQ raw HTML...",
         len(samples),
     )
     all_docs = {}
@@ -185,8 +259,8 @@ def main() -> int:
         unit="question",
         dynamic_ncols=True,
     ):
-        if sample["source"] == "2wiki":
-            docs, missing_titles = load_2wiki_docs_from_docstore(
+        if sample["source"] in ("2wiki", "hotpotqa"):
+            docs, missing_titles = load_wiki_supporting_docs_from_docstore(
                 sample,
                 docstore,
                 wiki=wiki,
@@ -288,7 +362,11 @@ def main() -> int:
 
             if prior is not None and has_extraction:
                 # Reuse the fully-extracted chunk from cache
-                prior.setdefault("metadata", {})["ie_extracted"] = True
+                prior_meta = prior.setdefault("metadata", {})
+                prior_meta["ie_extracted"] = True
+                prior_meta["ie_status"] = "success"
+                prior_meta["ie_attempts"] = int(prior_meta.get("ie_attempts", 1) or 1)
+                prior_meta["ie_last_error"] = None
                 chunks.append(prior)
                 chunk_texts.append(text_for_extraction)
                 cached_count += 1
@@ -304,6 +382,9 @@ def main() -> int:
                     "anchors": structured.anchors,
                     "relations": relations,
                     "ie_extracted": False,
+                    "ie_status": "pending",
+                    "ie_attempts": 0,
+                    "ie_last_error": None,
                 }
                 chunk = CorpusChunk(
                     chunk_id=chunk_id,
@@ -333,6 +414,9 @@ def main() -> int:
     stale_files = [
         "batch_state_ie.json",
         "corpus_llm_ie.jsonl",
+        "ie_retry_report.json",
+        "ie_pending_ids.txt",
+        "ie_failures_final.json",
     ]
     for name in stale_files:
         stale = output_dir / name
@@ -341,60 +425,15 @@ def main() -> int:
             logger.info("Removed stale %s", name)
 
     script_dir = Path(__file__).resolve().parent
-    ie_script = script_dir / "corpus" / "run_llm_ie_batch.py"
-    if ie_script.is_file():
-        logger.info(
-            "Running LLM information extraction batch (submit -> wait -> collect -> replace corpus)..."
-        )
-        result = subprocess.run(
-            [
-                sys.executable,
-                str(ie_script),
-                "--corpus",
-                str(corpus_path),
-                "--output-dir",
-                str(output_dir),
-            ],
-            cwd=str(script_dir.parent),
-        )
-        if result.returncode != 0:
-            logger.error(
-                "IE batch pipeline failed with exit code %d", result.returncode
-            )
-            return result.returncode
-        chunks = list(iter_jsonl(str(corpus_path)))
-    else:
-        logger.error("IE batch script not found: %s", ie_script)
-        return 1
-
-    build_faiss_index(
-        chunks,
-        output_index_path=(output_dir / "vector_index.faiss").as_posix(),
-        output_meta_path=(output_dir / "vector_meta.parquet").as_posix(),
+    post_code = _complete_post_ie(
+        corpus_path=corpus_path,
+        output_dir=output_dir,
         model_name=args.model_name,
+        samples=samples,
+        script_dir=script_dir,
     )
-
-    graph = build_graph(chunks)
-    graph_path = output_dir / "graph.pkl"
-    pd.to_pickle(graph, graph_path)
-
-    lexicon = build_entity_lexicon(chunks)
-    lexicon_path = output_dir / "entity_lexicon.parquet"
-    lexicon.to_parquet(lexicon_path, index=False)
-
-    build_entity_index(
-        lexicon_path=str(lexicon_path),
-        output_index_path=str(output_dir / "entity_index.faiss"),
-        output_meta_path=str(output_dir / "entity_index_meta.parquet"),
-        model_name=args.model_name,
-    )
-    logger.info("Built entity_index.faiss for vector similarity matching")
-
-    run_quality_gates(
-        samples,
-        chunks,
-        output_path=(output_dir / "quality_report.json").as_posix(),
-    )
+    if post_code != 0:
+        return post_code
 
     logger.info("Wrote corpus and artifacts to %s", output_dir)
     docstore.close()

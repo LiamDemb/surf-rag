@@ -25,17 +25,23 @@ from pathlib import Path
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from surf_rag.config.env import apply_pipeline_env_from_config
+from surf_rag.config.loader import load_pipeline_config, resolve_paths
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_POLL_SECONDS = 600
 DEFAULT_TIMEOUT_SECONDS = 48 * 3600
+DEFAULT_MAX_ATTEMPTS = 3
 
 STATE_FILENAMES = ("batch_state_ie.json", "batch_state_ie.json")
 OUTPUT_FILENAMES = ("corpus_llm_ie.jsonl", "corpus_llm_ie.jsonl")
 SUBMIT_SCRIPT = "submit_llm_ie_batch.py"
 COLLECT_SCRIPT = "collect_llm_ie_batch.py"
+RETRY_REPORT_FILENAME = "ie_retry_report.json"
+FINAL_FAILURES_FILENAME = "ie_failures_final.json"
 
 
 def _run_script(name: str, *args: str) -> int:
@@ -43,6 +49,13 @@ def _run_script(name: str, *args: str) -> int:
     script = script_dir / name
     cmd = [sys.executable, str(script), *args]
     return subprocess.run(cmd).returncode
+
+
+def _write_chunk_ids_file(path: Path, chunk_ids: list[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        for cid in chunk_ids:
+            f.write(f"{cid}\n")
 
 
 def _wait_for_batch(
@@ -77,7 +90,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Orchestrate LLM IE extraction batch.",
     )
-    parser.add_argument("--corpus", required=True, help="Path to corpus.jsonl.")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Pipeline config; resolves corpus/output paths unless overridden.",
+    )
+    parser.add_argument("--corpus", default=None, help="Path to corpus.jsonl.")
     parser.add_argument(
         "--output-dir",
         default=os.getenv("OUTPUT_DIR", "data/processed"),
@@ -90,9 +109,27 @@ def main() -> int:
     )
     parser.add_argument("--poll-seconds", type=int, default=DEFAULT_POLL_SECONDS)
     parser.add_argument("--timeout-seconds", type=int, default=DEFAULT_TIMEOUT_SECONDS)
+    parser.add_argument(
+        "--max-attempts",
+        type=int,
+        default=DEFAULT_MAX_ATTEMPTS,
+        help="Maximum IE retry attempts before failing.",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
+    if args.config:
+        cfg = load_pipeline_config(args.config.resolve())
+        apply_pipeline_env_from_config(cfg)
+        rp = resolve_paths(cfg)
+        if args.corpus is None:
+            args.corpus = str(rp.corpus_path)
+        if args.output_dir == os.getenv("OUTPUT_DIR", "data/processed"):
+            args.output_dir = str(rp.corpus_dir)
+
+    if not args.corpus:
+        parser.error("Pass --corpus or --config with resolved corpus path.")
 
     corpus_path = Path(args.corpus)
     if not corpus_path.is_file():
@@ -118,66 +155,71 @@ def main() -> int:
             logger.error("Failed to build wiki_titles.jsonl.")
             return 1
 
-    state_path = None
-    for name in STATE_FILENAMES:
-        p = output_dir / name
-        if p.is_file():
-            state_path = p
-            break
-    if not state_path or not state_path.is_file():
-        logger.info("Submitting IE batch...")
-        if (
-            _run_script(
-                SUBMIT_SCRIPT,
-                "--corpus",
-                str(corpus_path),
-                "--output-dir",
-                str(output_dir),
-            )
-            != 0
-        ):
-            logger.error("Submit failed.")
-            return 1
-        state_path = output_dir / STATE_FILENAMES[0]
-        if not state_path.is_file():
-            state_path = output_dir / STATE_FILENAMES[1]
-
-    with state_path.open("r", encoding="utf-8") as f:
-        state = json.load(f)
-    shards = state.get("shards") or []
-    if not shards:
-        logger.info(
-            "No shards to process (all chunks already extracted). Corpus is up to date."
-        )
-        return 0
-
+    max_attempts = max(1, int(args.max_attempts))
+    pending_ids_path = output_dir / "ie_pending_ids.txt"
+    retry_report_path = output_dir / RETRY_REPORT_FILENAME
+    final_failures_path = output_dir / FINAL_FAILURES_FILENAME
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-    if not args.no_wait:
-        all_ok = True
+    unresolved_ids: list[str] | None = None
+    for attempt in range(1, max_attempts + 1):
+        submit_args = [
+            "--corpus",
+            str(corpus_path),
+            "--output-dir",
+            str(output_dir),
+            "--attempt",
+            str(attempt),
+        ]
+        if unresolved_ids is not None:
+            if not unresolved_ids:
+                logger.info(
+                    "No unresolved chunk IDs remain after attempt %d.", attempt - 1
+                )
+                return 0
+            _write_chunk_ids_file(pending_ids_path, unresolved_ids)
+            submit_args.extend(["--only-chunk-ids", str(pending_ids_path)])
+
+        logger.info("Submitting IE batch attempt %d/%d...", attempt, max_attempts)
+        if _run_script(SUBMIT_SCRIPT, *submit_args) != 0:
+            logger.error("Submit failed on attempt %d.", attempt)
+            return 1
+
+        state_path = None
+        for name in STATE_FILENAMES:
+            p = output_dir / name
+            if p.is_file():
+                state_path = p
+                break
+        if not state_path or not state_path.is_file():
+            logger.error("State file not found after submit on attempt %d.", attempt)
+            return 1
+
+        with state_path.open("r", encoding="utf-8") as f:
+            state = json.load(f)
+        shards = state.get("shards") or []
+        if not shards:
+            logger.info(
+                "No shards submitted on attempt %d. Corpus is up to date.", attempt
+            )
+            return 0
+
+        if args.no_wait:
+            logger.info("--no-wait enabled. Submitted attempt %d and exiting.", attempt)
+            return 0
+
         for shard in shards:
             batch_id = shard.get("batch_id")
             if not batch_id:
                 continue
             b = client.batches.retrieve(batch_id)
             if b.status != "completed":
-                if not _wait_for_batch(
+                _wait_for_batch(
                     client, batch_id, args.poll_seconds, args.timeout_seconds
-                ):
-                    all_ok = False
-        if not all_ok:
-            logger.error("One or more batches failed or timed out.")
-            return 1
+                )
 
-    output_path = None
-    for name in OUTPUT_FILENAMES:
-        p = output_dir / name
-        if p.is_file():
-            output_path = p
-            break
-    if output_path is None:
-        output_path = output_dir / OUTPUT_FILENAMES[0]
-        logger.info("Collecting batch results...")
+        attempt_output_path = output_dir / f"corpus_llm_ie_attempt_{attempt:02d}.jsonl"
+        logger.info("Collecting batch results for attempt %d...", attempt)
         if (
             _run_script(
                 COLLECT_SCRIPT,
@@ -186,25 +228,57 @@ def main() -> int:
                 "--corpus",
                 str(corpus_path),
                 "--output",
-                str(output_path),
+                str(attempt_output_path),
                 "--output-dir",
                 str(output_dir),
+                "--retry-report",
+                str(retry_report_path),
             )
             != 0
         ):
-            logger.error("Collect failed.")
+            logger.error("Collect failed on attempt %d.", attempt)
             return 1
-    else:
-        logger.info("Output already exists at %s. Skipping collect.", output_path)
 
-    backup_path = corpus_path.parent / (corpus_path.stem + ".bak.jsonl")
-    if corpus_path.exists():
-        corpus_path.rename(backup_path)
-    output_path.rename(corpus_path)
-    if backup_path.exists():
-        backup_path.unlink()
-    logger.info("Replaced %s with IE-enriched corpus.", corpus_path)
-    return 0
+        backup_path = corpus_path.parent / (corpus_path.stem + ".bak.jsonl")
+        if corpus_path.exists():
+            corpus_path.rename(backup_path)
+        attempt_output_path.rename(corpus_path)
+        if backup_path.exists():
+            backup_path.unlink()
+        logger.info("Merged attempt %d results into %s", attempt, corpus_path)
+
+        if not retry_report_path.is_file():
+            logger.error("Retry report not found after collect: %s", retry_report_path)
+            return 1
+        report = json.loads(retry_report_path.read_text(encoding="utf-8"))
+        unresolved_ids = [
+            str(cid).strip()
+            for cid in (report.get("unresolved_ids") or [])
+            if str(cid).strip()
+        ]
+        if not unresolved_ids:
+            logger.info("All IE chunk requests resolved by attempt %d.", attempt)
+            return 0
+        logger.warning(
+            "Attempt %d completed with %d unresolved chunk(s).",
+            attempt,
+            len(unresolved_ids),
+        )
+
+    payload = {
+        "max_attempts": max_attempts,
+        "remaining_unresolved_ids": unresolved_ids or [],
+    }
+    final_failures_path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    logger.error(
+        "IE extraction exhausted retry budget (%d attempts). Final failures: %s",
+        max_attempts,
+        final_failures_path,
+    )
+    return 1
 
 
 if __name__ == "__main__":

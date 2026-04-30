@@ -1,17 +1,17 @@
-"""Load a trained router checkpoint and predict per-query distributions."""
+"""Load a trained router checkpoint and predict scalar per-query weights."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 import numpy as np
 import torch
 
 from surf_rag.evaluation.oracle_artifacts import DEFAULT_DENSE_WEIGHT_GRID
 from surf_rag.evaluation.router_model_artifacts import read_json
-from surf_rag.router.model import RouterMLP, RouterMLPConfig, expected_dense_weight
+from surf_rag.router.model import RouterMLP, RouterMLPConfig
 
 
 @dataclass
@@ -61,15 +61,13 @@ def predict_batch(
     router: LoadedRouter,
     query_embedding: np.ndarray,
     feature_vector: np.ndarray,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Return (distribution, expected_dense_weight) as numpy."""
+) -> np.ndarray:
+    """Return predicted dense weights as numpy array, shape [B]."""
     if query_embedding.ndim == 1:
         query_embedding = query_embedding[np.newaxis, :]
     if feature_vector.ndim == 1:
         feature_vector = feature_vector[np.newaxis, :]
     x_e = torch.tensor(query_embedding, device=router.device, dtype=torch.float32)
     x_f = torch.tensor(feature_vector, device=router.device, dtype=torch.float32)
-    dist = router.model.predict_distribution(x_e, x_f)
-    wg = torch.tensor(router.weight_grid, device=router.device, dtype=torch.float32)
-    ev = expected_dense_weight(dist, wg)
-    return dist.cpu().numpy(), ev.cpu().numpy()
+    w_hat = router.model.predict_weight(x_e, x_f)
+    return w_hat.cpu().numpy()

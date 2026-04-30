@@ -19,21 +19,20 @@ except OSError:
 
 
 def _label_row(
-    qid: str, *, ent: float = 0.5, aw: float = 0.5, dist: list[float] | None = None
+    qid: str, *, std: float = 0.5, aw: float = 0.5, curve: list[float] | None = None
 ) -> dict:
     w = [float(x) for x in DEFAULT_DENSE_WEIGHT_GRID]
-    d = dist if dist is not None else [1.0 / 11.0] * 11
+    c = curve if curve is not None else [float(x) for x in DEFAULT_DENSE_WEIGHT_GRID]
     return {
         "question_id": qid,
         "dataset_source": "nq",
-        "beta": 2.0,
         "weight_grid": w,
-        "scores": [0.1] * 11,
-        "distribution": d,
-        "expected_weight": 0.5,
-        "argmax_weight": aw,
-        "argmax_index": 5,
-        "entropy": ent,
+        "oracle_curve": c,
+        "oracle_best_weight": aw,
+        "oracle_best_index": 5,
+        "oracle_best_score": 0.5,
+        "oracle_curve_std": std,
+        "is_valid_for_router_training": True,
     }
 
 
@@ -56,8 +55,8 @@ def test_build_dataframe_shape(monkeypatch: pytest.MonkeyPatch) -> None:
         },
     ]
     lab = [
-        _label_row("a1", ent=0.1, aw=0.0),
-        _label_row("a2", ent=0.9, aw=1.0),
+        _label_row("a1", std=0.1, aw=0.0),
+        _label_row("a2", std=0.9, aw=1.0),
     ]
     ctx = QueryFeatureContext(nlp=_nlp)
     df, norm, _sum = build_router_dataframe(
@@ -69,7 +68,6 @@ def test_build_dataframe_shape(monkeypatch: pytest.MonkeyPatch) -> None:
         dev_ratio=0.25,
         test_ratio=0.25,
         split_seed=0,
-        selected_beta=2.0,
         router_id="t1",
     )
     assert len(df) == 2

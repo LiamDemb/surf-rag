@@ -56,10 +56,13 @@ __pycache__/
 
 # Development documentation
 /docs/dev
+/docs/dissertation
 /scripts/dev
 
 # Data
 /data
 
 # Development Configs
-configs/dev
+/configs
+
+.file_tree.txt

@@ -1,8 +1,8 @@
 from __future__ import annotations
+
+import json
 from dataclasses import dataclass
 from typing import Dict, Optional, Protocol
-import json
-import pandas as pd
 
 
 class RowIdToChunkId(Protocol):
@@ -26,6 +26,8 @@ class VectorMetaMapper:
     chunk_col: str = "chunk_id"
 
     def __post_init__(self) -> None:
+        import pandas as pd
+
         df = pd.read_parquet(self.parquet_path, columns=[self.row_col, self.chunk_col])
 
         # Store dict: row_id -> chunk_id

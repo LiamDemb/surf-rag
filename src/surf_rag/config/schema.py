@@ -29,8 +29,10 @@ class RawSourcesSection:
     # None or "" in YAML = omit this dataset (no fallback to process env for --config runs).
     nq_path: str | None = "data/raw/nq_100.jsonl"
     wiki2_path: str | None = "data/raw/2wikimultihop_100.jsonl"
+    hotpotqa_path: str | None = None
     nq_version: str | None = None
     wiki2_version: str | None = None
+    hotpotqa_version: str | None = None
 
 
 @dataclass
@@ -73,11 +75,6 @@ class EntityMatchingSection:
 class OracleSection:
     branch_top_k: int = 20
     fusion_keep_k: int = 20
-    betas: list[float] = field(
-        default_factory=lambda: [0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
-    )
-    min_entropy_nats: float = 0.1
-    selected_beta: float | None = None
 
 
 @dataclass
@@ -113,15 +110,24 @@ class RetrievalSection:
     graph_bidirectional: bool = True
     graph_entity_vector_top_k: int = 3
     graph_entity_vector_threshold: float = 0.5
-    graph_local_pred_weight: float = 0.55
-    graph_bundle_pred_weight: float = 0.55
-    graph_length_penalty: float = 0.04
+    graph_hop_support_threshold: float = 0.5
+    # Matches ``surf_rag.core.scoring_config.ScoringConfig`` / ``get_default_scoring_config``.
+    graph_ppr_alpha: float = 0.85
+    graph_ppr_max_iter: int = 64
+    graph_ppr_tol: float = 1e-6
+    graph_transition_mode: str = "support"
+    graph_max_entities: int = 256
+    graph_max_paths: int = 500
+    graph_max_frontier_pops: int = 50_000
+    graph_seed_softmax_temperature: float = 0.1
+    graph_entity_chunk_edge_weight: float = 0.5
 
 
 @dataclass
 class GenerationSection:
     provider: str = "openai"
     model: str = "gpt-4o-mini"
+    reasoning_effort: str | None = None
     temperature: float = 0.0
     max_tokens: int = 512
     prompt_file: str = "prompts/generator.txt"
@@ -166,6 +172,20 @@ class SecretsSection:
 
 
 @dataclass
+class GraphRetrievalSweepSection:
+    """Optional grid-search settings for ``scripts/dev/graph_retrieval_grid_search.py``.
+
+    Keys under ``grid`` are :class:`RetrievalSection` field names; each value is a list
+    (or a single scalar) of candidates. The sweep takes the Cartesian product.
+    """
+
+    grid: dict[str, Any] = field(default_factory=dict)
+    objective: str = "overlap.all.retrieval_at_k.10.ndcg"
+    sweep_id: str | None = None
+    use_router_overlap_splits: bool = False
+
+
+@dataclass
 class PipelineConfig:
     schema_version: str = "surf-rag/pipeline/v1"
     experiment_id: str | None = None
@@ -185,3 +205,6 @@ class PipelineConfig:
     generation: GenerationSection = field(default_factory=GenerationSection)
     e2e: E2ESection = field(default_factory=E2ESection)
     secrets: SecretsSection = field(default_factory=SecretsSection)
+    graph_retrieval_sweep: GraphRetrievalSweepSection = field(
+        default_factory=GraphRetrievalSweepSection
+    )

@@ -1,4 +1,4 @@
-"""Load benchmark JSONL and join raw NQ / 2Wiki datasets into corpus-build samples."""
+"""Load benchmark JSONL and join raw NQ / 2Wiki / HotPotQA datasets into corpus-build samples."""
 
 from __future__ import annotations
 
@@ -96,6 +96,30 @@ def build_samples(
                 }
             )
 
+    hotpot_path = paths_by_source.get("hotpotqa")
+    if hotpot_path:
+        for row in iter_jsonl(hotpot_path):
+            question = question_text_from_row(row, "hotpotqa")
+            if not question:
+                continue
+            qid = sha256_text(question)
+            bench = benchmark_by_source.get("hotpotqa", {}).get(qid)
+            if not bench:
+                continue
+            supporting_facts = row.get("supporting_facts") or {}
+            if not supporting_facts:
+                continue
+            samples.append(
+                {
+                    "source": "hotpotqa",
+                    "question_id": qid,
+                    "question": question,
+                    "gold_answers": bench.get("gold_answers", []),
+                    "gold_support_sentences": bench.get("gold_support_sentences", []),
+                    "supporting_facts": supporting_facts,
+                }
+            )
+
     return samples
 
 
@@ -104,6 +128,7 @@ def resolve_raw_paths_for_benchmark_sources(
     *,
     nq_path: str | None,
     wiki2_path: str | None,
+    hotpotqa_path: str | None = None,
 ) -> Tuple[Dict[str, str], List[str]]:
     """
     Map benchmark sources to raw JSONL paths.
@@ -114,6 +139,7 @@ def resolve_raw_paths_for_benchmark_sources(
     path_env_map = {
         "nq": ("NQ_PATH", nq_path),
         "2wiki": ("2WIKI_PATH", wiki2_path),
+        "hotpotqa": ("HOTPOTQA_PATH", hotpotqa_path),
     }
     paths_by_source: Dict[str, str] = {}
     missing: List[str] = []

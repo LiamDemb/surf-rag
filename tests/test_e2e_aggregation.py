@@ -47,3 +47,20 @@ def test_load_benchmark_index(tmp_path) -> None:
     )
     idx = load_benchmark_index(p)
     assert set(idx) == {"a", "b"}
+
+
+def test_aggregate_e2e_report_without_splits_only_populates_all() -> None:
+    rows = [
+        PerQuestionEval(
+            "q1",
+            [RankedMetricSuite(k=10, ndcg=0.8, hit=1.0, recall=0.8)],
+            em=0.0,
+            f1=0.0,
+        )
+    ]
+    rep = aggregate_e2e_report(rows, split_sets=None, ks=[10])
+    assert rep["all"]["count"] == 1
+    assert rep["train"]["count"] == 0
+    assert rep["dev"]["count"] == 0
+    assert rep["test"]["count"] == 0
+    assert rep["unseen"]["count"] == 0

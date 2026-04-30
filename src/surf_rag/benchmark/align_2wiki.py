@@ -24,6 +24,9 @@ from surf_rag.core.schemas import BenchmarkItem, parse_benchmark_support_fields
 
 logger = logging.getLogger(__name__)
 
+# Benchmark sources that use title-localized gold support alignment (2Wiki-shaped rows).
+WIKI_MULTIHOP_ALIGNMENT_SOURCES = frozenset({"2wiki", "hotpotqa"})
+
 
 class AlignmentStats(TypedDict):
     total_rows: int
@@ -220,11 +223,12 @@ def render_replacement_report_markdown(
     return "\n".join(lines) + "\n"
 
 
-def _collect_two_wiki_titles_needed(rows: List[Dict[str, Any]]) -> List[str]:
+def _collect_wiki_multihop_alignment_titles(rows: List[Dict[str, Any]]) -> List[str]:
     seen: set[str] = set()
     ordered: List[str] = []
     for row in rows:
-        if str(row.get("dataset_source", "")).strip().lower() != "2wiki":
+        ds = str(row.get("dataset_source", "")).strip().lower()
+        if ds not in WIKI_MULTIHOP_ALIGNMENT_SOURCES:
             continue
         _, titles, _ = parse_benchmark_support_fields(row)
         for t in titles:
@@ -278,7 +282,7 @@ def run_2wiki_support_alignment(
     logger.info("Backed up original benchmark to %s", backup_path)
 
     all_rows = list(iter_jsonl(benchmark_path))
-    titles_needed = _collect_two_wiki_titles_needed(all_rows)
+    titles_needed = _collect_wiki_multihop_alignment_titles(all_rows)
 
     if docstore_path is not None:
         docstore = DocStore(str(docstore_path))
@@ -322,7 +326,7 @@ def run_2wiki_support_alignment(
 
     for row in all_rows:
         ds = str(row.get("dataset_source", "")).strip().lower()
-        if ds != "2wiki":
+        if ds not in WIKI_MULTIHOP_ALIGNMENT_SOURCES:
             rows_out.append(dict(row))
             continue
 
@@ -338,6 +342,7 @@ def run_2wiki_support_alignment(
                 {
                     "question_id": item.question_id,
                     "question": item.question,
+                    "dataset_source": item.dataset_source,
                     "detail": detail,
                     "decisions": (
                         [_line_block_from_decision(d) for d in decisions]
@@ -370,6 +375,7 @@ def run_2wiki_support_alignment(
                 {
                     "question_id": item.question_id,
                     "question": item.question,
+                    "dataset_source": item.dataset_source,
                     "lines": [_line_block_from_decision(d) for d in decisions],
                 }
             )

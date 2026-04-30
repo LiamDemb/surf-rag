@@ -170,10 +170,10 @@ def compute_query_tensors_for_router(
     return compute_query_tensors_for_router_batch([query], ictx, st_batch_size=1)
 
 
-def predict_router_distribution(
+def predict_router_weight(
     query: str,
     ictx: RouterInferenceContext,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Softmax distribution and expected dense weight for one query."""
+) -> np.ndarray:
+    """Predicted dense weight(s) for one query."""
     qe, qf = compute_query_tensors_for_router(query, ictx)
     return predict_batch(ictx.router, qe, qf)

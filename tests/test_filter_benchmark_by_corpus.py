@@ -26,7 +26,7 @@ def _read_jsonl(path: Path) -> list[dict]:
     return out
 
 
-def test_filter_rules_nq_and_2wiki():
+def test_filter_rules_nq_2wiki_and_hotpotqa():
     benchmark_rows = [
         {
             "question_id": "nq-keep",
@@ -48,6 +48,16 @@ def test_filter_rules_nq_and_2wiki():
             "dataset_source": "2wiki",
             "gold_support_sentences": ["beta", "not present"],
         },
+        {
+            "question_id": "hotpot-keep",
+            "dataset_source": "hotpotqa",
+            "gold_support_sentences": ["beta", "gamma"],
+        },
+        {
+            "question_id": "hotpot-drop",
+            "dataset_source": "hotpotqa",
+            "gold_support_sentences": ["beta", "nope"],
+        },
     ]
     corpus_rows = [
         {"text": "this corpus contains alpha and other content"},
@@ -55,11 +65,11 @@ def test_filter_rules_nq_and_2wiki():
     ]
     kept, stats = filter_benchmark_rows(benchmark_rows, corpus_rows)
     kept_ids = {row["question_id"] for row in kept}
-    assert kept_ids == {"nq-keep", "2wiki-keep"}
-    assert stats.total == 4
-    assert stats.kept == 2
-    assert stats.dropped == 2
-    assert stats.dropped_by_source == {"nq": 1, "2wiki": 1}
+    assert kept_ids == {"nq-keep", "2wiki-keep", "hotpot-keep"}
+    assert stats.total == 6
+    assert stats.kept == 3
+    assert stats.dropped == 3
+    assert stats.dropped_by_source == {"nq": 1, "2wiki": 1, "hotpotqa": 1}
 
 
 def test_normalize_for_matching_cleans_bracket_spacing():

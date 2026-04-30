@@ -14,6 +14,7 @@ from surf_rag.entity_matching.matcher import (
     greedy_nonoverlapping_matches,
     records_to_matcher,
 )
+from surf_rag.core.enrich_entities import normalize_key
 from surf_rag.entity_matching.normalization import normalize_for_query_match
 from surf_rag.entity_matching.pipeline import LexiconAliasEntityPipeline
 from surf_rag.entity_matching.types import PhraseRecord, PhraseSource
@@ -143,6 +144,29 @@ def test_no_match_inside_alnum_word():
     q = normalize_for_query_match("paternal line")
     raw = greedy_nonoverlapping_matches(q, m)
     assert raw == []
+
+
+def test_normalization_folds_diacritics_and_modifier_marks():
+    assert normalize_key("ʿAḍud") == "adud"
+    assert normalize_for_query_match("ʿAḍud") == "adud"
+
+
+def test_pipeline_matches_diacritic_variant(tmp_path: Path):
+    odir = _write_min_artifacts(
+        tmp_path,
+        lexicon_rows=[
+            {
+                "norm": "adud",
+                "surface_forms": ["ʿAḍud"],
+                "qid_candidates": [],
+                "df": 1,
+            }
+        ],
+    )
+    pl = LexiconAliasEntityPipeline.from_artifacts(
+        odir, max_df=8, max_entities_per_query=5
+    )
+    assert "adud" in pl.extract("Tell me about adud")
 
 
 def test_pipeline_no_match(tmp_path: Path):

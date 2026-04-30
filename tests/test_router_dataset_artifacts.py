@@ -42,8 +42,7 @@ def test_write_manifest_roundtrip(tmp_path: Path) -> None:
         benchmark_path="/x/b.jsonl",
         retrieval_asset_dir="/x/corpus",
         oracle_run_root="/base/d1/oracle",
-        labels_selected_path="/base/d1/oracle/labels/selected.jsonl",
-        selected_beta=2.0,
+        router_labels_path="/base/d1/oracle/router_labels.jsonl",
         feature_set_version="1",
         embedding_model="m",
         split_seed=42,
@@ -54,7 +53,7 @@ def test_write_manifest_roundtrip(tmp_path: Path) -> None:
     m = json.loads(paths.manifest.read_text())
     assert m["router_id"] == "d1"
     assert m["oracle"]["run_root"] == "/base/d1/oracle"
-    assert m["oracle"]["selected_beta"] == 2.0
+    assert m["oracle"]["router_labels"] == "/base/d1/oracle/router_labels.jsonl"
 
 
 def test_build_split_question_ids_dict_matches_df(tmp_path: Path) -> None:
