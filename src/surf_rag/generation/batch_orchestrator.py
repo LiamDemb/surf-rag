@@ -84,6 +84,11 @@ def _load_completed_question_ids_from_answers(answers_path: Path) -> Set[str]:
 
     Rows with ``generation_parse_error`` set are not considered complete and will
     be re-submitted on a new batch prep.
+
+    Rows with no batch line merged (missing from shard output/error file ingestion)
+    are written with ``answer`` and ``custom_id`` defaulted to ``""``. Those must not
+    count as complete, so stripped-empty answer **and** stripped-empty ``custom_id``
+    is treated as incomplete.
     """
     done: Set[str] = set()
     if not answers_path.is_file():
@@ -101,6 +106,10 @@ def _load_completed_question_ids_from_answers(answers_path: Path) -> Set[str]:
             if not qid or "answer" not in row:
                 continue
             if row.get("generation_parse_error"):
+                continue
+            ans = str(row.get("answer", "") or "").strip()
+            cid = str(row.get("custom_id", "") or "").strip()
+            if not ans and not cid:
                 continue
             done.add(qid)
     return done

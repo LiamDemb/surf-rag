@@ -8,6 +8,26 @@ from surf_rag.generation.batch_orchestrator import (
 )
 
 
+def test_resume_excludes_rows_with_empty_answer_and_custom_id(tmp_path: Path) -> None:
+    """Merged-without-batch-line placeholder rows must retry."""
+    p = tmp_path / "answers.jsonl"
+    rows = [
+        {"question_id": "done", "answer": "yes", "custom_id": "cid"},
+        {
+            "question_id": "missing_batch_line",
+            "answer": "",
+            "custom_id": "",
+            "generation_parse_error": None,
+        },
+    ]
+    p.write_text(
+        "\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n",
+        encoding="utf-8",
+    )
+    done = _load_completed_question_ids_from_answers(p)
+    assert done == {"done"}
+
+
 def test_resume_excludes_rows_with_generation_parse_error(tmp_path: Path) -> None:
     p = tmp_path / "answers.jsonl"
     rows = [
