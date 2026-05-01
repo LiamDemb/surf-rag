@@ -69,3 +69,21 @@ def test_aggregate_e2e_report_without_splits_only_populates_all() -> None:
     assert rep["dev"]["count"] == 0
     assert rep["test"]["count"] == 0
     assert rep["unseen"]["count"] == 0
+
+
+def test_aggregate_e2e_report_default_k_keys_are_5_10_20() -> None:
+    rows = [
+        PerQuestionEval(
+            "q1",
+            [
+                RankedMetricSuite(k=5, ndcg=1.0, hit=1.0, recall=1.0),
+                RankedMetricSuite(k=10, ndcg=1.0, hit=1.0, recall=1.0),
+                RankedMetricSuite(k=20, ndcg=1.0, hit=1.0, recall=1.0),
+            ],
+            em=1.0,
+            f1=1.0,
+            latency_ms={"retrieval_stage_total_ms": 1.0},
+        )
+    ]
+    rep = aggregate_e2e_report(rows, split_sets=None)
+    assert set(rep["all"]["retrieval_at_k"].keys()) == {"5", "10", "20"}

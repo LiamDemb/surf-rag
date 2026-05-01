@@ -22,6 +22,8 @@ from surf_rag.evaluation.router_dataset_artifacts import (
 
 def test_default_router_base(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("DATA_BASE", raising=False)
+    monkeypatch.delenv("ROUTER_BASE", raising=False)
     assert default_router_base() == Path("data/router")
 
 
