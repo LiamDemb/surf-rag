@@ -105,6 +105,7 @@ def cmd_prepare(args: argparse.Namespace) -> int:
         router_device=args.router_device,
         router_input_mode=args.router_input_mode,
         router_inference_batch_size=args.router_inference_batch_size,
+        latency_warmup_questions=args.latency_warmup_questions,
         dev_sync=args.dev_sync,
         pipeline_config_for_artifact=cfg,
     )
@@ -244,6 +245,12 @@ def main() -> int:
         type=int,
         default=32,
         help="Mini-batch size for learned-router query embeddings + features.",
+    )
+    p_prep.add_argument(
+        "--latency-warmup-questions",
+        type=int,
+        default=0,
+        help="Warmup retrieval questions excluded from latency reporting.",
     )
     p_prep.set_defaults(func=cmd_prepare)
 

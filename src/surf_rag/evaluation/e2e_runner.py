@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
@@ -23,6 +24,10 @@ from surf_rag.evaluation.e2e_aggregation import (
     aggregate_e2e_report,
     aggregate_per_question,
     load_benchmark_index,
+)
+from surf_rag.evaluation.latency_metrics import (
+    LATENCY_PROTOCOL_VERSION,
+    canonicalize_latency_ms,
 )
 from surf_rag.evaluation.e2e_policies import (
     e2e_pipeline_manifest_name,
@@ -50,13 +55,23 @@ from surf_rag.reranking.reranker import build_reranker
 from surf_rag.retrieval.routed import RoutedFusionPipeline
 from surf_rag.retrieval.types import RetrievalResult
 from surf_rag.router.inference_inputs import (
-    compute_query_tensors_for_router_batch,
+    compute_query_tensors_for_router,
     load_router_inference_context,
 )
 from surf_rag.router.policies import RoutingPolicyName
 from surf_rag.strategies.factory import build_dense_retriever, build_graph_retriever
 
 logger = logging.getLogger(__name__)
+
+
+class _UnusedRetriever:
+    """Guard retriever to catch unexpected branch execution."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def retrieve(self, query: str, **kwargs: object):  # pragma: no cover - defensive
+        raise RuntimeError(f"{self.name} retriever should not be used for this policy")
 
 
 def _load_benchmark(path: Path, limit: int | None) -> list[dict]:
@@ -149,6 +164,14 @@ def evaluate_e2e_run(
                 latency_ms={},
                 error="no_retrieval_row",
             )
+        if "retrieval_stage_total_ms" not in rr.latency_ms:
+            rr.latency_ms = canonicalize_latency_ms(
+                retriever_name=rr.retriever_name,
+                latency_ms=rr.latency_ms,
+                routing_input_ms=float(
+                    rr.latency_ms.get("routing_input_ms", 0.0) or 0.0
+                ),
+            )
 
         pe = aggregate_per_question(
             qid,
@@ -165,15 +188,27 @@ def evaluate_e2e_run(
                 "question_id": qid,
                 "retrieval": {str(s.k): s.to_json() for s in pe.retrieval_suites},
                 "qa": {"em": pe.em, "f1": pe.f1, "prediction": pred},
+                "latency_ms": dict(rr.latency_ms),
             }
         )
 
     report = aggregate_e2e_report(eval_rows, split_sets=split_sets, ks=DEFAULT_NDCG_KS)
+    startup_latency: dict[str, Any] = {}
+    if run_paths.manifest.is_file():
+        try:
+            manifest = json.loads(run_paths.manifest.read_text(encoding="utf-8"))
+            e2e_meta = manifest.get("e2e", {}) if isinstance(manifest, dict) else {}
+            if isinstance(e2e_meta, dict):
+                startup_latency = dict(e2e_meta.get("startup_latency_ms") or {})
+        except Exception:
+            startup_latency = {}
     return {
         "run_root": str(run_paths.run_root.resolve()),
         "split_question_ids": (
             str(split_question_ids_path) if split_question_ids_path else None
         ),
+        "latency_protocol_version": LATENCY_PROTOCOL_VERSION,
+        "startup_latency_ms": startup_latency,
         "overlap": report,
         "per_question": rows_out,
     }
@@ -203,6 +238,7 @@ def e2e_prepare_and_submit(
     router_device: str = "cpu",
     router_input_mode: str = "both",
     router_inference_batch_size: int = 32,
+    latency_warmup_questions: int = 0,
     dev_sync: bool = False,
     pipeline_config_for_artifact: Optional["PipelineConfig"] = None,
     run_paths_override: Optional[RunArtifactPaths] = None,
@@ -272,17 +308,44 @@ def e2e_prepare_and_submit(
         include_graph_provenance=include_graph_provenance,
     )
 
-    logger.info("Building dense + graph retrievers from %s", asset_dir)
-    dense_retriever = build_dense_retriever(str(asset_dir))
-    graph_retriever = build_graph_retriever(
-        str(asset_dir),
-        pipeline_config=pipeline_config_for_artifact,
+    startup_t0 = time.perf_counter()
+    startup_components: dict[str, float] = {}
+
+    need_dense = policy in (
+        RoutingPolicyName.DENSE_ONLY,
+        RoutingPolicyName.EQUAL_50_50,
+        RoutingPolicyName.LEARNED_SOFT,
+        RoutingPolicyName.LEARNED_HARD,
     )
+    need_graph = policy in (
+        RoutingPolicyName.GRAPH_ONLY,
+        RoutingPolicyName.EQUAL_50_50,
+        RoutingPolicyName.LEARNED_SOFT,
+        RoutingPolicyName.LEARNED_HARD,
+    )
+
+    if need_dense:
+        t_dense = time.perf_counter()
+        dense_retriever = build_dense_retriever(str(asset_dir))
+        startup_components["dense_init_ms"] = (time.perf_counter() - t_dense) * 1000.0
+    else:
+        dense_retriever = _UnusedRetriever("Dense")
+
+    if need_graph:
+        t_graph = time.perf_counter()
+        graph_retriever = build_graph_retriever(
+            str(asset_dir),
+            pipeline_config=pipeline_config_for_artifact,
+        )
+        startup_components["graph_init_ms"] = (time.perf_counter() - t_graph) * 1000.0
+    else:
+        graph_retriever = _UnusedRetriever("Graph")
 
     loaded_router = None
     router_ctx = None
     rb = router_base if router_base is not None else default_router_base()
     if policy in (RoutingPolicyName.LEARNED_SOFT, RoutingPolicyName.LEARNED_HARD):
+        t_router = time.perf_counter()
         router_ctx = load_router_inference_context(
             str(router_id),
             input_mode=router_input_mode,
@@ -290,7 +353,10 @@ def e2e_prepare_and_submit(
             retrieval_asset_dir=asset_dir,
             device=router_device,
         )
+        startup_components["router_init_ms"] = (time.perf_counter() - t_router) * 1000.0
         loaded_router = router_ctx.router
+
+    startup_total_ms = (time.perf_counter() - startup_t0) * 1000.0
 
     pipeline = RoutedFusionPipeline(
         dense_retriever,
@@ -331,6 +397,26 @@ def e2e_prepare_and_submit(
                 "router_id": router_id,
                 "router_input_mode": router_input_mode,
                 "router_inference_batch_size": router_inference_batch_size,
+                "latency_protocol": {
+                    "version": LATENCY_PROTOCOL_VERSION,
+                    "included_components": [
+                        "routing_input",
+                        "router_predict",
+                        "branch_retrieval",
+                        "fusion",
+                    ],
+                    "excluded_components": [
+                        "startup",
+                        "warmup",
+                        "reranker",
+                        "generation",
+                    ],
+                    "warmup_questions": int(max(0, latency_warmup_questions)),
+                },
+                "startup_latency_ms": {
+                    "startup_total_ms": float(startup_total_ms),
+                    "startup_components": startup_components,
+                },
             },
         },
     )
@@ -362,18 +448,22 @@ def e2e_prepare_and_submit(
         else None
     )
 
-    tensor_by_qid: dict[str, tuple] = {}
-    if router_ctx is not None and pending:
-        bs = max(1, int(router_inference_batch_size))
-        for i in range(0, len(pending), bs):
-            chunk = pending[i : i + bs]
-            qs = [str(s.get("question", "") or "").strip() for s in chunk]
-            qe, qf = compute_query_tensors_for_router_batch(
-                qs, router_ctx, st_batch_size=bs
+    warmup_n = int(max(0, latency_warmup_questions))
+    if warmup_n > 0 and pending:
+        warmup_samples = pending[: min(len(pending), warmup_n)]
+        for sample in warmup_samples:
+            question = str(sample.get("question", "") or "").strip()
+            if not question:
+                continue
+            q_emb = feat = None
+            if router_ctx is not None:
+                q_emb, feat = compute_query_tensors_for_router(question, router_ctx)
+            pipeline.run(
+                question,
+                policy,
+                query_embedding=q_emb,
+                feature_vector=feat,
             )
-            for j, s in enumerate(chunk):
-                qid = str(s.get("question_id", "") or "").strip()
-                tensor_by_qid[qid] = (qe[j : j + 1], qf[j : j + 1])
 
     retrieval_fp = paths.retrieval_results_jsonl().open("a", encoding="utf-8")
     skipped = 0
@@ -387,15 +477,23 @@ def e2e_prepare_and_submit(
                 skipped += 1
                 continue
 
+            routing_input_ms = 0.0
             q_emb = feat = None
             if router_ctx is not None:
-                q_emb, feat = tensor_by_qid[qid]
+                rt0 = time.perf_counter()
+                q_emb, feat = compute_query_tensors_for_router(question, router_ctx)
+                routing_input_ms = (time.perf_counter() - rt0) * 1000.0
 
             rr = pipeline.run(
                 question,
                 policy,
                 query_embedding=q_emb,
                 feature_vector=feat,
+            )
+            rr.latency_ms = canonicalize_latency_ms(
+                retriever_name=rr.retriever_name,
+                latency_ms=rr.latency_ms,
+                routing_input_ms=routing_input_ms,
             )
             rr = reranker.rerank(question, rr, top_k=rerank_top_k)
 

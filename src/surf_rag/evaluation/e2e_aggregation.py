@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, List, Optional, Sequence
 
+from surf_rag.evaluation.latency_metrics import summarize_latency
 from surf_rag.evaluation.qa_metrics import exact_match, max_f1_over_golds
 from surf_rag.evaluation.retrieval_metrics import (
     DEFAULT_NDCG_KS,
@@ -35,6 +36,7 @@ class PerQuestionEval:
     retrieval_suites: List[RankedMetricSuite]
     em: float
     f1: float
+    latency_ms: dict[str, float]
 
 
 def _empty_retrieval_means(ks: Sequence[int]) -> dict[str, dict[str, float]]:
@@ -113,6 +115,7 @@ def aggregate_per_question(
         retrieval_suites=suites,
         em=em,
         f1=f1,
+        latency_ms=dict(result.latency_ms),
     )
 
 
@@ -132,6 +135,16 @@ def aggregate_e2e_report(
             "count": len(bucket),
             "retrieval_at_k": _mean_retrieval(bucket, k_list),
             "qa": _mean_qa(bucket),
+            "latency_ms": {
+                "retrieval_stage_total": summarize_latency(
+                    [
+                        float(r.latency_ms.get("retrieval_stage_total_ms"))
+                        for r in bucket
+                        if "retrieval_stage_total_ms" in r.latency_ms
+                    ],
+                    total_count=len(bucket),
+                )
+            },
         }
     return report
 

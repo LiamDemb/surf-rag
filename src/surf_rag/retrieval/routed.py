@@ -75,6 +75,7 @@ class RoutedFusionPipeline:
 
         t0 = time.perf_counter()
         pred_weight: Optional[float] = None
+        routing_predict_ms = 0.0
         if policy in (
             RoutingPolicyName.LEARNED_SOFT,
             RoutingPolicyName.LEARNED_HARD,
@@ -85,7 +86,9 @@ class RoutedFusionPipeline:
                 raise ValueError(
                     "learned policies require query_embedding and feature_vector"
                 )
+            p0 = time.perf_counter()
             pred = predict_batch(self.router, query_embedding, feature_vector)
+            routing_predict_ms = (time.perf_counter() - p0) * 1000.0
             pred_weight = float(pred.reshape(-1)[0])
 
         decision = decide_routing(policy, predicted_weight=pred_weight)
@@ -103,6 +106,7 @@ class RoutedFusionPipeline:
                 chunks=out.chunks,
                 latency_ms={
                     **dict(out.latency_ms),
+                    "routing_predict_ms": routing_predict_ms,
                     "total_ms": (time.perf_counter() - t0) * 1000.0,
                 },
                 error=out.error,
@@ -121,6 +125,7 @@ class RoutedFusionPipeline:
                 chunks=out.chunks,
                 latency_ms={
                     **dict(out.latency_ms),
+                    "routing_predict_ms": routing_predict_ms,
                     "total_ms": (time.perf_counter() - t0) * 1000.0,
                 },
                 error=out.error,
@@ -148,7 +153,15 @@ class RoutedFusionPipeline:
             retriever_name=FUSED_RETRIEVER_NAME,
             status=fused.status,
             chunks=fused.chunks,
-            latency_ms=fused.latency_ms,
+            latency_ms={
+                **dict(fused.latency_ms),
+                "routing_predict_ms": routing_predict_ms,
+                "total_ms": float(
+                    dict(fused.latency_ms).get(
+                        "total_ms", fused.latency_ms.get("total", 0.0)
+                    )
+                ),
+            },
             error=fused.error,
             debug_info=di,
         )

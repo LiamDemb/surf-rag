@@ -308,6 +308,8 @@ def merge_e2e_prepare_args(
         args.router_input_mode = e.router_input_mode
     if not argv_provides(argv, "--router-inference-batch-size"):
         args.router_inference_batch_size = e.router_inference_batch_size
+    if not argv_provides(argv, "--latency-warmup-questions"):
+        args.latency_warmup_questions = e.latency_warmup_questions
     if e.only_question_ids and not argv_provides(argv, "--only-question-id"):
         args.only_question_id = list(e.only_question_ids)
 

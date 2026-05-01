@@ -158,6 +158,7 @@ class E2ESection:
     router_device: str = "cpu"
     router_input_mode: str = "both"
     router_inference_batch_size: int = 32
+    latency_warmup_questions: int = 0
     limit: int | None = None
     only_question_ids: list[str] = field(default_factory=list)
     dry_run: bool = False

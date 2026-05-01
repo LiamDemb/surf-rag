@@ -55,14 +55,18 @@ def test_dense_only_one_branch() -> None:
     assert d.calls == 1 and g.calls == 0
     assert out.status == "OK"
     assert len(out.chunks) == 2
+    assert "total_ms" in out.latency_ms
 
 
 def test_50_50_both_branches() -> None:
     d = _CountingRetriever("Dense", _ok("Dense", ["a"]))
     g = _CountingRetriever("Graph", _ok("Graph", ["b"]))
     pl = RoutedFusionPipeline(d, g, fusion_keep_k=5, router=None)
-    pl.run("q", RoutingPolicyName.EQUAL_50_50)
+    out = pl.run("q", RoutingPolicyName.EQUAL_50_50)
     assert d.calls == 1 and g.calls == 1
+    assert "dense_retrieval" in out.latency_ms
+    assert "graph_retrieval" in out.latency_ms
+    assert "fusion" in out.latency_ms
 
 
 def test_learned_soft_with_router() -> None:

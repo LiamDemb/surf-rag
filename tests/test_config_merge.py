@@ -126,6 +126,7 @@ def test_e2e_prepare_cli_run_id_overrides_config() -> None:
     args.router_device = "cpu"
     args.router_input_mode = "both"
     args.router_inference_batch_size = 32
+    args.latency_warmup_questions = 0
     args.only_question_id = []
     merge_e2e_prepare_args(
         args,
@@ -140,6 +141,7 @@ def test_e2e_prepare_cli_run_id_overrides_config() -> None:
         ],
     )
     assert args.run_id == "from-cli"
+    assert args.latency_warmup_questions == cfg.e2e.latency_warmup_questions
 
 
 def test_e2e_common_fills_benchmark_path() -> None:
