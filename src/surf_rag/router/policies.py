@@ -13,6 +13,7 @@ class RoutingPolicyName(str, Enum):
     EQUAL_50_50 = "50-50"
     DENSE_ONLY = "dense-only"
     GRAPH_ONLY = "graph-only"
+    ORACLE_UPPER_BOUND = "oracle-upper-bound"
 
 
 @dataclass(frozen=True)
@@ -63,6 +64,11 @@ def decide_routing(
             predicted_weight=None,
             hard_branch="graph",
             tie_break=None,
+        )
+    if policy == RoutingPolicyName.ORACLE_UPPER_BOUND:
+        raise ValueError(
+            "oracle-upper-bound decisions are computed from oracle_scores and must be "
+            "handled in the e2e evaluation layer."
         )
     if predicted_weight is None:
         raise ValueError("learned policies require predicted_weight")

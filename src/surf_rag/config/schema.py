@@ -148,6 +148,7 @@ class E2ESection:
             "50-50",
             "learned-soft",
             "learned-hard",
+            "oracle-upper-bound",
         ]
     )
     branch_top_k: int = 20

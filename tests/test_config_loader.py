@@ -92,6 +92,17 @@ def test_validate_e2e_learned_requires_router_id() -> None:
         validate_e2e_config(cfg)
 
 
+def test_validate_e2e_oracle_upper_bound_requires_router_id() -> None:
+    cfg = pipeline_config_from_dict(
+        {
+            "paths": {"router_id": ""},
+            "e2e": {"policy": "oracle-upper-bound"},
+        }
+    )
+    with pytest.raises(ValueError, match="router_id"):
+        validate_e2e_config(cfg)
+
+
 def test_minimal_yaml_roundtrip(tmp_path: Path) -> None:
     p = tmp_path / "m.yaml"
     p.write_text(

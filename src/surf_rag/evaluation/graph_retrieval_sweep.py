@@ -383,10 +383,10 @@ def run_retrieval_only_trial(
     validate_e2e_config(cfg)
     e = cfg.e2e
     policy = parse_routing_policy(e.policy)
-    if policy != RoutingPolicyName.GRAPH_ONLY:
+    if policy != RoutingPolicyName.GRAPH_ONLY.value:
         raise ValueError(
             "graph_retrieval_sweep requires e2e.policy == graph-only "
-            f"(got {policy.value!r})."
+            f"(got {policy!r})."
         )
 
     rp = resolve_paths(cfg)
@@ -417,7 +417,7 @@ def run_retrieval_only_trial(
         for sample in rows:
             question = str(sample.get("question", "")).strip()
             qid = str(sample.get("question_id", "")).strip()
-            rr = pipeline.run(question, policy)
+            rr = pipeline.run(question, RoutingPolicyName(policy))
             rr = reranker.rerank(question, rr, top_k=e.rerank_top_k)
             write_retrieval_line(retrieval_fp, rr, qid)
 
@@ -534,7 +534,7 @@ def run_cartesian_sweep(
     rp0 = resolve_paths(base)
     validate_e2e_config(base)
     pol = parse_routing_policy(base.e2e.policy)
-    if pol != RoutingPolicyName.GRAPH_ONLY:
+    if pol != RoutingPolicyName.GRAPH_ONLY.value:
         raise ValueError(
             "This sweep requires e2e.policy: graph-only in the base config."
         )

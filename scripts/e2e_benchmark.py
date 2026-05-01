@@ -29,6 +29,10 @@ from surf_rag.evaluation.e2e_runner import (
     e2e_prepare_and_submit,
     make_e2e_run_paths,
 )
+from surf_rag.evaluation.e2e_policies import (
+    ORACLE_UPPER_BOUND_POLICY,
+    parse_routing_policy,
+)
 from surf_rag.evaluation.router_dataset_artifacts import (
     make_router_dataset_paths_for_cli,
 )
@@ -50,7 +54,10 @@ def _add_common(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--policy",
         default=None,
-        help="Routing policy: learned-soft, learned-hard, 50-50, dense-only, graph-only",
+        help=(
+            "Routing policy: learned-soft, learned-hard, 50-50, dense-only, "
+            "graph-only, oracle-upper-bound"
+        ),
     )
     p.add_argument("--retrieval-asset-dir", type=Path, default=None)
 
@@ -81,6 +88,20 @@ def cmd_prepare(args: argparse.Namespace) -> int:
         except ValueError as e:
             log.error("%s", e)
             return 2
+    try:
+        policy = parse_routing_policy(args.policy)
+    except ValueError as e:
+        log.error("%s", e)
+        return 2
+    if policy == ORACLE_UPPER_BOUND_POLICY:
+        if not args.router_id or not str(args.router_id).strip():
+            log.error(
+                "oracle-upper-bound requires --router-id (or config paths.router_id)."
+            )
+            return 2
+        if str(args.split).strip().lower() != "test":
+            log.error("oracle-upper-bound is test-only; use --split test.")
+            return 2
     bb = args.benchmark_base or default_benchmark_base()
     return e2e_prepare_and_submit(
         args.benchmark_path.resolve(),
@@ -89,7 +110,7 @@ def cmd_prepare(args: argparse.Namespace) -> int:
         benchmark_id=args.benchmark_id,
         split=args.split,
         run_id=args.run_id,
-        routing_policy=args.policy,
+        routing_policy=policy,
         retrieval_asset_dir=args.retrieval_asset_dir.resolve(),
         router_id=args.router_id,
         router_base=args.router_base,
@@ -121,9 +142,11 @@ def cmd_collect(args: argparse.Namespace) -> int:
         log.error("Missing required E2E fields (use --config or CLI flags).")
         return 2
     bb = args.benchmark_base or default_benchmark_base()
-    from surf_rag.evaluation.e2e_policies import parse_routing_policy
-
-    policy = parse_routing_policy(args.policy)
+    try:
+        policy = parse_routing_policy(args.policy)
+    except ValueError as e:
+        log.error("%s", e)
+        return 2
     paths = make_e2e_run_paths(
         benchmark_base=bb,
         benchmark_name=args.benchmark_name,
@@ -145,9 +168,11 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
         log.error("Missing required E2E fields (use --config or CLI flags).")
         return 2
     bb = args.benchmark_base or default_benchmark_base()
-    from surf_rag.evaluation.e2e_policies import parse_routing_policy
-
-    policy = parse_routing_policy(args.policy)
+    try:
+        policy = parse_routing_policy(args.policy)
+    except ValueError as e:
+        log.error("%s", e)
+        return 2
     paths = make_e2e_run_paths(
         benchmark_base=bb,
         benchmark_name=args.benchmark_name,
@@ -184,9 +209,11 @@ def cmd_print_config(args: argparse.Namespace) -> int:
         log.error("Missing required E2E fields (use --config or CLI flags).")
         return 2
     bb = args.benchmark_base or default_benchmark_base()
-    from surf_rag.evaluation.e2e_policies import parse_routing_policy
-
-    policy = parse_routing_policy(args.policy)
+    try:
+        policy = parse_routing_policy(args.policy)
+    except ValueError as e:
+        log.error("%s", e)
+        return 2
     paths = make_e2e_run_paths(
         benchmark_base=bb,
         benchmark_name=args.benchmark_name,

@@ -30,8 +30,15 @@ from surf_rag.evaluation.latency_metrics import (
     canonicalize_latency_ms,
 )
 from surf_rag.evaluation.e2e_policies import (
+    ORACLE_UPPER_BOUND_POLICY,
     e2e_pipeline_manifest_name,
     parse_routing_policy,
+)
+from surf_rag.evaluation.oracle_artifacts import (
+    OracleRunPaths,
+    build_oracle_run_root,
+    read_jsonl,
+    read_retrieval_cache,
 )
 from surf_rag.evaluation.manifest import update_manifest_artifacts, write_manifest
 from surf_rag.evaluation.retrieval_jsonl import (
@@ -39,6 +46,9 @@ from surf_rag.evaluation.retrieval_jsonl import (
     write_retrieval_line,
 )
 from surf_rag.evaluation.router_overlap import RouterSplitSets
+from surf_rag.evaluation.router_dataset_artifacts import (
+    make_router_dataset_paths_for_cli,
+)
 from surf_rag.evaluation.run_artifacts import (
     RunArtifactPaths,
     make_generation_custom_id,
@@ -52,7 +62,8 @@ from surf_rag.generation.batch_orchestrator import (
 )
 from surf_rag.generation.prompt_renderer import PromptRenderer
 from surf_rag.reranking.reranker import build_reranker
-from surf_rag.retrieval.routed import RoutedFusionPipeline
+from surf_rag.retrieval.fusion import build_fused_retrieval_result
+from surf_rag.retrieval.routed import RoutedFusionPipeline, trim_retrieval_top_k
 from surf_rag.retrieval.types import RetrievalResult
 from surf_rag.router.inference_inputs import (
     compute_query_tensors_for_router,
@@ -120,16 +131,93 @@ def _load_answers_rows(path: Path) -> dict[str, dict]:
     return out
 
 
+def _read_router_test_qids(split_question_ids_path: Path) -> set[str]:
+    payload = json.loads(split_question_ids_path.read_text(encoding="utf-8"))
+    return {str(qid).strip() for qid in (payload.get("test") or []) if str(qid).strip()}
+
+
+def _read_oracle_scores_by_qid(path: Path) -> dict[str, dict[str, Any]]:
+    out: dict[str, dict[str, Any]] = {}
+    for row in read_jsonl(path):
+        qid = str(row.get("question_id", "")).strip()
+        if qid:
+            out[qid] = row
+    return out
+
+
+def _validate_oracle_test_alignment(
+    *,
+    benchmark_qids: set[str],
+    test_qids: set[str],
+    scores_by_qid: dict[str, dict[str, Any]],
+    dense_cache: dict[str, RetrievalResult],
+    graph_cache: dict[str, RetrievalResult],
+) -> None:
+    missing_in_benchmark = sorted(qid for qid in test_qids if qid not in benchmark_qids)
+    if missing_in_benchmark:
+        preview = ", ".join(missing_in_benchmark[:10])
+        raise ValueError(
+            "oracle-upper-bound strict check failed: test qids missing from benchmark "
+            f"(showing up to 10): {preview}"
+        )
+    missing_scores = sorted(qid for qid in test_qids if qid not in scores_by_qid)
+    if missing_scores:
+        preview = ", ".join(missing_scores[:10])
+        raise ValueError(
+            "oracle-upper-bound strict check failed: test qids missing in "
+            f"oracle_scores.jsonl (showing up to 10): {preview}"
+        )
+    missing_dense = sorted(qid for qid in test_qids if qid not in dense_cache)
+    if missing_dense:
+        preview = ", ".join(missing_dense[:10])
+        raise ValueError(
+            "oracle-upper-bound strict check failed: test qids missing in "
+            f"retrieval_dense.jsonl (showing up to 10): {preview}"
+        )
+    missing_graph = sorted(qid for qid in test_qids if qid not in graph_cache)
+    if missing_graph:
+        preview = ", ".join(missing_graph[:10])
+        raise ValueError(
+            "oracle-upper-bound strict check failed: test qids missing in "
+            f"retrieval_graph.jsonl (showing up to 10): {preview}"
+        )
+    bad_bins: list[str] = []
+    for qid in sorted(test_qids):
+        row = scores_by_qid[qid]
+        scores = list(row.get("scores") or [])
+        try:
+            idx = int(row.get("best_bin_index"))
+        except Exception:
+            idx = -1
+        if idx < 0 or idx >= len(scores):
+            bad_bins.append(qid)
+            continue
+        w = scores[idx].get("dense_weight")
+        try:
+            fw = float(w)
+        except Exception:
+            bad_bins.append(qid)
+            continue
+        if fw < 0.0 or fw > 1.0:
+            bad_bins.append(qid)
+    if bad_bins:
+        preview = ", ".join(bad_bins[:10])
+        raise ValueError(
+            "oracle-upper-bound strict check failed: invalid best_bin_index or "
+            f"dense_weight in oracle_scores.jsonl (showing up to 10): {preview}"
+        )
+
+
 def make_e2e_run_paths(
     *,
     benchmark_base: Path,
     benchmark_name: str,
     benchmark_id: str,
-    policy: RoutingPolicyName,
+    policy: str,
     run_id: str,
 ) -> RunArtifactPaths:
     run_root = e2e_policy_run_dir(
-        benchmark_base, benchmark_name, benchmark_id, policy.value, run_id
+        benchmark_base, benchmark_name, benchmark_id, policy, run_id
     )
     return RunArtifactPaths(run_root=run_root)
 
@@ -410,15 +498,23 @@ def e2e_prepare_and_submit(
     ``evaluations/<policy>/<run_id>/`` (used by graph retrieval grid search).
     """
     policy = (
-        routing_policy
+        routing_policy.value
         if isinstance(routing_policy, RoutingPolicyName)
         else parse_routing_policy(routing_policy)
     )
     pipeline_name = e2e_pipeline_manifest_name(policy)
 
-    if policy in (RoutingPolicyName.LEARNED_SOFT, RoutingPolicyName.LEARNED_HARD):
+    if policy in (
+        RoutingPolicyName.LEARNED_SOFT.value,
+        RoutingPolicyName.LEARNED_HARD.value,
+        ORACLE_UPPER_BOUND_POLICY,
+    ):
         if not router_id or not str(router_id).strip():
-            raise ValueError("router_id is required for learned routing policies")
+            raise ValueError(
+                "router_id is required for learned routing policies and oracle-upper-bound"
+            )
+    if policy == ORACLE_UPPER_BOUND_POLICY and str(split).strip().lower() != "test":
+        raise ValueError("oracle-upper-bound is test-only; use --split test")
 
     paths = (
         run_paths_override
@@ -473,16 +569,16 @@ def e2e_prepare_and_submit(
     startup_components: dict[str, float] = {}
 
     need_dense = policy in (
-        RoutingPolicyName.DENSE_ONLY,
-        RoutingPolicyName.EQUAL_50_50,
-        RoutingPolicyName.LEARNED_SOFT,
-        RoutingPolicyName.LEARNED_HARD,
+        RoutingPolicyName.DENSE_ONLY.value,
+        RoutingPolicyName.EQUAL_50_50.value,
+        RoutingPolicyName.LEARNED_SOFT.value,
+        RoutingPolicyName.LEARNED_HARD.value,
     )
     need_graph = policy in (
-        RoutingPolicyName.GRAPH_ONLY,
-        RoutingPolicyName.EQUAL_50_50,
-        RoutingPolicyName.LEARNED_SOFT,
-        RoutingPolicyName.LEARNED_HARD,
+        RoutingPolicyName.GRAPH_ONLY.value,
+        RoutingPolicyName.EQUAL_50_50.value,
+        RoutingPolicyName.LEARNED_SOFT.value,
+        RoutingPolicyName.LEARNED_HARD.value,
     )
 
     if need_dense:
@@ -505,7 +601,10 @@ def e2e_prepare_and_submit(
     loaded_router = None
     router_ctx = None
     rb = router_base if router_base is not None else default_router_base()
-    if policy in (RoutingPolicyName.LEARNED_SOFT, RoutingPolicyName.LEARNED_HARD):
+    if policy in (
+        RoutingPolicyName.LEARNED_SOFT.value,
+        RoutingPolicyName.LEARNED_HARD.value,
+    ):
         t_router = time.perf_counter()
         router_ctx = load_router_inference_context(
             str(router_id),
@@ -554,7 +653,7 @@ def e2e_prepare_and_submit(
             "e2e": {
                 "schema": "surf-rag/e2e/v1",
                 "benchmark_id": benchmark_id,
-                "routing_policy": policy.value,
+                "routing_policy": policy,
                 "fusion_keep_k": fusion_keep_k,
                 "reranker": reranker_kind,
                 "rerank_top_k": rerank_top_k,
@@ -596,11 +695,45 @@ def e2e_prepare_and_submit(
             pipeline_config_for_artifact,
             rp,
         )
-        from surf_rag.evaluation.manifest import update_manifest_artifacts
-
         update_manifest_artifacts(paths, {"resolved_config": "resolved_config.yaml"})
 
     records: List[BatchRequestRecord] = []
+    if policy == ORACLE_UPPER_BOUND_POLICY:
+        rb = router_base if router_base is not None else default_router_base()
+        oracle_paths = OracleRunPaths(
+            run_root=build_oracle_run_root(rb, str(router_id).strip())
+        )
+        split_ids_path = make_router_dataset_paths_for_cli(
+            str(router_id).strip(), router_base=rb
+        ).split_question_ids
+        if not split_ids_path.is_file():
+            raise FileNotFoundError(
+                "oracle-upper-bound requires router test split ids at "
+                f"{split_ids_path}"
+            )
+        test_qids = _read_router_test_qids(split_ids_path)
+        if not test_qids:
+            raise ValueError(
+                "oracle-upper-bound strict check failed: router test split is empty"
+            )
+        scores_by_qid = _read_oracle_scores_by_qid(oracle_paths.oracle_scores)
+        dense_cache = read_retrieval_cache(oracle_paths.retrieval_dense)
+        graph_cache = read_retrieval_cache(oracle_paths.retrieval_graph)
+        benchmark_qids = {str(s.get("question_id", "")).strip() for s in samples}
+        _validate_oracle_test_alignment(
+            benchmark_qids=benchmark_qids,
+            test_qids=test_qids,
+            scores_by_qid=scores_by_qid,
+            dense_cache=dense_cache,
+            graph_cache=graph_cache,
+        )
+        samples = [
+            s for s in samples if str(s.get("question_id", "")).strip() in test_qids
+        ]
+        logger.info(
+            "oracle-upper-bound using %d test questions from router split ids.",
+            len(samples),
+        )
     pending = [
         s
         for s in samples
@@ -614,7 +747,7 @@ def e2e_prepare_and_submit(
     )
 
     warmup_n = int(max(0, latency_warmup_questions))
-    if warmup_n > 0 and pending:
+    if warmup_n > 0 and pending and policy != ORACLE_UPPER_BOUND_POLICY:
         warmup_samples = pending[: min(len(pending), warmup_n)]
         for sample in warmup_samples:
             question = str(sample.get("question", "") or "").strip()
@@ -625,7 +758,7 @@ def e2e_prepare_and_submit(
                 q_emb, feat = compute_query_tensors_for_router(question, router_ctx)
             pipeline.run(
                 question,
-                policy,
+                RoutingPolicyName(policy),
                 query_embedding=q_emb,
                 feature_vector=feat,
             )
@@ -652,19 +785,58 @@ def e2e_prepare_and_submit(
                 q_emb, feat = compute_query_tensors_for_router(question, router_ctx)
                 routing_input_ms = (time.perf_counter() - rt0) * 1000.0
 
-            routed = pipeline.run_with_pretrunc(
-                question,
-                policy,
-                query_embedding=q_emb,
-                feature_vector=feat,
-            )
-            rr_pre = routed.pretrunc_result
+            if policy == ORACLE_UPPER_BOUND_POLICY:
+                if (
+                    qid not in scores_by_qid
+                    or qid not in dense_cache
+                    or qid not in graph_cache
+                ):
+                    raise ValueError(
+                        "oracle-upper-bound strict check failed during retrieval loop "
+                        f"for question_id={qid}"
+                    )
+                score_row = scores_by_qid[qid]
+                best_idx = int(score_row["best_bin_index"])
+                score_bin = list(score_row.get("scores") or [])[best_idx]
+                dense_weight = float(score_bin["dense_weight"])
+                dense_cached = dense_cache[qid]
+                graph_cached = graph_cache[qid]
+                t_oracle = time.perf_counter()
+                rr_pre = build_fused_retrieval_result(
+                    query=question,
+                    dense=dense_cached,
+                    graph=graph_cached,
+                    dense_weight=dense_weight,
+                    fusion_keep_k=None,
+                    fusion_ms=(time.perf_counter() - t_oracle) * 1000.0,
+                    total_ms=(time.perf_counter() - t_oracle) * 1000.0,
+                )
+                rr = trim_retrieval_top_k(rr_pre, fusion_keep_k)
+                oracle_debug = {
+                    "routing_policy": ORACLE_UPPER_BOUND_POLICY,
+                    "oracle_dense_weight": dense_weight,
+                    "oracle_best_bin_index": best_idx,
+                    "oracle_source_router_id": str(router_id),
+                }
+                rr_pre.debug_info = {
+                    **dict(rr_pre.debug_info or {}),
+                    "routing": oracle_debug,
+                }
+                rr.debug_info = {**dict(rr.debug_info or {}), "routing": oracle_debug}
+            else:
+                routed = pipeline.run_with_pretrunc(
+                    question,
+                    RoutingPolicyName(policy),
+                    query_embedding=q_emb,
+                    feature_vector=feat,
+                )
+                rr_pre = routed.pretrunc_result
+                rr = routed.generation_result
             rr_pre.latency_ms = canonicalize_latency_ms(
                 retriever_name=rr_pre.retriever_name,
                 latency_ms=rr_pre.latency_ms,
                 routing_input_ms=routing_input_ms,
             )
-            rr = routed.generation_result
             rr.latency_ms = canonicalize_latency_ms(
                 retriever_name=rr.retriever_name,
                 latency_ms=rr.latency_ms,

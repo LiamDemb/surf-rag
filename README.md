@@ -44,9 +44,20 @@ To compare runs, use `metrics.json` (and optional `predictions_*.jsonl`) under e
 
 Benchmark bundles are defined in your pipeline YAML (`paths.benchmark_base`, `benchmark_name`, `benchmark_id`). Routed retrieval, optional cross-encoder reranking, OpenAI Batch generation, and overlap-split metrics are documented in **[docs/dev/end-to-end-system-and-evaluation.md](docs/dev/end-to-end-system-and-evaluation.md)**. Make targets: `e2e-prepare`, `e2e-submit`, `e2e-collect`, `e2e-evaluate`, `e2e-smoke-test-v01` (all use `CONFIG`, default `configs/pipelines/surf-bench-200.yaml`).
 
+`e2e.policy` supports `dense-only`, `graph-only`, `50-50`, `learned-soft`, `learned-hard`, and `oracle-upper-bound`.
+For `oracle-upper-bound`, retrieval is oracle-soft (per-question best fusion bin from `oracle_scores.jsonl`), is benchmark-scoped under `evaluations/oracle-upper-bound/<run_id>/`, is test-only, and fails fast if router test QIDs are missing in oracle artifacts.
+
 **Config-driven runs:** every stage uses `--config "$(CONFIG)"`. Override with `CONFIG=...` or `make print-resolved-config`. See **[docs/config-driven-workflows.md](docs/config-driven-workflows.md)** and `configs/templates/`.
 
 **LLM QA generation** always uses a forced OpenAI **`format_answer`** tool call (`reasoning` plus short `answer`). Batch collect writes `answer` (for EM/F1), `generation_reasoning`, and optional `generation_parse_error` into `generation/answers.jsonl`.
+
+### Oracle retrieval upper-bound report
+
+You can aggregate retrieval-only oracle upper-bound metrics on the router test split without rerunning retrieval:
+
+- `poetry run python -m scripts.router.report_oracle_upper_bound --config <pipeline.yaml>`
+- Output defaults to `data/router/<router_id>/oracle/reports/oracle_upper_bound_test.json`
+- Metrics include NDCG/Hit/Recall at `@5`, `@10`, and `@20`
 
 ### Model cache and corpus entity artifacts
 

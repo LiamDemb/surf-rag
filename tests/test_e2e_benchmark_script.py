@@ -5,6 +5,7 @@ from argparse import Namespace
 from pathlib import Path
 
 from surf_rag.evaluation.artifact_paths import e2e_policy_run_dir
+from scripts.e2e_benchmark import cmd_prepare
 
 
 def _write_benchmark(path: Path) -> None:
@@ -98,3 +99,35 @@ def test_cmd_evaluate_emits_family_separated_metrics(
     all_block = report["overlap_breakdown"]["all"]
     assert "retrieval_before_ce" in all_block
     assert "retrieval_after_ce" in all_block
+
+
+def test_cmd_prepare_oracle_upper_bound_rejects_non_test_split(tmp_path: Path) -> None:
+    args = Namespace(
+        benchmark_base=tmp_path,
+        benchmark_name="surf",
+        benchmark_id="main",
+        benchmark_path=tmp_path / "bench.jsonl",
+        split="dev",
+        run_id="r1",
+        policy="oracle-upper-bound",
+        retrieval_asset_dir=tmp_path,
+        router_id="rid",
+        router_base=tmp_path / "router",
+        fusion_keep_k=20,
+        reranker="none",
+        rerank_top_k=10,
+        cross_encoder_model=None,
+        limit=None,
+        only_question_id=[],
+        completion_window="24h",
+        include_graph_provenance=False,
+        dry_run=True,
+        router_device="cpu",
+        router_input_mode="both",
+        router_inference_batch_size=32,
+        latency_warmup_questions=0,
+        dev_sync=False,
+        _pipeline_config=None,
+    )
+    rc = cmd_prepare(args)
+    assert rc == 2

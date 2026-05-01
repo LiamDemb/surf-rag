@@ -303,6 +303,8 @@ def config_to_resolved_dict(cfg: PipelineConfig, rp: ResolvedPaths) -> dict[str,
 
 def validate_e2e_config(cfg: PipelineConfig) -> None:
     pol = (cfg.e2e.policy or "").strip().lower().replace("_", "-")
-    if pol in ("learned-soft", "learned-hard"):
+    if pol in ("learned-soft", "learned-hard", "oracle-upper-bound"):
         if not str(cfg.paths.router_id).strip():
-            raise ValueError("e2e policy learned-* requires paths.router_id")
+            raise ValueError(
+                "e2e policy learned-* and oracle-upper-bound require paths.router_id"
+            )
