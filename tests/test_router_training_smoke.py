@@ -29,7 +29,7 @@ pytest.importorskip("torch")
 import torch  # noqa: E402
 
 
-def _row(qid: str, split: str) -> dict:
+def _row(qid: str, split: str, *, valid: bool = True) -> dict:
     w = [float(x) for x in DEFAULT_DENSE_WEIGHT_GRID]
     c = [float(x) for x in DEFAULT_DENSE_WEIGHT_GRID]
     return {
@@ -43,7 +43,7 @@ def _row(qid: str, split: str) -> dict:
         "oracle_best_weight": 1.0,
         "oracle_best_score": 1.0,
         "oracle_curve_std": 0.3,
-        "is_valid_for_router_training": True,
+        "is_valid_for_router_training": valid,
         "weight_grid": w,
         "feature_set_version": "1",
         "embedding_model": "m",
@@ -149,3 +149,65 @@ def test_train_smoke_query_features(tmp_path: Path) -> None:
     save_checkpoint(out_model.checkpoint, result.model, mcfg)
     assert out_model.checkpoint.is_file()
     assert (tmp_path / "t2" / "model" / "query-features" / "model.pt").is_file()
+
+
+def test_train_ignores_invalid_rows_in_metrics(tmp_path: Path) -> None:
+    rows = [
+        _row("a", "train", valid=True),
+        _row("b", "train", valid=False),
+        _row("c", "dev", valid=False),
+        _row("d", "test", valid=True),
+        _row("e", "test", valid=False),
+    ]
+    df = pd.DataFrame(rows)
+    pq = tmp_path / "r3.parquet"
+    df.to_parquet(pq, index=False)
+    cfg = RouterTrainConfig(
+        parquet_path=pq,
+        router_id="t3",
+        output_dir=tmp_path / "out3",
+        epochs=2,
+        batch_size=2,
+        early_stopping_patience=100,
+        device="cpu",
+        input_mode="both",
+    )
+    result = train_router(cfg)
+    tr = result.metrics["train"]
+    dv = result.metrics["dev"]
+    te = result.metrics["test"]
+    assert tr["num_rows_total"] == 2.0
+    assert tr["num_rows_router_eligible"] == 1.0
+    assert tr["num_rows_router_ignored_all_zero"] == 1.0
+    assert tr["num_rows"] == 1.0
+    assert dv["num_rows_total"] == 1.0
+    assert dv["num_rows_router_eligible"] == 0.0
+    assert dv["num_rows_router_ignored_all_zero"] == 1.0
+    assert dv["num_rows"] == 0.0
+    assert te["num_rows_total"] == 2.0
+    assert te["num_rows_router_eligible"] == 1.0
+    assert te["num_rows_router_ignored_all_zero"] == 1.0
+    assert result.metrics["router_quality_filtering"]["num_rows_total"] == 5.0
+    assert result.metrics["router_quality_filtering"]["num_rows_router_eligible"] == 2.0
+
+
+def test_train_fails_when_train_split_has_no_eligible_rows(tmp_path: Path) -> None:
+    rows = [
+        _row("a", "train", valid=False),
+        _row("b", "train", valid=False),
+        _row("c", "dev", valid=True),
+    ]
+    df = pd.DataFrame(rows)
+    pq = tmp_path / "r4.parquet"
+    df.to_parquet(pq, index=False)
+    cfg = RouterTrainConfig(
+        parquet_path=pq,
+        router_id="t4",
+        output_dir=tmp_path / "out4",
+        epochs=2,
+        batch_size=2,
+        device="cpu",
+        input_mode="both",
+    )
+    with pytest.raises(ValueError, match="No router-eligible rows in train split"):
+        train_router(cfg)

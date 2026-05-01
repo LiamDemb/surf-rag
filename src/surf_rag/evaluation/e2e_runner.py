@@ -364,6 +364,10 @@ def evaluate_e2e_run(
         "split_question_ids": (
             str(split_question_ids_path) if split_question_ids_path else None
         ),
+        "router_training_validity_policy": (
+            "e2e_includes_all_benchmark_questions_"
+            "regardless_of_router_training_validity"
+        ),
         "latency_protocol_version": LATENCY_PROTOCOL_VERSION,
         "startup_latency_ms": startup_latency,
         "overlap_breakdown": overlap_breakdown,

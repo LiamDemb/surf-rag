@@ -90,6 +90,28 @@ def _split_frame(df: pd.DataFrame, split: str) -> pd.DataFrame:
     return df[df["split"].astype(str).str.lower() == split.lower()].copy()
 
 
+def _eligible_mask(df: pd.DataFrame) -> pd.Series:
+    if "is_valid_for_router_training" not in df.columns:
+        return pd.Series([False] * len(df), index=df.index, dtype=bool)
+    return df["is_valid_for_router_training"].fillna(False).astype(bool)
+
+
+def _filter_router_eligible(df: pd.DataFrame) -> pd.DataFrame:
+    return df[_eligible_mask(df)].copy()
+
+
+def _split_router_row_counts(df: pd.DataFrame, split: str) -> Dict[str, float]:
+    sdf = _split_frame(df, split)
+    total = int(len(sdf))
+    eligible = int(_eligible_mask(sdf).sum()) if total > 0 else 0
+    ignored = total - eligible
+    return {
+        "num_rows_total": float(total),
+        "num_rows_router_eligible": float(eligible),
+        "num_rows_router_ignored_all_zero": float(ignored),
+    }
+
+
 def build_model_config_from_df(
     df: pd.DataFrame, cfg: RouterTrainConfig
 ) -> RouterMLPConfig:
@@ -133,10 +155,15 @@ def train_router(cfg: RouterTrainConfig) -> TrainRunResult:
     torch.manual_seed(cfg.seed)
 
     df = pd.read_parquet(cfg.parquet_path)
-    train_df = _split_frame(df, "train")
-    dev_df = _split_frame(df, "dev")
+    train_df_total = _split_frame(df, "train")
+    dev_df_total = _split_frame(df, "dev")
+    train_df = _filter_router_eligible(train_df_total)
+    dev_df = _filter_router_eligible(dev_df_total)
     if len(train_df) == 0:
-        raise ValueError("train split is empty in parquet")
+        raise ValueError(
+            "No router-eligible rows in train split. "
+            "All rows are marked is_valid_for_router_training=false."
+        )
 
     mcfg = build_model_config_from_df(train_df, cfg)
     model = RouterMLP(mcfg).to(cfg.device)
@@ -260,9 +287,20 @@ def _eval_splits(
     model.eval()
     out: Dict[str, Any] = {}
     for split in ("train", "dev", "test"):
-        sdf = _split_frame(df, split)
+        counts = _split_router_row_counts(df, split)
+        sdf_total = _split_frame(df, split)
+        if len(sdf_total) == 0:
+            out[split] = {
+                "num_rows": 0.0,
+                **counts,
+            }
+            continue
+        sdf = _filter_router_eligible(sdf_total)
         if len(sdf) == 0:
-            out[split] = {"num_rows": 0}
+            out[split] = {
+                "num_rows": 0.0,
+                **counts,
+            }
             continue
         x_e, x_f, y, valid, _, _ = _rows_to_arrays(sdf)
         x_e = torch.tensor(x_e, device=device, dtype=torch.float32)
@@ -277,7 +315,16 @@ def _eval_splits(
             weight_grid=wg_np,
         )
         m["num_rows"] = float(len(sdf))
+        m.update(counts)
         out[split] = m
+    out["router_quality_filtering"] = {
+        "reason": "all_zero_oracle_score",
+        "num_rows_total": float(len(df)),
+        "num_rows_router_eligible": float(_eligible_mask(df).sum()),
+        "num_rows_router_ignored_all_zero": float(
+            len(df) - int(_eligible_mask(df).sum())
+        ),
+    }
     out["config_summary"] = mcfg.to_json()
     return out
 

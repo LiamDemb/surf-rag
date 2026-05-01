@@ -128,6 +128,9 @@ def main() -> int:
             "input_mode": input_mode,
             "best_epoch": result.best_epoch,
             "splits": result.metrics,
+            "router_quality_filtering": dict(
+                result.metrics.get("router_quality_filtering") or {}
+            ),
         },
     )
     write_json(out_paths.training_history, {"history": result.history})

@@ -98,7 +98,14 @@ def main() -> int:
     metrics = _eval_splits(model, df, wg, device, mcfg)
     write_json(
         m_paths.metrics,
-        {"router_id": args.router_id, "input_mode": input_mode, "splits": metrics},
+        {
+            "router_id": args.router_id,
+            "input_mode": input_mode,
+            "splits": metrics,
+            "router_quality_filtering": dict(
+                metrics.get("router_quality_filtering") or {}
+            ),
+        },
     )
 
     for split in ("train", "dev", "test"):

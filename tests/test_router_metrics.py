@@ -40,3 +40,18 @@ def test_normalized_regret_uses_oracle_best_score_denominator() -> None:
     # Guard against accidental denominator regression to mean oracle-best weight (0.5),
     # which would incorrectly produce normalized_regret=2.0 here.
     assert m["normalized_regret"] != np.float32(2.0)
+
+
+def test_num_rows_counts_only_valid_mask_rows() -> None:
+    grid = np.asarray([0.0, 0.5, 1.0], dtype=np.float32)
+    curves = np.asarray(
+        [
+            [0.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ],
+        dtype=np.float32,
+    )
+    pred_w = np.asarray([0.5, 0.5], dtype=np.float32)
+    valid = np.asarray([True, False], dtype=bool)
+    m = aggregate_router_metrics(curves, pred_w, valid, grid)
+    assert m["num_rows"] == 1.0

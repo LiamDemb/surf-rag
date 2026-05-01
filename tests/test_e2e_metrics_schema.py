@@ -85,3 +85,42 @@ def test_metrics_schema_contains_family_status_and_reported_ks(tmp_path: Path) -
     }
     assert "reported_ks" in all_block["retrieval_before_ce"]
     assert "reported_ks" in all_block["retrieval_after_ce"]
+    assert (
+        report["router_training_validity_policy"]
+        == "e2e_includes_all_benchmark_questions_regardless_of_router_training_validity"
+    )
+
+
+def test_e2e_counts_all_questions_even_if_router_split_file_excludes_them(
+    tmp_path: Path,
+) -> None:
+    run = RunArtifactPaths(run_root=tmp_path / "run2")
+    run.ensure_dirs()
+    run.manifest.write_text(
+        json.dumps({"e2e": {"reranker": "none", "rerank_top_k": 10}}),
+        encoding="utf-8",
+    )
+    _write_retrieval(run.retrieval_results_jsonl())
+    _write_retrieval(run.retrieval_results_pretrunc_jsonl())
+    bench = tmp_path / "bench2.jsonl"
+    _write_benchmark(bench)
+    split_ids = tmp_path / "split_question_ids.json"
+    split_ids.write_text(
+        json.dumps(
+            {
+                "train": [],
+                "dev": [],
+                "test": [],
+                "counts": {"train": 0, "dev": 0, "test": 0},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = evaluate_e2e_run(
+        run_paths=run,
+        benchmark_path=bench,
+        split_question_ids_path=split_ids,
+    )
+    assert report["overlap_breakdown"]["all"]["count"] == 1
+    assert report["overlap_breakdown"]["unseen"]["count"] == 1
