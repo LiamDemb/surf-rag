@@ -60,6 +60,9 @@ class RunArtifactPaths:
     def retrieval_results_jsonl(self) -> Path:
         return self.retrieval_dir / "retrieval_results.jsonl"
 
+    def retrieval_results_pretrunc_jsonl(self) -> Path:
+        return self.retrieval_dir / "retrieval_results_pretrunc.jsonl"
+
     def batch_input_jsonl(self) -> Path:
         return self.batch_dir / "batch_input.jsonl"
 

@@ -181,7 +181,7 @@ class GraphRetrievalSweepSection:
     """
 
     grid: dict[str, Any] = field(default_factory=dict)
-    objective: str = "overlap.all.retrieval_at_k.10.ndcg"
+    objective: str = "overlap_breakdown.all.retrieval_before_ce.retrieval_at_k.10.ndcg"
     sweep_id: str | None = None
     use_router_overlap_splits: bool = False
 

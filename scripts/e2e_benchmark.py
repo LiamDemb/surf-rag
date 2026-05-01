@@ -220,7 +220,15 @@ def main() -> int:
     _add_common(p_prep)
     p_prep.add_argument("--router-id", default=None)
     p_prep.add_argument("--router-base", type=Path, default=None)
-    p_prep.add_argument("--fusion-keep-k", type=int, default=25)
+    p_prep.add_argument(
+        "--fusion-keep-k",
+        type=int,
+        default=25,
+        help=(
+            "Generation-context retrieval depth before LLM prompting; pure retrieval "
+            "metrics are sourced from pre-truncation retrieval artifacts."
+        ),
+    )
     p_prep.add_argument(
         "--reranker",
         default="none",

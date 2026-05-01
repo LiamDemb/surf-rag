@@ -428,7 +428,8 @@ def run_retrieval_only_trial(
     )
     score = float(get_nested(report, objective_path))
     all10 = (
-        ((report.get("overlap") or {}).get("all") or {})
+        ((report.get("overlap_breakdown") or {}).get("all") or {})
+        .get("retrieval_before_ce", {})
         .get("retrieval_at_k", {})
         .get("10", {})
     )
@@ -454,7 +455,7 @@ def run_retrieval_only_trial(
         metrics_path=str(metrics_path.resolve()),
         run_root=str(run_paths.run_root.resolve()),
         metric_all_count=int(
-            ((report.get("overlap") or {}).get("all") or {}).get("count", 0)
+            ((report.get("overlap_breakdown") or {}).get("all") or {}).get("count", 0)
         ),
         metric_all_ndcg_at_10=(
             float(all10["ndcg"])
@@ -518,7 +519,10 @@ def run_cartesian_sweep(
     resolved_objective = (
         objective_path
         if objective_path is not None
-        else (sweep_cfg.objective or "overlap.all.retrieval_at_k.10.ndcg")
+        else (
+            sweep_cfg.objective
+            or "overlap_breakdown.all.retrieval_before_ce.retrieval_at_k.10.ndcg"
+        )
     )
     resolved_sweep_id = (
         sweep_id

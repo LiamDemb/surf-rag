@@ -65,12 +65,12 @@ def fuse_branch_results(
     dense: RetrievalResult,
     graph: RetrievalResult,
     dense_weight: float,
-    fusion_keep_k: int,
+    fusion_keep_k: int | None,
 ) -> List[FusedCandidate]:
     """Merge dense+graph results into a ranked list of fused candidates."""
     if not 0.0 <= dense_weight <= 1.0:
         raise ValueError(f"dense_weight must be in [0.0, 1.0], got {dense_weight!r}")
-    if fusion_keep_k <= 0:
+    if fusion_keep_k is not None and fusion_keep_k <= 0:
         raise ValueError(f"fusion_keep_k must be > 0, got {fusion_keep_k!r}")
 
     graph_weight = 1.0 - dense_weight
@@ -124,6 +124,8 @@ def fuse_branch_results(
         )
 
     candidates.sort(key=lambda c: (-c.fused_score, c.chunk_id))
+    if fusion_keep_k is None:
+        return candidates
     return candidates[:fusion_keep_k]
 
 
@@ -181,7 +183,7 @@ def build_fused_retrieval_result(
     dense: RetrievalResult,
     graph: RetrievalResult,
     dense_weight: float,
-    fusion_keep_k: int,
+    fusion_keep_k: int | None,
     fusion_ms: float,
     total_ms: float,
 ) -> RetrievalResult:

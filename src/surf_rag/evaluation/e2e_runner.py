@@ -62,6 +62,7 @@ from surf_rag.router.policies import RoutingPolicyName
 from surf_rag.strategies.factory import build_dense_retriever, build_graph_retriever
 
 logger = logging.getLogger(__name__)
+_BASE_METRIC_KS: tuple[int, ...] = (5, 10, 20)
 
 
 class _UnusedRetriever:
@@ -85,6 +86,38 @@ def _load_benchmark(path: Path, limit: int | None) -> list[dict]:
             if limit and len(samples) >= limit:
                 break
     return samples
+
+
+def _load_retrieval_rows(path: Path) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    if not path.is_file():
+        return out
+    with path.open("r", encoding="utf-8") as fp:
+        for line in fp:
+            line = line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
+            qid = str(row.get("question_id", "") or "").strip()
+            if qid:
+                out[qid] = row
+    return out
+
+
+def _load_answers_rows(path: Path) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    if not path.is_file():
+        return out
+    with path.open("r", encoding="utf-8") as fp:
+        for line in fp:
+            line = line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
+            qid = str(row.get("question_id", "") or "").strip()
+            if qid:
+                out[qid] = row
+    return out
 
 
 def make_e2e_run_paths(
@@ -116,35 +149,39 @@ def evaluate_e2e_run(
     )
 
     retrieval_path = run_paths.retrieval_results_jsonl()
+    retrieval_pretrunc_path = run_paths.retrieval_results_pretrunc_jsonl()
     answers_path = run_paths.generation_answers_jsonl()
-    rows_out: list[dict[str, Any]] = []
-    eval_rows = []
+    manifest: dict[str, Any] = {}
+    e2e_meta: dict[str, Any] = {}
+    if run_paths.manifest.is_file():
+        try:
+            manifest = json.loads(run_paths.manifest.read_text(encoding="utf-8"))
+            if isinstance(manifest, dict):
+                e2e_meta = dict(manifest.get("e2e") or {})
+        except Exception:
+            manifest = {}
+            e2e_meta = {}
 
-    retrieval_by_qid: dict[str, dict] = {}
-    if retrieval_path.is_file():
-        with retrieval_path.open("r", encoding="utf-8") as rf:
-            for line in rf:
-                line = line.strip()
-                if not line:
-                    continue
-                rj = json.loads(line)
-                qid = str(rj.get("question_id", "") or "").strip()
-                if qid:
-                    retrieval_by_qid[qid] = rj
+    reranker_kind = str(e2e_meta.get("reranker", "") or "").strip().lower()
+    try:
+        rerank_top_k = int(e2e_meta.get("rerank_top_k", 0) or 0)
+    except Exception:
+        rerank_top_k = 0
 
-    answers_by_qid: dict[str, dict] = {}
-    if answers_path.is_file():
-        with answers_path.open("r", encoding="utf-8") as af:
-            for line in af:
-                line = line.strip()
-                if not line:
-                    continue
-                aj = json.loads(line)
-                qid = str(aj.get("question_id", "") or "").strip()
-                if qid:
-                    answers_by_qid[qid] = aj
-
+    retrieval_by_qid = _load_retrieval_rows(retrieval_path)
+    pretrunc_by_qid = _load_retrieval_rows(retrieval_pretrunc_path)
+    answers_by_qid = _load_answers_rows(answers_path)
     all_qids = sorted(set(bench) | set(retrieval_by_qid) | set(answers_by_qid))
+
+    rows_out: list[dict[str, Any]] = []
+    eval_rows_generation = []
+    eval_rows_pure = []
+    eval_rows_post_ce = []
+    overlap_keys = ("all", "train", "dev", "test", "unseen")
+    pure_available = retrieval_pretrunc_path.is_file()
+    ce_enabled = reranker_kind in ("cross_encoder", "cross-encoder", "ce")
+    ce_ks = [int(k) for k in DEFAULT_NDCG_KS if int(k) <= max(0, rerank_top_k)]
+
     for qid in all_qids:
         sample = bench.get(qid, {})
         gold_sents = list(sample.get("gold_support_sentences") or [])
@@ -154,9 +191,9 @@ def evaluate_e2e_run(
 
         rj = retrieval_by_qid.get(qid)
         if rj:
-            rr = dict_to_retrieval_result(rj)
+            rr_gen = dict_to_retrieval_result(rj)
         else:
-            rr = RetrievalResult(
+            rr_gen = RetrievalResult(
                 query=str(sample.get("question", "") or ""),
                 retriever_name="missing",
                 status="EMPTY",
@@ -164,44 +201,164 @@ def evaluate_e2e_run(
                 latency_ms={},
                 error="no_retrieval_row",
             )
-        if "retrieval_stage_total_ms" not in rr.latency_ms:
-            rr.latency_ms = canonicalize_latency_ms(
-                retriever_name=rr.retriever_name,
-                latency_ms=rr.latency_ms,
+        if "retrieval_stage_total_ms" not in rr_gen.latency_ms:
+            rr_gen.latency_ms = canonicalize_latency_ms(
+                retriever_name=rr_gen.retriever_name,
+                latency_ms=rr_gen.latency_ms,
                 routing_input_ms=float(
-                    rr.latency_ms.get("routing_input_ms", 0.0) or 0.0
+                    rr_gen.latency_ms.get("routing_input_ms", 0.0) or 0.0
                 ),
             )
-
-        pe = aggregate_per_question(
+        pe_gen = aggregate_per_question(
             qid,
-            result=rr,
+            result=rr_gen,
             gold_support_sentences=gold_sents,
             dataset_source=str(ds) if ds else None,
             gold_answers=gold_ans,
             prediction=pred,
             ks=DEFAULT_NDCG_KS,
         )
-        eval_rows.append(pe)
-        rows_out.append(
-            {
-                "question_id": qid,
-                "retrieval": {str(s.k): s.to_json() for s in pe.retrieval_suites},
-                "qa": {"em": pe.em, "f1": pe.f1, "prediction": pred},
-                "latency_ms": dict(rr.latency_ms),
-            }
-        )
+        eval_rows_generation.append(pe_gen)
 
-    report = aggregate_e2e_report(eval_rows, split_sets=split_sets, ks=DEFAULT_NDCG_KS)
+        q_row: dict[str, Any] = {
+            "question_id": qid,
+            "qa": {"em": pe_gen.em, "f1": pe_gen.f1, "prediction": pred},
+            "latency_ms": dict(rr_gen.latency_ms),
+        }
+
+        if pure_available:
+            rj_pre = pretrunc_by_qid.get(qid)
+            if rj_pre:
+                rr_pre = dict_to_retrieval_result(rj_pre)
+            else:
+                rr_pre = RetrievalResult(
+                    query=str(sample.get("question", "") or ""),
+                    retriever_name="missing",
+                    status="EMPTY",
+                    chunks=[],
+                    latency_ms={},
+                    error="no_pretrunc_retrieval_row",
+                )
+            pe_pre = aggregate_per_question(
+                qid,
+                result=rr_pre,
+                gold_support_sentences=gold_sents,
+                dataset_source=str(ds) if ds else None,
+                gold_answers=gold_ans,
+                prediction=pred,
+                ks=_BASE_METRIC_KS,
+            )
+            eval_rows_pure.append(pe_pre)
+            q_row["retrieval_before_ce"] = {
+                "status": "ok",
+                "reported_ks": list(_BASE_METRIC_KS),
+                "retrieval": {str(s.k): s.to_json() for s in pe_pre.retrieval_suites},
+            }
+        else:
+            q_row["retrieval_before_ce"] = {
+                "status": "unavailable",
+                "reason": "missing retrieval/retrieval_results_pretrunc.jsonl",
+                "reported_ks": list(_BASE_METRIC_KS),
+            }
+
+        if ce_enabled:
+            if ce_ks:
+                pe_ce = aggregate_per_question(
+                    qid,
+                    result=rr_gen,
+                    gold_support_sentences=gold_sents,
+                    dataset_source=str(ds) if ds else None,
+                    gold_answers=gold_ans,
+                    prediction=pred,
+                    ks=ce_ks,
+                )
+                eval_rows_post_ce.append(pe_ce)
+                q_row["retrieval_after_ce"] = {
+                    "status": "ok",
+                    "reported_ks": ce_ks,
+                    "retrieval": {
+                        str(s.k): s.to_json() for s in pe_ce.retrieval_suites
+                    },
+                }
+            else:
+                q_row["retrieval_after_ce"] = {
+                    "status": "unavailable",
+                    "reason": (
+                        f"rerank_top_k={rerank_top_k} is below smallest metric k="
+                        f"{min(_BASE_METRIC_KS)}"
+                    ),
+                    "reported_ks": [],
+                }
+        else:
+            q_row["retrieval_after_ce"] = {
+                "status": "not_applicable",
+                "reason": f"reranker={reranker_kind or 'none'}",
+                "reported_ks": [],
+            }
+
+        rows_out.append(q_row)
+
+    report_generation = aggregate_e2e_report(
+        eval_rows_generation, split_sets=split_sets, ks=DEFAULT_NDCG_KS
+    )
+    report_pure = (
+        aggregate_e2e_report(eval_rows_pure, split_sets=split_sets, ks=_BASE_METRIC_KS)
+        if pure_available
+        else None
+    )
+    report_ce = (
+        aggregate_e2e_report(eval_rows_post_ce, split_sets=split_sets, ks=ce_ks)
+        if (ce_enabled and ce_ks)
+        else None
+    )
+    overlap_breakdown: dict[str, Any] = {}
+    for key in overlap_keys:
+        gen_block = report_generation.get(key, {})
+        out_block: dict[str, Any] = {
+            "count": int(gen_block.get("count", 0)),
+            "latency_ms": dict(gen_block.get("latency_ms") or {}),
+            "qa": dict(gen_block.get("qa") or {}),
+        }
+        if report_pure is not None:
+            pure_block = dict((report_pure.get(key) or {}).get("retrieval_at_k") or {})
+            out_block["retrieval_before_ce"] = {
+                "status": "ok",
+                "reported_ks": list(_BASE_METRIC_KS),
+                "retrieval_at_k": pure_block,
+            }
+        else:
+            out_block["retrieval_before_ce"] = {
+                "status": "unavailable",
+                "reason": "missing retrieval/retrieval_results_pretrunc.jsonl",
+                "reported_ks": list(_BASE_METRIC_KS),
+            }
+        if report_ce is not None:
+            ce_block = dict((report_ce.get(key) or {}).get("retrieval_at_k") or {})
+            out_block["retrieval_after_ce"] = {
+                "status": "ok",
+                "reported_ks": list(ce_ks),
+                "retrieval_at_k": ce_block,
+            }
+        elif ce_enabled and not ce_ks:
+            out_block["retrieval_after_ce"] = {
+                "status": "unavailable",
+                "reason": (
+                    f"rerank_top_k={rerank_top_k} is below smallest metric k="
+                    f"{min(_BASE_METRIC_KS)}"
+                ),
+                "reported_ks": [],
+            }
+        else:
+            out_block["retrieval_after_ce"] = {
+                "status": "not_applicable",
+                "reason": f"reranker={reranker_kind or 'none'}",
+                "reported_ks": [],
+            }
+        overlap_breakdown[str(key)] = out_block
+
     startup_latency: dict[str, Any] = {}
-    if run_paths.manifest.is_file():
-        try:
-            manifest = json.loads(run_paths.manifest.read_text(encoding="utf-8"))
-            e2e_meta = manifest.get("e2e", {}) if isinstance(manifest, dict) else {}
-            if isinstance(e2e_meta, dict):
-                startup_latency = dict(e2e_meta.get("startup_latency_ms") or {})
-        except Exception:
-            startup_latency = {}
+    if isinstance(e2e_meta, dict):
+        startup_latency = dict(e2e_meta.get("startup_latency_ms") or {})
     return {
         "run_root": str(run_paths.run_root.resolve()),
         "split_question_ids": (
@@ -209,7 +366,7 @@ def evaluate_e2e_run(
         ),
         "latency_protocol_version": LATENCY_PROTOCOL_VERSION,
         "startup_latency_ms": startup_latency,
-        "overlap": report,
+        "overlap_breakdown": overlap_breakdown,
         "per_question": rows_out,
     }
 
@@ -380,6 +537,9 @@ def e2e_prepare_and_submit(
             "retrieval_results": str(
                 paths.retrieval_results_jsonl().relative_to(run_root)
             ),
+            "retrieval_results_pretrunc": str(
+                paths.retrieval_results_pretrunc_jsonl().relative_to(run_root)
+            ),
             "batch_input": str(paths.batch_input_jsonl().relative_to(run_root)),
             "batch_state": str(paths.batch_state_json().relative_to(run_root)),
             "generation_answers": str(
@@ -394,6 +554,7 @@ def e2e_prepare_and_submit(
                 "fusion_keep_k": fusion_keep_k,
                 "reranker": reranker_kind,
                 "rerank_top_k": rerank_top_k,
+                "retrieval_metric_base_ks": list(_BASE_METRIC_KS),
                 "router_id": router_id,
                 "router_input_mode": router_input_mode,
                 "router_inference_batch_size": router_inference_batch_size,
@@ -466,6 +627,9 @@ def e2e_prepare_and_submit(
             )
 
     retrieval_fp = paths.retrieval_results_jsonl().open("a", encoding="utf-8")
+    retrieval_pretrunc_fp = paths.retrieval_results_pretrunc_jsonl().open(
+        "a", encoding="utf-8"
+    )
     skipped = 0
     try:
         for sample in samples:
@@ -484,12 +648,19 @@ def e2e_prepare_and_submit(
                 q_emb, feat = compute_query_tensors_for_router(question, router_ctx)
                 routing_input_ms = (time.perf_counter() - rt0) * 1000.0
 
-            rr = pipeline.run(
+            routed = pipeline.run_with_pretrunc(
                 question,
                 policy,
                 query_embedding=q_emb,
                 feature_vector=feat,
             )
+            rr_pre = routed.pretrunc_result
+            rr_pre.latency_ms = canonicalize_latency_ms(
+                retriever_name=rr_pre.retriever_name,
+                latency_ms=rr_pre.latency_ms,
+                routing_input_ms=routing_input_ms,
+            )
+            rr = routed.generation_result
             rr.latency_ms = canonicalize_latency_ms(
                 retriever_name=rr.retriever_name,
                 latency_ms=rr.latency_ms,
@@ -497,6 +668,7 @@ def e2e_prepare_and_submit(
             )
             rr = reranker.rerank(question, rr, top_k=rerank_top_k)
 
+            write_retrieval_line(retrieval_pretrunc_fp, rr_pre, qid)
             write_retrieval_line(retrieval_fp, rr, qid)
 
             custom_id = make_generation_custom_id(
@@ -514,6 +686,7 @@ def e2e_prepare_and_submit(
                 progress.update(1)
     finally:
         retrieval_fp.close()
+        retrieval_pretrunc_fp.close()
         if progress is not None:
             progress.close()
 
