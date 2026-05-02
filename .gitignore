@@ -58,6 +58,7 @@ __pycache__/
 /docs/dev
 /docs/dissertation
 /scripts/dev
+prompts/dev
 
 # Data
 /data
