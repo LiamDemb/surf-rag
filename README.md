@@ -1,8 +1,8 @@
 # SuRF-RAG: Supervised Retrieval Fusion for Mixed-Reasoning QA
 
-## Router training (MLP) and input ablations
+## Router training (architectures + input ablations)
 
-The router is trained on a Parquet dataset built from oracle performance curves. One run id (`ROUTER_ID`) shares a single `dataset/`; trained checkpoints, metrics, and per-split predictions are stored under a **per-input ablation** directory:
+The router is trained on a Parquet dataset built from oracle performance curves. One router dataset id (`ROUTER_ID`) shares one `dataset/`; trained checkpoints, metrics, and per-split predictions are stored under architecture + input-mode folders:
 
 ```text
 $DATA_BASE/router/$ROUTER_ID/
@@ -10,15 +10,18 @@ $DATA_BASE/router/$ROUTER_ID/
   dataset/
     router_dataset.parquet
     manifest.json
-  model/
-    both/                 # default: query embedding + normalized query features
-    query-features/     # V1 query features only
-    embedding/          # query embedding only
-      model.pt
-      manifest.json
-      metrics.json
-      training_history.json
-      predictions_{train,dev,test}.jsonl
+  models/
+    $ROUTER_ARCHITECTURE_ID/
+      both/            # default: query embedding + normalized query features
+      query-features/  # V1 query features only
+      embedding/       # query embedding only
+        model.pt
+        manifest.json
+        metrics.json
+        training_history.json
+        predictions_{train,dev,test}.jsonl
+  model/               # legacy single-model location (read fallback)
+    <input_mode>/
 ```
 
 **Input modes**
@@ -36,9 +39,24 @@ $DATA_BASE/router/$ROUTER_ID/
 
 **CLI** (see `poetry run python -m scripts.router.train_router --help`):
 
-- `--input-mode` or env `ROUTER_INPUT_MODE` selects the output folder and architecture.
+- `--router-architecture-id` is required for training and maps to `models/<id>/...`.
+- `--architecture` selects implementation (`mlp-v1` or `logreg-v1`).
+- `--architecture-kwargs` accepts a JSON object (validated per architecture).
+- `--input-mode` or env `ROUTER_INPUT_MODE` selects the branch-input ablation.
 
-To compare runs, use `metrics.json` (and optional `predictions_*.jsonl`) under each `model/<input_mode>/` for the same `ROUTER_ID`.
+To compare runs, use `metrics.json` (and optional `predictions_*.jsonl`) under each `models/<router_architecture_id>/<input_mode>/` for the same `ROUTER_ID`.
+
+**Config keys**
+
+- `paths.router_architecture_id`: chosen architecture artifact id for downstream learned-router inference.
+- `router.train.architecture`: architecture family (`mlp-v1`, `logreg-v1`).
+- `router.train.architecture_kwargs`: per-architecture validated kwargs.
+
+When `paths.router_architecture_id` is omitted in e2e:
+
+- if exactly one child directory exists under `.../models/`, it is auto-selected;
+- if multiple exist, the run fails with a disambiguation error;
+- if no `models/` bundle exists, inference falls back to legacy `model/<input_mode>/`.
 
 ## End-to-end benchmark & evaluation
 
