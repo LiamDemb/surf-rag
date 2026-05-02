@@ -12,6 +12,7 @@ def test_registry_lists_expected_architectures() -> None:
     names = list_architectures()
     assert "mlp-v1" in names
     assert "logreg-v1" in names
+    assert "tower_v01" in names
 
 
 def test_registry_unknown_architecture_errors() -> None:

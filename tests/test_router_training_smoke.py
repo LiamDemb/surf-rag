@@ -274,3 +274,45 @@ def test_train_smoke_logreg_v1(tmp_path: Path) -> None:
         architecture_kwargs={},
     )
     assert out_model.checkpoint.is_file()
+
+
+def test_train_smoke_tower_v01(tmp_path: Path) -> None:
+    """tower_v01 with shrunk kwargs so 4-d synthetic embeddings fit the tower."""
+    rows = [_row("a", "train"), _row("b", "train"), _row("c", "dev")]
+    df = pd.DataFrame(rows)
+    pq = tmp_path / "r6.parquet"
+    df.to_parquet(pq, index=False)
+    out_model = make_router_model_paths_for_cli(
+        "t6",
+        router_base=tmp_path,
+        input_mode="both",
+        router_architecture_id="tower-v01-smoke",
+    )
+    out_model.ensure_dirs()
+    cfg = RouterTrainConfig(
+        parquet_path=pq,
+        router_id="t6",
+        output_dir=out_model.run_root,
+        epochs=2,
+        batch_size=2,
+        early_stopping_patience=100,
+        device="cpu",
+        architecture="tower_v01",
+        architecture_kwargs={
+            "embed_dims": [3, 3, 3],
+            "feat_hidden": 8,
+            "dropout": 0.0,
+        },
+        input_mode="both",
+    )
+    result = train_router(cfg)
+    save_checkpoint(
+        out_model.checkpoint,
+        result.model,
+        result.model.config,
+        architecture="tower_v01",
+        architecture_kwargs=cfg.architecture_kwargs or {},
+    )
+    assert out_model.checkpoint.is_file()
+    assert result.model.config.feature_dim == 14
+    assert result.model.config.embedding_dim == 4

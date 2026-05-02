@@ -40,7 +40,7 @@ $DATA_BASE/router/$ROUTER_ID/
 **CLI** (see `poetry run python -m scripts.router.train_router --help`):
 
 - `--router-architecture-id` is required for training and maps to `models/<id>/...`.
-- `--architecture` selects implementation (`mlp-v1` or `logreg-v1`).
+- `--architecture` selects implementation (`mlp-v1`, `logreg-v1`, or `tower_v01`).
 - `--architecture-kwargs` accepts a JSON object (validated per architecture).
 - `--input-mode` or env `ROUTER_INPUT_MODE` selects the branch-input ablation.
 
@@ -49,7 +49,7 @@ To compare runs, use `metrics.json` (and optional `predictions_*.jsonl`) under e
 **Config keys**
 
 - `paths.router_architecture_id`: chosen architecture artifact id for downstream learned-router inference.
-- `router.train.architecture`: architecture family (`mlp-v1`, `logreg-v1`).
+- `router.train.architecture`: architecture family (`mlp-v1`, `logreg-v1`, `tower_v01`).
 - `router.train.architecture_kwargs`: per-architecture validated kwargs.
 
 When `paths.router_architecture_id` is omitted in e2e:
