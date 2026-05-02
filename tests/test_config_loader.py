@@ -55,6 +55,8 @@ def test_load_example_pipeline(tmp_path: Path) -> None:
     d = config_to_resolved_dict(cfg, rp)
     assert "resolved_paths" in d
     assert d["resolved_paths"]["benchmark_path"] == str(rp.benchmark_path)
+    assert d["resolved_paths"]["figures_base"] == str(rp.figures_base)
+    assert rp.figures_base == rp.data_base / "figures"
 
 
 def test_pipeline_config_from_dict_empty() -> None:

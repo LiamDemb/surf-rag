@@ -25,6 +25,7 @@ def test_write_resolved_config_yaml_roundtrip(tmp_path: Path) -> None:
     data = yaml.safe_load(out.read_text(encoding="utf-8"))
     assert data["paths"]["benchmark_name"] == "surf-bench"
     assert data["resolved_paths"]["corpus_dir"] == str(rp.corpus_dir)
+    assert data["resolved_paths"]["figures_base"] == str(rp.figures_base)
     assert data["resolved_paths"]["router_architecture_id"] == rp.router_architecture_id
 
 

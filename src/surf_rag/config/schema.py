@@ -17,6 +17,8 @@ class PathsSection:
     data_base: str = "data"
     benchmark_base: str | None = None
     router_base: str | None = None
+    # Root for rendered figures when figures.output_dir is unset (resolved in loader).
+    figures_base: str | None = None
     benchmark_name: str = "benchmark-name"
     benchmark_id: str = "v01"
     router_id: str = "v01"
@@ -177,6 +179,33 @@ class SecretsSection:
 
 
 @dataclass
+class FiguresThemeSection:
+    """Matplotlib style preset for ``surf_rag.viz.theme.apply_theme``."""
+
+    name: str = "default"
+    dpi: int = 200
+    font_size: int | None = None
+    overrides: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class FiguresSection:
+    """Optional figure generation (opt-in via ``enabled``).
+
+    When ``output_dir`` is unset, figures are written under
+    ``paths.figures_base`` / ``router`` / … / ``benchmark`` / … (see
+    ``surf_rag.viz.paths_layout.canonical_router_figure_dir``). Set ``output_dir``
+    to override that layout with an absolute or CWD-relative directory.
+    """
+
+    enabled: bool = False
+    output_dir: str | None = None
+    theme: FiguresThemeSection = field(default_factory=FiguresThemeSection)
+    image_format: str = "png"
+    plots: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass
 class GraphRetrievalSweepSection:
     """Optional grid-search settings for ``scripts/dev/graph_retrieval_grid_search.py``.
 
@@ -213,3 +242,4 @@ class PipelineConfig:
     graph_retrieval_sweep: GraphRetrievalSweepSection = field(
         default_factory=GraphRetrievalSweepSection
     )
+    figures: FiguresSection = field(default_factory=FiguresSection)

@@ -252,6 +252,17 @@ def merge_router_evaluate_args(
     merge_router_train_args(args, cfg, argv=argv)
 
 
+def merge_figures_render_args(
+    args: Namespace, cfg: PipelineConfig, argv: list[str] | None = None
+) -> None:
+    """Fill ``render_figures`` CLI fields from pipeline config when flags omitted."""
+    argv = argv if argv is not None else sys.argv
+    merge_router_train_args(args, cfg, argv=argv)
+    fig = cfg.figures
+    if not argv_provides(argv, "--figures-output-dir") and fig.output_dir:
+        args.figures_output_dir = str(fig.output_dir).strip() or None
+
+
 def merge_e2e_common_args(
     args: Namespace, cfg: PipelineConfig, argv: list[str] | None = None
 ) -> None:
