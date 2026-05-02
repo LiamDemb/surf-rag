@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from surf_rag.viz.specs import RouterPredVsOracleSpec, figure_spec_from_mapping
+from surf_rag.viz.specs import (
+    RouterPredVsOracleIntervalsSpec,
+    RouterPredVsOracleSpec,
+    figure_spec_from_mapping,
+)
 
 
 def test_router_pred_vs_oracle_from_mapping_defaults() -> None:
@@ -34,6 +38,20 @@ def test_figure_spec_from_mapping_dispatches() -> None:
     spec = figure_spec_from_mapping({"kind": "router_pred_vs_oracle", "split": "dev"})
     assert isinstance(spec, RouterPredVsOracleSpec)
     assert spec.split == "dev"
+
+
+def test_router_pred_vs_oracle_intervals_from_mapping() -> None:
+    spec = RouterPredVsOracleIntervalsSpec.from_mapping(
+        {"kind": "router_pred_vs_oracle_intervals", "split": "test"}
+    )
+    assert spec.max_queries is None
+    assert spec.interval_bar_width_ratio == pytest.approx(0.72)
+
+
+def test_figure_spec_from_mapping_intervals_dispatch() -> None:
+    spec = figure_spec_from_mapping({"kind": "router_pred_vs_oracle_intervals"})
+    assert isinstance(spec, RouterPredVsOracleIntervalsSpec)
+    assert spec.split == "test"
 
 
 def test_figure_spec_unknown_kind() -> None:

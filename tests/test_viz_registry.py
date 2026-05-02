@@ -10,8 +10,10 @@ from surf_rag.viz.context import FigureRunContext
 from surf_rag.viz.registry import list_figure_kinds, render
 
 
-def test_list_figure_kinds_includes_router_pred_vs_oracle() -> None:
-    assert "router_pred_vs_oracle" in list_figure_kinds()
+def test_list_figure_kinds_includes_built_ins() -> None:
+    kinds = list_figure_kinds()
+    assert "router_pred_vs_oracle" in kinds
+    assert "router_pred_vs_oracle_intervals" in kinds
 
 
 def test_render_unknown_kind_raises() -> None:
