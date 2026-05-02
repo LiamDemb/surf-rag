@@ -195,8 +195,50 @@ def test_merge_router_train_includes_architecture_fields() -> None:
         architecture=None,
         architecture_kwargs=None,
         input_mode=None,
+        loss=None,
+        loss_kwargs=None,
     )
     merge_router_train_args(args, cfg, argv=["prog", "--config", "x.yaml"])
     assert args.router_architecture_id == "mlp-v1-default"
     assert args.architecture == "mlp-v1"
     assert args.architecture_kwargs == {"hidden_dim": 64}
+    assert args.loss == "regret"
+    assert args.loss_kwargs == {}
+
+
+def test_merge_router_train_includes_loss_fields() -> None:
+    from surf_rag.config.merge import merge_router_train_args
+
+    cfg = pipeline_config_from_dict(
+        {
+            "paths": {
+                "benchmark_name": "bn",
+                "benchmark_id": "bid",
+                "router_id": "rid",
+                "router_architecture_id": "mlp-v1-default",
+            },
+            "router": {
+                "train": {
+                    "loss": "hinge_squared_regret",
+                    "loss_kwargs": {"epsilon": 0.02},
+                }
+            },
+        }
+    )
+    args = Namespace(
+        router_id=None,
+        router_base=None,
+        router_architecture_id=None,
+        epochs=None,
+        batch_size=None,
+        learning_rate=None,
+        device=None,
+        architecture=None,
+        architecture_kwargs=None,
+        input_mode=None,
+        loss=None,
+        loss_kwargs=None,
+    )
+    merge_router_train_args(args, cfg, argv=["prog", "--config", "x.yaml"])
+    assert args.loss == "hinge_squared_regret"
+    assert args.loss_kwargs == {"epsilon": 0.02}

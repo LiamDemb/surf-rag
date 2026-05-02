@@ -72,6 +72,18 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="both | query-features | embedding (default: ROUTER_INPUT_MODE or both)",
     )
+    p.add_argument(
+        "--router-loss",
+        dest="loss",
+        default=None,
+        help="Training loss id (e.g. regret, hinge_squared_regret).",
+    )
+    p.add_argument(
+        "--loss-kwargs",
+        dest="loss_kwargs",
+        default=None,
+        help="JSON object of kwargs for the training loss.",
+    )
     p.add_argument("--log-level", default="INFO")
     return p.parse_args()
 
@@ -138,6 +150,25 @@ def main() -> int:
     elif getattr(args, "architecture_kwargs", None):
         architecture_kwargs = dict(args.architecture_kwargs)
 
+    loss_raw = getattr(args, "loss", None)
+    train_loss = str(
+        (loss_raw if loss_raw is not None else os.getenv("ROUTER_TRAIN_LOSS", "regret"))
+    ).strip()
+    loss_kwargs: dict[str, object] = {}
+    lk = getattr(args, "loss_kwargs", None)
+    if lk is not None:
+        if isinstance(lk, dict):
+            loss_kwargs = dict(lk)
+        else:
+            try:
+                payload = json.loads(str(lk))
+                if not isinstance(payload, dict):
+                    raise ValueError("loss kwargs must be a JSON object")
+                loss_kwargs = dict(payload)
+            except Exception as exc:
+                log.error("Invalid --loss-kwargs JSON: %s", exc)
+                return 2
+
     cfg = RouterTrainConfig(
         parquet_path=parquet_path,
         router_id=args.router_id,
@@ -152,6 +183,8 @@ def main() -> int:
         architecture=architecture,
         architecture_kwargs=architecture_kwargs,
         input_mode=input_mode,
+        loss=train_loss,
+        loss_kwargs=loss_kwargs,
     )
 
     result = train_router(cfg)
@@ -175,6 +208,10 @@ def main() -> int:
             "architecture": architecture,
             "architecture_kwargs": architecture_kwargs,
             "input_mode": input_mode,
+            "loss": result.loss_requested,
+            "loss_kwargs": dict(result.loss_kwargs),
+            "loss_effective": result.loss_effective,
+            "loss_fallback": result.loss_fallback,
             "best_epoch": result.best_epoch,
             "splits": result.metrics,
             "router_quality_filtering": dict(
@@ -182,7 +219,16 @@ def main() -> int:
             ),
         },
     )
-    write_json(out_paths.training_history, {"history": result.history})
+    write_json(
+        out_paths.training_history,
+        {
+            "loss": result.loss_requested,
+            "loss_effective": result.loss_effective,
+            "loss_fallback": result.loss_fallback,
+            "loss_kwargs": dict(result.loss_kwargs),
+            "history": result.history,
+        },
+    )
 
     write_router_model_manifest(
         out_paths,
@@ -200,6 +246,10 @@ def main() -> int:
             "seed": cfg.seed,
             "device": cfg.device,
             "best_epoch": result.best_epoch,
+            "loss": result.loss_requested,
+            "loss_kwargs": dict(result.loss_kwargs),
+            "loss_effective": result.loss_effective,
+            "loss_fallback": result.loss_fallback,
         },
         feature_set_version=str(
             df["feature_set_version"].iloc[0]

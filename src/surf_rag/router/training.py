@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -16,6 +16,7 @@ from torch.utils.data import DataLoader, TensorDataset, WeightedRandomSampler
 from surf_rag.evaluation.oracle_artifacts import DEFAULT_DENSE_WEIGHT_GRID
 from surf_rag.router.architectures.registry import get_architecture
 from surf_rag.router.model import parse_router_input_mode
+from surf_rag.router.losses import resolve_router_training_loss
 from surf_rag.router.regret import regret_loss
 from surf_rag.router.router_metrics import aggregate_router_metrics
 
@@ -40,6 +41,8 @@ class RouterTrainConfig:
     num_workers: int = 0
     input_mode: str = "both"
     balance_training_sources: bool = True
+    loss: str = "regret"
+    loss_kwargs: dict[str, Any] | None = None
 
 
 def _seq_floats(val: object) -> List[float]:
@@ -138,9 +141,13 @@ def _weight_grid_from_df(df: pd.DataFrame) -> np.ndarray:
 @dataclass
 class TrainRunResult:
     model: nn.Module
-    history: List[Dict[str, float]]
+    history: List[Dict[str, Any]]
     best_epoch: int
     metrics: Dict[str, Any]
+    loss_requested: str = "regret"
+    loss_effective: str = "regret"
+    loss_fallback: bool = False
+    loss_kwargs: Dict[str, Any] = field(default_factory=dict)
 
 
 def train_router(cfg: RouterTrainConfig) -> TrainRunResult:
@@ -159,6 +166,12 @@ def train_router(cfg: RouterTrainConfig) -> TrainRunResult:
             "No router-eligible rows in train split. "
             "All rows are marked is_valid_for_router_training=false."
         )
+
+    loss_kw = dict(cfg.loss_kwargs or {})
+    loss_fn, loss_effective, loss_fallback = resolve_router_training_loss(
+        cfg.loss, loss_kw
+    )
+    loss_requested = str(cfg.loss).strip() or "regret"
 
     mcfg = build_model_config_from_df(train_df, cfg)
     arch = get_architecture(cfg.architecture)
@@ -213,43 +226,61 @@ def train_router(cfg: RouterTrainConfig) -> TrainRunResult:
 
     for epoch in range(cfg.epochs):
         model.train()
-        epoch_losses: List[float] = []
+        epoch_train_losses: List[float] = []
+        epoch_train_regrets: List[float] = []
         for xeb, xfb, yb, validb in loader:
             opt.zero_grad()
             w_hat = model.predict_weight(xeb, xfb)
             if bool((validb > 0.0).any().item()):
                 mask = validb > 0.0
-                loss = regret_loss(w_hat[mask], yb[mask])
+                w_m = w_hat[mask]
+                y_m = yb[mask]
             else:
-                loss = regret_loss(w_hat, yb)
+                w_m = w_hat
+                y_m = yb
+            loss = loss_fn(w_m, y_m)
+            reg_log = regret_loss(w_m, y_m)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             opt.step()
-            epoch_losses.append(float(loss.item()))
+            epoch_train_losses.append(float(loss.item()))
+            epoch_train_regrets.append(float(reg_log.item()))
 
-        train_regret = float(np.mean(epoch_losses)) if epoch_losses else 0.0
-        dev_regret: Optional[float] = None
+        train_loss = float(np.mean(epoch_train_losses)) if epoch_train_losses else 0.0
+        train_regret_metric = (
+            float(np.mean(epoch_train_regrets)) if epoch_train_regrets else 0.0
+        )
+        dev_loss_v: Optional[float] = None
+        dev_regret_v: Optional[float] = None
         if has_dev:
             model.eval()
             with torch.no_grad():
                 w_hat_d = model.predict_weight(x_ed, x_fd)
                 if bool((valid_d > 0.0).any().item()):
                     maskd = valid_d > 0.0
-                    dev_regret = float(regret_loss(w_hat_d[maskd], yd[maskd]).item())
+                    wd = w_hat_d[maskd]
+                    ydv = yd[maskd]
                 else:
-                    dev_regret = float(regret_loss(w_hat_d, yd).item())
+                    wd = w_hat_d
+                    ydv = yd
+                dev_loss_v = float(loss_fn(wd, ydv).item())
+                dev_regret_v = float(regret_loss(wd, ydv).item())
 
-        row: Dict[str, float] = {
+        row: Dict[str, Any] = {
             "epoch": float(epoch + 1),
-            "train_regret": train_regret,
+            "train_loss": train_loss,
+            "train_regret": train_regret_metric,
+            "loss_name": loss_requested,
+            "loss_effective": loss_effective,
         }
-        if dev_regret is not None:
-            row["dev_regret"] = dev_regret
+        if dev_loss_v is not None:
+            row["dev_loss"] = dev_loss_v
+            row["dev_regret"] = dev_regret_v
         history.append(row)
 
-        if has_dev and dev_regret is not None:
-            if dev_regret < best_dev - cfg.early_stopping_min_delta:
-                best_dev = dev_regret
+        if has_dev and dev_loss_v is not None:
+            if dev_loss_v < best_dev - cfg.early_stopping_min_delta:
+                best_dev = dev_loss_v
                 best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
                 best_epoch = epoch
                 bad_epochs = 0
@@ -270,6 +301,10 @@ def train_router(cfg: RouterTrainConfig) -> TrainRunResult:
         history=history,
         best_epoch=best_epoch,
         metrics=metrics,
+        loss_requested=loss_requested,
+        loss_effective=loss_effective,
+        loss_fallback=loss_fallback,
+        loss_kwargs=loss_kw,
     )
 
 

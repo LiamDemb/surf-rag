@@ -95,6 +95,11 @@ def test_train_smoke(tmp_path: Path) -> None:
     )
     result = train_router(cfg)
     assert result.history
+    assert result.history[-1]["train_loss"] == pytest.approx(
+        result.history[-1]["train_regret"], rel=0, abs=1e-5
+    )
+    assert result.loss_effective == "regret"
+    assert not result.loss_fallback
     mcfg = result.model.config
     save_checkpoint(
         out_model.checkpoint,
@@ -239,6 +244,71 @@ def test_train_fails_when_train_split_has_no_eligible_rows(tmp_path: Path) -> No
     )
     with pytest.raises(ValueError, match="No router-eligible rows in train split"):
         train_router(cfg)
+
+
+def test_train_smoke_hinge_squared_regret(tmp_path: Path) -> None:
+    rows = [_row("a", "train"), _row("b", "train"), _row("c", "dev")]
+    df = pd.DataFrame(rows)
+    pq = tmp_path / "r_hinge.parquet"
+    df.to_parquet(pq, index=False)
+    out_model = make_router_model_paths_for_cli(
+        "t_hinge",
+        router_base=tmp_path,
+        input_mode="both",
+        router_architecture_id="mlp-v1-hinge",
+    )
+    out_model.ensure_dirs()
+    cfg = RouterTrainConfig(
+        parquet_path=pq,
+        router_id="t_hinge",
+        output_dir=out_model.run_root,
+        epochs=3,
+        batch_size=2,
+        early_stopping_patience=100,
+        device="cpu",
+        architecture="mlp-v1",
+        architecture_kwargs={},
+        input_mode="both",
+        loss="hinge_squared_regret",
+        loss_kwargs={"epsilon": 0.01},
+    )
+    result = train_router(cfg)
+    assert result.loss_effective == "hinge_squared_regret"
+    assert not result.loss_fallback
+    h = result.history[-1]
+    assert "train_loss" in h and "train_regret" in h
+    assert "dev_loss" in h and "dev_regret" in h
+
+
+def test_train_smoke_boundary_magnet(tmp_path: Path) -> None:
+    rows = [_row("a", "train"), _row("b", "train"), _row("c", "dev")]
+    df = pd.DataFrame(rows)
+    pq = tmp_path / "r_magnet.parquet"
+    df.to_parquet(pq, index=False)
+    out_model = make_router_model_paths_for_cli(
+        "t_magnet",
+        router_base=tmp_path,
+        input_mode="both",
+        router_architecture_id="mlp-v1-boundary-magnet",
+    )
+    out_model.ensure_dirs()
+    cfg = RouterTrainConfig(
+        parquet_path=pq,
+        router_id="t_magnet",
+        output_dir=out_model.run_root,
+        epochs=3,
+        batch_size=2,
+        early_stopping_patience=100,
+        device="cpu",
+        architecture="mlp-v1",
+        architecture_kwargs={},
+        input_mode="both",
+        loss="boundary_magnet",
+        loss_kwargs={"regret_threshold": 0.05, "magnet_alpha": 0.02},
+    )
+    result = train_router(cfg)
+    assert result.loss_effective == "boundary_magnet"
+    assert not result.loss_fallback
 
 
 def test_train_smoke_logreg_v1(tmp_path: Path) -> None:

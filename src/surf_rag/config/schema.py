@@ -97,6 +97,8 @@ class RouterTrainSection:
     architecture: str = "mlp-v1"
     architecture_kwargs: dict[str, Any] = field(default_factory=dict)
     input_mode: str = "both"
+    loss: str = "regret"
+    loss_kwargs: dict[str, Any] = field(default_factory=dict)
     input_modes: list[str] = field(
         default_factory=lambda: ["both", "query-features", "embedding"]
     )

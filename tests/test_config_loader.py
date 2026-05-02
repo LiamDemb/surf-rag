@@ -136,6 +136,8 @@ def test_minimal_yaml_roundtrip(tmp_path: Path) -> None:
     assert rp.router_id == "r1"
     assert rp.router_architecture_id == "mlp-v1-default"
     assert cfg.router.train.architecture == "logreg-v1"
+    assert cfg.router.train.loss == "regret"
+    assert cfg.router.train.loss_kwargs == {}
 
 
 def test_graph_retrieval_sweep_bool_parsed() -> None:

@@ -244,6 +244,10 @@ def merge_router_train_args(
         args.router_architecture_id = cfg.paths.router_architecture_id
     if not argv_provides(argv, "--input-mode"):
         args.input_mode = rt.input_mode
+    if not argv_provides(argv, "--router-loss"):
+        args.loss = rt.loss
+    if not argv_provides(argv, "--loss-kwargs"):
+        args.loss_kwargs = dict(rt.loss_kwargs)
 
 
 def merge_router_evaluate_args(
