@@ -40,7 +40,7 @@ $DATA_BASE/router/$ROUTER_ID/
 **CLI** (see `poetry run python -m scripts.router.train_router --help`):
 
 - `--router-architecture-id` is required for training and maps to `models/<id>/...`.
-- `--architecture` selects implementation (`mlp-v1`, `logreg-v1`, or `tower_v01`).
+- `--architecture` selects implementation (`mlp-v1`, `logreg-v1`, `polyreg-v1`, or `tower_v01`).
 - `--architecture-kwargs` accepts a JSON object (validated per architecture).
 - `--input-mode` or env `ROUTER_INPUT_MODE` selects the branch-input ablation.
 
@@ -49,7 +49,8 @@ To compare runs, use `metrics.json` (and optional `predictions_*.jsonl`) under e
 **Config keys**
 
 - `paths.router_architecture_id`: chosen architecture artifact id for downstream learned-router inference.
-- `router.train.architecture`: architecture family (`mlp-v1`, `logreg-v1`, `tower_v01`).
+- `router.train.architecture`: architecture family (`mlp-v1`, `logreg-v1`, `polyreg-v1`, `tower_v01`).
+- `polyreg-v1`: logistic regression on polynomial features up to **`architecture_kwargs.degree`** (default `2`). Optional **`excluded_features`**: drop named V1 columns (router feature order) before expanding monomials. Optional **`max_expanded_features`** caps the monomial count (large `degree` × wide inputs will error until you lower degree or shrink inputs).
 - `router.train.architecture_kwargs`: per-architecture validated kwargs.
 
 When `paths.router_architecture_id` is omitted in e2e:

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import pytest
 
+from surf_rag.router.architectures.polyreg_v1 import expanded_monomial_count
 from surf_rag.router.architectures.registry import get_architecture
+from surf_rag.router.query_features import V1_FEATURE_NAMES
 
 
 def test_mlp_v1_rejects_unknown_kwargs() -> None:
@@ -52,3 +54,66 @@ def test_tower_v01_defaults() -> None:
     assert out["feat_hidden"] == 32
     assert out["dropout"] == 0.0
     assert out["embed_dims"] == (128, 64, 32)
+
+
+def test_polyreg_v1_defaults() -> None:
+    arch = get_architecture("polyreg-v1")
+    assert arch.validate_kwargs({}) == {
+        "degree": 2,
+        "max_expanded_features": 150_000,
+        "excluded_features": (),
+    }
+
+
+def test_polyreg_v1_degree_and_linear_width() -> None:
+    arch = get_architecture("polyreg-v1")
+    cfg = arch.build_model_config(4, 14, "query-features", {"degree": 2})
+    assert cfg.degree == 2
+    model = arch.build_model(cfg)
+    n_phi = expanded_monomial_count(14, 2)
+    assert model.head.in_features == n_phi
+    assert n_phi == 119
+
+
+def test_polyreg_v1_rejects_degree_too_large() -> None:
+    arch = get_architecture("polyreg-v1")
+    with pytest.raises(ValueError, match="degree must be"):
+        arch.validate_kwargs({"degree": 0})
+
+
+def test_polyreg_v1_rejects_huge_expansion() -> None:
+    arch = get_architecture("polyreg-v1")
+    with pytest.raises(ValueError, match="max_expanded"):
+        arch.build_model_config(384, 14, "both", {"degree": 3})
+
+
+def test_polyreg_v1_rejects_unknown_kw() -> None:
+    arch = get_architecture("polyreg-v1")
+    with pytest.raises(ValueError, match="unknown architecture kwargs"):
+        arch.validate_kwargs({"bogus": 1})
+
+
+def test_polyreg_v1_excluded_raises_when_none_left_for_query_features() -> None:
+    arch = get_architecture("polyreg-v1")
+    with pytest.raises(ValueError, match="positive effective input"):
+        arch.build_model_config(
+            4,
+            14,
+            "query-features",
+            {"degree": 1, "excluded_features": list(V1_FEATURE_NAMES)},
+        )
+
+
+def test_polyreg_v1_excluded_reduces_polynomial_width() -> None:
+    arch = get_architecture("polyreg-v1")
+    cfg = arch.build_model_config(
+        4,
+        14,
+        "query-features",
+        {"degree": 2, "excluded_features": ["content_token_len"]},
+    )
+    assert cfg.excluded_features == ("content_token_len",)
+    model = arch.build_model(cfg)
+    n_kept = 13
+    n_phi = expanded_monomial_count(n_kept, 2)
+    assert model.head.in_features == n_phi

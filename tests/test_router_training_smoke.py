@@ -180,6 +180,42 @@ def test_train_smoke_query_features(tmp_path: Path) -> None:
     ).is_file()
 
 
+def test_train_smoke_polyreg_v1(tmp_path: Path) -> None:
+    rows = [_row("a", "train"), _row("b", "train"), _row("c", "dev")]
+    df = pd.DataFrame(rows)
+    pq = tmp_path / "r_poly.parquet"
+    df.to_parquet(pq, index=False)
+    out_model = make_router_model_paths_for_cli(
+        "t_poly",
+        router_base=tmp_path,
+        input_mode="query-features",
+        router_architecture_id="polyreg-v1-smoke",
+    )
+    out_model.ensure_dirs()
+    cfg = RouterTrainConfig(
+        parquet_path=pq,
+        router_id="t_poly",
+        output_dir=out_model.run_root,
+        epochs=3,
+        batch_size=2,
+        early_stopping_patience=100,
+        device="cpu",
+        architecture="polyreg-v1",
+        architecture_kwargs={"degree": 2},
+        input_mode="query-features",
+    )
+    result = train_router(cfg)
+    assert result.model.config.degree == 2
+    save_checkpoint(
+        out_model.checkpoint,
+        result.model,
+        result.model.config,
+        architecture="polyreg-v1",
+        architecture_kwargs=cfg.architecture_kwargs or {},
+    )
+    assert out_model.checkpoint.is_file()
+
+
 def test_train_ignores_invalid_rows_in_metrics(tmp_path: Path) -> None:
     rows = [
         _row("a", "train", valid=True),

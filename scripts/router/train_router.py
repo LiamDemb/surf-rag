@@ -150,17 +150,24 @@ def main() -> int:
     device = args.device or os.getenv("ROUTER_TRAIN_DEVICE", "cpu")
     architecture = str(args.architecture or os.getenv("ROUTER_ARCHITECTURE", "mlp-v1"))
     architecture_kwargs: dict[str, object] = {}
-    if args.architecture_kwargs:
+    raw_ak = getattr(args, "architecture_kwargs", None)
+    if isinstance(raw_ak, dict):
+        architecture_kwargs = dict(raw_ak)
+    elif isinstance(raw_ak, str) and raw_ak.strip():
         try:
-            payload = json.loads(str(args.architecture_kwargs))
+            payload = json.loads(raw_ak)
             if not isinstance(payload, dict):
                 raise ValueError("architecture kwargs must be a JSON object")
             architecture_kwargs = dict(payload)
         except Exception as exc:
             log.error("Invalid --architecture-kwargs JSON: %s", exc)
             return 2
-    elif getattr(args, "architecture_kwargs", None):
-        architecture_kwargs = dict(args.architecture_kwargs)
+    elif raw_ak is not None:
+        log.error(
+            "Invalid architecture_kwargs type %s (expected dict from --config or JSON string)",
+            type(raw_ak).__name__,
+        )
+        return 2
 
     loss_raw = getattr(args, "loss", None)
     train_loss = str(
