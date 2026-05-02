@@ -386,3 +386,84 @@ def test_train_smoke_tower_v01(tmp_path: Path) -> None:
     assert out_model.checkpoint.is_file()
     assert result.model.config.feature_dim == 14
     assert result.model.config.embedding_dim == 4
+
+
+def _train_row_for_midpoint_group(qid: str, split: str, group_index: int) -> dict:
+    w = [float(x) for x in DEFAULT_DENSE_WEIGHT_GRID]
+    c = [0.0] * len(w)
+    if group_index == 0:
+        c[0] = 1.0
+    elif group_index == 1:
+        c[3] = 1.0
+    elif group_index == 2:
+        c = [1.0] * len(w)
+    elif group_index == 3:
+        c[7] = 1.0
+    else:
+        c[10] = 1.0
+    row = _row(qid, split)
+    row["oracle_curve"] = c
+    row["weight_grid"] = w
+    return row
+
+
+def test_train_smoke_midpoint_balance_masking(tmp_path: Path) -> None:
+    """Two train rows per midpoint group (10 train); mask to min=2 per group."""
+    rows: list[dict] = []
+    for g in range(5):
+        rows.append(_train_row_for_midpoint_group(f"t{g}a", "train", g))
+        rows.append(_train_row_for_midpoint_group(f"t{g}b", "train", g))
+    rows.append(_row("dev1", "dev"))
+    df = pd.DataFrame(rows)
+    pq = tmp_path / "r_mid.parquet"
+    df.to_parquet(pq, index=False)
+    mdir = tmp_path / "d_mid"
+    mdir.mkdir()
+    dpaths = RouterDatasetPaths(run_root=mdir)
+    dpaths.ensure_dirs()
+    write_router_dataset_manifest(
+        dpaths,
+        router_id="tmid",
+        source_benchmark_name="m",
+        source_benchmark_id="v",
+        benchmark_path="/b.jsonl",
+        retrieval_asset_dir="/c",
+        oracle_run_root="/o",
+        router_labels_path="/l",
+        feature_set_version="1",
+        embedding_model="m",
+        split_seed=0,
+        train_ratio=0.6,
+        dev_ratio=0.2,
+        test_ratio=0.2,
+    )
+    out_model = make_router_model_paths_for_cli(
+        "tmid",
+        router_base=tmp_path,
+        input_mode="both",
+        router_architecture_id="mlp-v1-midmask",
+    )
+    out_model.ensure_dirs()
+    cfg = RouterTrainConfig(
+        parquet_path=pq,
+        router_id="tmid",
+        output_dir=out_model.run_root,
+        epochs=2,
+        batch_size=2,
+        early_stopping_patience=100,
+        device="cpu",
+        architecture="mlp-v1",
+        architecture_kwargs={},
+        input_mode="both",
+        midpoint_balance_masking=True,
+        midpoint_balance_epsilon=1e-6,
+        seed=42,
+    )
+    result = train_router(cfg)
+    rep = result.midpoint_balance_report
+    assert rep is not None
+    assert rep["enabled"] is True
+    assert rep["train_rows_before"] == 10
+    assert rep["train_rows_after"] == 10
+    assert rep["target_per_group"] == 2
+    assert rep["counts_after_per_group"] == [2, 2, 2, 2, 2]

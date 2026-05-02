@@ -17,6 +17,7 @@ from surf_rag.evaluation.oracle_artifacts import DEFAULT_DENSE_WEIGHT_GRID
 from surf_rag.router.architectures.registry import get_architecture
 from surf_rag.router.model import parse_router_input_mode
 from surf_rag.router.losses import resolve_router_training_loss
+from surf_rag.router.midpoint_balance import build_train_midpoint_balance_indices
 from surf_rag.router.regret import regret_loss
 from surf_rag.router.router_metrics import aggregate_router_metrics
 
@@ -41,6 +42,8 @@ class RouterTrainConfig:
     num_workers: int = 0
     input_mode: str = "both"
     balance_training_sources: bool = True
+    midpoint_balance_masking: bool = False
+    midpoint_balance_epsilon: float = 1e-6
     loss: str = "regret"
     loss_kwargs: dict[str, Any] | None = None
 
@@ -148,6 +151,7 @@ class TrainRunResult:
     loss_effective: str = "regret"
     loss_fallback: bool = False
     loss_kwargs: Dict[str, Any] = field(default_factory=dict)
+    midpoint_balance_report: Dict[str, Any] | None = None
 
 
 def train_router(cfg: RouterTrainConfig) -> TrainRunResult:
@@ -166,6 +170,16 @@ def train_router(cfg: RouterTrainConfig) -> TrainRunResult:
             "No router-eligible rows in train split. "
             "All rows are marked is_valid_for_router_training=false."
         )
+
+    train_df = train_df.reset_index(drop=True)
+    midpoint_balance_report: Optional[Dict[str, Any]] = None
+    if cfg.midpoint_balance_masking:
+        keep_idx, midpoint_balance_report = build_train_midpoint_balance_indices(
+            train_df,
+            epsilon=float(cfg.midpoint_balance_epsilon),
+            seed=int(cfg.seed),
+        )
+        train_df = train_df.iloc[keep_idx].reset_index(drop=True)
 
     loss_kw = dict(cfg.loss_kwargs or {})
     loss_fn, loss_effective, loss_fallback = resolve_router_training_loss(
@@ -305,6 +319,7 @@ def train_router(cfg: RouterTrainConfig) -> TrainRunResult:
         loss_effective=loss_effective,
         loss_fallback=loss_fallback,
         loss_kwargs=loss_kw,
+        midpoint_balance_report=midpoint_balance_report,
     )
 
 

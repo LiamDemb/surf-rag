@@ -84,6 +84,18 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="JSON object of kwargs for the training loss.",
     )
+    p.add_argument(
+        "--midpoint-balance-masking",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Undersample train rows so five equal-width midpoint buckets are balanced.",
+    )
+    p.add_argument(
+        "--midpoint-balance-epsilon",
+        type=float,
+        default=None,
+        help="Additive score tolerance for plateau ties (default 1e-6).",
+    )
     p.add_argument("--log-level", default="INFO")
     return p.parse_args()
 
@@ -169,6 +181,20 @@ def main() -> int:
                 log.error("Invalid --loss-kwargs JSON: %s", exc)
                 return 2
 
+    mid_mask_arg = getattr(args, "midpoint_balance_masking", None)
+    if mid_mask_arg is None:
+        midpoint_balance_masking = os.getenv(
+            "ROUTER_MIDPOINT_BALANCE_MASKING", ""
+        ).lower() in ("1", "true", "yes")
+    else:
+        midpoint_balance_masking = bool(mid_mask_arg)
+    mid_eps_arg = getattr(args, "midpoint_balance_epsilon", None)
+    midpoint_balance_epsilon = float(
+        mid_eps_arg
+        if mid_eps_arg is not None
+        else os.getenv("ROUTER_MIDPOINT_BALANCE_EPSILON", "1e-6")
+    )
+
     cfg = RouterTrainConfig(
         parquet_path=parquet_path,
         router_id=args.router_id,
@@ -185,6 +211,8 @@ def main() -> int:
         input_mode=input_mode,
         loss=train_loss,
         loss_kwargs=loss_kwargs,
+        midpoint_balance_masking=midpoint_balance_masking,
+        midpoint_balance_epsilon=midpoint_balance_epsilon,
     )
 
     result = train_router(cfg)
@@ -217,6 +245,7 @@ def main() -> int:
             "router_quality_filtering": dict(
                 result.metrics.get("router_quality_filtering") or {}
             ),
+            "midpoint_balance_masking": result.midpoint_balance_report,
         },
     )
     write_json(
@@ -250,6 +279,8 @@ def main() -> int:
             "loss_kwargs": dict(result.loss_kwargs),
             "loss_effective": result.loss_effective,
             "loss_fallback": result.loss_fallback,
+            "midpoint_balance_masking": cfg.midpoint_balance_masking,
+            "midpoint_balance_epsilon": cfg.midpoint_balance_epsilon,
         },
         feature_set_version=str(
             df["feature_set_version"].iloc[0]

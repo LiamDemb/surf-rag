@@ -248,6 +248,12 @@ def merge_router_train_args(
         args.loss = rt.loss
     if not argv_provides(argv, "--loss-kwargs"):
         args.loss_kwargs = dict(rt.loss_kwargs)
+    if not argv_provides(argv, "--midpoint-balance-masking") and not argv_provides(
+        argv, "--no-midpoint-balance-masking"
+    ):
+        args.midpoint_balance_masking = rt.midpoint_balance_masking
+    if not argv_provides(argv, "--midpoint-balance-epsilon"):
+        args.midpoint_balance_epsilon = rt.midpoint_balance_epsilon
 
 
 def merge_router_evaluate_args(

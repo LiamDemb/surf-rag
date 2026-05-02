@@ -5,6 +5,8 @@ from __future__ import annotations
 from argparse import Namespace
 from pathlib import Path
 
+import pytest
+
 from surf_rag.config.loader import (
     load_pipeline_config,
     pipeline_config_from_dict,
@@ -242,3 +244,41 @@ def test_merge_router_train_includes_loss_fields() -> None:
     merge_router_train_args(args, cfg, argv=["prog", "--config", "x.yaml"])
     assert args.loss == "hinge_squared_regret"
     assert args.loss_kwargs == {"epsilon": 0.02}
+
+
+def test_merge_router_train_midpoint_balance_fields() -> None:
+    from surf_rag.config.merge import merge_router_train_args
+
+    cfg = pipeline_config_from_dict(
+        {
+            "paths": {
+                "benchmark_name": "bn",
+                "benchmark_id": "bid",
+                "router_id": "rid",
+                "router_architecture_id": "mlp-v1-default",
+            },
+            "router": {
+                "train": {
+                    "midpoint_balance_masking": True,
+                    "midpoint_balance_epsilon": 0.001,
+                }
+            },
+        }
+    )
+    args = Namespace(
+        router_id=None,
+        router_base=None,
+        router_architecture_id=None,
+        epochs=None,
+        batch_size=None,
+        learning_rate=None,
+        device=None,
+        architecture=None,
+        architecture_kwargs=None,
+        input_mode=None,
+        loss=None,
+        loss_kwargs=None,
+    )
+    merge_router_train_args(args, cfg, argv=["prog", "--config", "x.yaml"])
+    assert args.midpoint_balance_masking is True
+    assert args.midpoint_balance_epsilon == pytest.approx(0.001)

@@ -97,6 +97,8 @@ class RouterTrainSection:
     architecture: str = "mlp-v1"
     architecture_kwargs: dict[str, Any] = field(default_factory=dict)
     input_mode: str = "both"
+    midpoint_balance_masking: bool = False
+    midpoint_balance_epsilon: float = 1e-6
     loss: str = "regret"
     loss_kwargs: dict[str, Any] = field(default_factory=dict)
     input_modes: list[str] = field(

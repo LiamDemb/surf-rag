@@ -134,6 +134,10 @@ def apply_pipeline_env_from_config(config: object) -> None:
     os.environ["ROUTER_TRAIN_DEVICE"] = str(rt.device)
     os.environ["ROUTER_ARCHITECTURE"] = str(rt.architecture)
     os.environ["ROUTER_INPUT_MODE"] = str(rt.input_mode)
+    os.environ["ROUTER_MIDPOINT_BALANCE_MASKING"] = (
+        "1" if rt.midpoint_balance_masking else "0"
+    )
+    os.environ["ROUTER_MIDPOINT_BALANCE_EPSILON"] = str(rt.midpoint_balance_epsilon)
     os.environ["EMBEDDING_MODEL_FOR_ROUTER"] = _env_s(rd.embedding_model)
     em = cfg.entity_matching
     os.environ["ENTITY_MATCH_MAX_DF"] = str(em.max_df)

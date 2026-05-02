@@ -86,6 +86,21 @@ def test_e2e_branch_top_k_inherits_oracle_when_unset() -> None:
     assert cfg.e2e.branch_top_k == 15
 
 
+def test_router_train_midpoint_balance_fields_roundtrip() -> None:
+    cfg = pipeline_config_from_dict(
+        {
+            "router": {
+                "train": {
+                    "midpoint_balance_masking": True,
+                    "midpoint_balance_epsilon": 1e-4,
+                }
+            },
+        }
+    )
+    assert cfg.router.train.midpoint_balance_masking is True
+    assert cfg.router.train.midpoint_balance_epsilon == pytest.approx(1e-4)
+
+
 def test_validate_e2e_learned_requires_router_id() -> None:
     cfg = pipeline_config_from_dict(
         {
