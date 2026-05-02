@@ -23,7 +23,6 @@ from surf_rag.evaluation.router_model_artifacts import (
     make_router_model_paths_for_cli,
     read_json,
 )
-from surf_rag.router.model import RouterMLPConfig
 
 pytest.importorskip("torch")
 import torch  # noqa: E402
@@ -76,7 +75,10 @@ def test_train_smoke(tmp_path: Path) -> None:
         test_ratio=0.2,
     )
     out_model = make_router_model_paths_for_cli(
-        "t", router_base=tmp_path, input_mode="both"
+        "t",
+        router_base=tmp_path,
+        input_mode="both",
+        router_architecture_id="mlp-v1-default",
     )
     out_model.ensure_dirs()
     cfg = RouterTrainConfig(
@@ -87,18 +89,27 @@ def test_train_smoke(tmp_path: Path) -> None:
         batch_size=2,
         early_stopping_patience=100,
         device="cpu",
+        architecture="mlp-v1",
+        architecture_kwargs={},
         input_mode="both",
     )
     result = train_router(cfg)
     assert result.history
-    mcfg: RouterMLPConfig = result.model.config
-    save_checkpoint(out_model.checkpoint, result.model, mcfg)
+    mcfg = result.model.config
+    save_checkpoint(
+        out_model.checkpoint,
+        result.model,
+        mcfg,
+        architecture="mlp-v1",
+        architecture_kwargs={},
+    )
     assert out_model.checkpoint.is_file()
     try:
         pack = torch.load(out_model.checkpoint, map_location="cpu", weights_only=False)
     except TypeError:
         pack = torch.load(out_model.checkpoint, map_location="cpu")
     assert "state_dict" in pack
+    assert pack["architecture"] == "mlp-v1"
     mpath = out_model.metrics
     mpath.write_text(json.dumps({"splits": result.metrics}), encoding="utf-8")
     assert read_json(mpath).get("splits") is not None
@@ -130,7 +141,10 @@ def test_train_smoke_query_features(tmp_path: Path) -> None:
         test_ratio=0.2,
     )
     out_model = make_router_model_paths_for_cli(
-        "t2", router_base=tmp_path, input_mode="query-features"
+        "t2",
+        router_base=tmp_path,
+        input_mode="query-features",
+        router_architecture_id="mlp-v1-qf",
     )
     out_model.ensure_dirs()
     cfg = RouterTrainConfig(
@@ -141,14 +155,24 @@ def test_train_smoke_query_features(tmp_path: Path) -> None:
         batch_size=2,
         early_stopping_patience=100,
         device="cpu",
+        architecture="mlp-v1",
+        architecture_kwargs={},
         input_mode="query-features",
     )
     result = train_router(cfg)
-    mcfg: RouterMLPConfig = result.model.config
+    mcfg = result.model.config
     assert mcfg.input_mode == "query-features"
-    save_checkpoint(out_model.checkpoint, result.model, mcfg)
+    save_checkpoint(
+        out_model.checkpoint,
+        result.model,
+        mcfg,
+        architecture="mlp-v1",
+        architecture_kwargs={},
+    )
     assert out_model.checkpoint.is_file()
-    assert (tmp_path / "t2" / "model" / "query-features" / "model.pt").is_file()
+    assert (
+        tmp_path / "t2" / "models" / "mlp-v1-qf" / "query-features" / "model.pt"
+    ).is_file()
 
 
 def test_train_ignores_invalid_rows_in_metrics(tmp_path: Path) -> None:
@@ -170,6 +194,8 @@ def test_train_ignores_invalid_rows_in_metrics(tmp_path: Path) -> None:
         batch_size=2,
         early_stopping_patience=100,
         device="cpu",
+        architecture="mlp-v1",
+        architecture_kwargs={},
         input_mode="both",
     )
     result = train_router(cfg)
@@ -207,7 +233,44 @@ def test_train_fails_when_train_split_has_no_eligible_rows(tmp_path: Path) -> No
         epochs=2,
         batch_size=2,
         device="cpu",
+        architecture="mlp-v1",
+        architecture_kwargs={},
         input_mode="both",
     )
     with pytest.raises(ValueError, match="No router-eligible rows in train split"):
         train_router(cfg)
+
+
+def test_train_smoke_logreg_v1(tmp_path: Path) -> None:
+    rows = [_row("a", "train"), _row("b", "train"), _row("c", "dev")]
+    df = pd.DataFrame(rows)
+    pq = tmp_path / "r5.parquet"
+    df.to_parquet(pq, index=False)
+    out_model = make_router_model_paths_for_cli(
+        "t5",
+        router_base=tmp_path,
+        input_mode="embedding",
+        router_architecture_id="logreg-v1-baseline",
+    )
+    out_model.ensure_dirs()
+    cfg = RouterTrainConfig(
+        parquet_path=pq,
+        router_id="t5",
+        output_dir=out_model.run_root,
+        epochs=2,
+        batch_size=2,
+        early_stopping_patience=100,
+        device="cpu",
+        architecture="logreg-v1",
+        architecture_kwargs={},
+        input_mode="embedding",
+    )
+    result = train_router(cfg)
+    save_checkpoint(
+        out_model.checkpoint,
+        result.model,
+        result.model.config,
+        architecture="logreg-v1",
+        architecture_kwargs={},
+    )
+    assert out_model.checkpoint.is_file()

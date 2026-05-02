@@ -72,6 +72,16 @@ def router_model_dir(router_base: Path, router_id: str) -> Path:
     return router_bundle_dir(router_base, router_id) / "model"
 
 
+def router_models_dir(router_base: Path, router_id: str) -> Path:
+    return router_bundle_dir(router_base, router_id) / "models"
+
+
+def router_model_architecture_dir(
+    router_base: Path, router_id: str, router_architecture_id: str
+) -> Path:
+    return router_models_dir(router_base, router_id) / str(router_architecture_id)
+
+
 def evaluations_root(
     benchmark_base: Path, benchmark_name: str, benchmark_id: str
 ) -> Path:

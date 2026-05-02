@@ -474,6 +474,7 @@ def e2e_prepare_and_submit(
     routing_policy: str | RoutingPolicyName,
     retrieval_asset_dir: Path,
     router_id: Optional[str] = None,
+    router_architecture_id: Optional[str] = None,
     router_base: Optional[Path] = None,
     fusion_keep_k: int = 25,
     reranker_kind: str = "none",
@@ -608,6 +609,7 @@ def e2e_prepare_and_submit(
         t_router = time.perf_counter()
         router_ctx = load_router_inference_context(
             str(router_id),
+            router_architecture_id=router_architecture_id,
             input_mode=router_input_mode,
             router_base=rb,
             retrieval_asset_dir=asset_dir,
@@ -659,6 +661,7 @@ def e2e_prepare_and_submit(
                 "rerank_top_k": rerank_top_k,
                 "retrieval_metric_base_ks": list(_BASE_METRIC_KS),
                 "router_id": router_id,
+                "router_architecture_id": router_architecture_id,
                 "router_input_mode": router_input_mode,
                 "router_inference_batch_size": router_inference_batch_size,
                 "latency_protocol": {

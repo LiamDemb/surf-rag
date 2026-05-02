@@ -233,6 +233,15 @@ def merge_router_train_args(
         args.learning_rate = rt.learning_rate
     if not argv_provides(argv, "--device"):
         args.device = rt.device
+    if not argv_provides(argv, "--architecture"):
+        args.architecture = rt.architecture
+    if not argv_provides(argv, "--architecture-kwargs"):
+        args.architecture_kwargs = dict(rt.architecture_kwargs)
+    if (
+        not argv_provides(argv, "--router-architecture-id")
+        and cfg.paths.router_architecture_id
+    ):
+        args.router_architecture_id = cfg.paths.router_architecture_id
     if not argv_provides(argv, "--input-mode"):
         args.input_mode = rt.input_mode
 
@@ -277,6 +286,8 @@ def merge_e2e_prepare_args(
     p = cfg.paths
     if not argv_provides(argv, "--router-id") and p.router_id:
         args.router_id = p.router_id
+    if not argv_provides(argv, "--router-architecture-id") and p.router_architecture_id:
+        args.router_architecture_id = p.router_architecture_id
     rb = resolve_paths(cfg).router_base
     if not argv_provides(argv, "--router-base"):
         args.router_base = rb
@@ -323,5 +334,7 @@ def merge_e2e_evaluate_args(
     rb = resolve_paths(cfg).router_base
     if not argv_provides(argv, "--router-id") and p.router_id:
         args.router_id = p.router_id
+    if not argv_provides(argv, "--router-architecture-id") and p.router_architecture_id:
+        args.router_architecture_id = p.router_architecture_id
     if not argv_provides(argv, "--router-base"):
         args.router_base = rb

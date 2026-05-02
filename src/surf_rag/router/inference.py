@@ -8,16 +8,19 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 import torch
+import torch.nn as nn
 
 from surf_rag.evaluation.oracle_artifacts import DEFAULT_DENSE_WEIGHT_GRID
 from surf_rag.evaluation.router_model_artifacts import read_json
-from surf_rag.router.model import RouterMLP, RouterMLPConfig
+from surf_rag.router.architectures.registry import get_architecture
 
 
 @dataclass
 class LoadedRouter:
-    model: RouterMLP
-    config: RouterMLPConfig
+    model: nn.Module
+    config: Any
+    architecture: str
+    architecture_kwargs: Dict[str, Any]
     weight_grid: np.ndarray
     device: str
     manifest: Dict[str, Any]
@@ -35,11 +38,14 @@ def load_router_checkpoint(
     except TypeError:
         pack = torch.load(checkpoint_path, map_location=device)
     if isinstance(pack, dict) and "state_dict" in pack:
-        cfg = RouterMLPConfig.from_json(pack["config"])
+        architecture = str(pack.get("architecture") or "mlp-v1")
+        architecture_kwargs = dict(pack.get("architecture_kwargs") or {})
+        arch = get_architecture(architecture)
+        cfg = arch.config_from_json(dict(pack.get("config") or {}))
         state = pack["state_dict"]
     else:
         raise ValueError("checkpoint must be a dict with state_dict and config")
-    model = RouterMLP(cfg).to(device)
+    model = arch.build_model(cfg).to(device)
     model.load_state_dict(state)
     model.eval()
     manifest: Dict[str, Any] = {}
@@ -50,6 +56,8 @@ def load_router_checkpoint(
     return LoadedRouter(
         model=model,
         config=cfg,
+        architecture=architecture,
+        architecture_kwargs=architecture_kwargs,
         weight_grid=weight_grid,
         device=device,
         manifest=manifest,

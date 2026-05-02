@@ -164,6 +164,7 @@ def _coerce_yaml_scalar_types(cfg: PipelineConfig) -> PipelineConfig:
         benchmark_name=str(p.benchmark_name),
         benchmark_id=str(p.benchmark_id),
         router_id=_id_str(p.router_id),
+        router_architecture_id=_opt_path_str(p.router_architecture_id),
         hf_home=_opt_path_str(p.hf_home),
         transformers_cache=_opt_path_str(p.transformers_cache),
     )
@@ -203,6 +204,7 @@ class ResolvedPaths:
     benchmark_name: str
     benchmark_id: str
     router_id: str
+    router_architecture_id: str | None
     bundle: Path
     benchmark_dir: Path
     benchmark_path: Path
@@ -254,6 +256,7 @@ def resolve_paths(cfg: PipelineConfig) -> ResolvedPaths:
         benchmark_name=name,
         benchmark_id=bid,
         router_id=rid,
+        router_architecture_id=p.router_architecture_id,
         bundle=bundle,
         benchmark_dir=benchmark_dir,
         benchmark_path=benchmark_path,
@@ -297,6 +300,7 @@ def config_to_resolved_dict(cfg: PipelineConfig, rp: ResolvedPaths) -> dict[str,
         "router_oracle_dir": str(rp.router_oracle_dir),
         "router_dataset_dir": str(rp.router_dataset_dir),
         "router_model_dir": str(rp.router_model_dir),
+        "router_architecture_id": rp.router_architecture_id,
     }
     return d
 

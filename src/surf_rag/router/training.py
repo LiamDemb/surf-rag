@@ -1,4 +1,4 @@
-"""Train scalar RouterMLP from ``router_dataset.parquet``."""
+"""Train scalar router models from ``router_dataset.parquet``."""
 
 from __future__ import annotations
 
@@ -14,7 +14,8 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset, WeightedRandomSampler
 
 from surf_rag.evaluation.oracle_artifacts import DEFAULT_DENSE_WEIGHT_GRID
-from surf_rag.router.model import RouterMLP, RouterMLPConfig, parse_router_input_mode
+from surf_rag.router.architectures.registry import get_architecture
+from surf_rag.router.model import parse_router_input_mode
 from surf_rag.router.regret import regret_loss
 from surf_rag.router.router_metrics import aggregate_router_metrics
 
@@ -34,10 +35,8 @@ class RouterTrainConfig:
     early_stopping_min_delta: float = 1e-5
     seed: int = 42
     device: str = "cpu"
-    hidden_dim: int = 32
-    embed_proj_dim: int = 16
-    feat_proj_dim: int = 16
-    dropout: float = 0.1
+    architecture: str = "mlp-v1"
+    architecture_kwargs: dict[str, Any] | None = None
     num_workers: int = 0
     input_mode: str = "both"
     balance_training_sources: bool = True
@@ -112,22 +111,18 @@ def _split_router_row_counts(df: pd.DataFrame, split: str) -> Dict[str, float]:
     }
 
 
-def build_model_config_from_df(
-    df: pd.DataFrame, cfg: RouterTrainConfig
-) -> RouterMLPConfig:
+def build_model_config_from_df(df: pd.DataFrame, cfg: RouterTrainConfig) -> Any:
     sample = df.iloc[0]
     emb_dim = int(sample.get("embedding_dim", 0)) or len(
         _seq_floats(sample.get("query_embedding"))
     )
     feat_dim = len(_seq_floats(sample.get("feature_vector_norm")))
-    return RouterMLPConfig(
-        embedding_dim=emb_dim,
-        feature_dim=feat_dim,
-        input_mode=parse_router_input_mode(cfg.input_mode),
-        embed_proj_dim=cfg.embed_proj_dim,
-        feat_proj_dim=cfg.feat_proj_dim,
-        hidden_dim=cfg.hidden_dim,
-        dropout=cfg.dropout,
+    arch = get_architecture(cfg.architecture)
+    return arch.build_model_config(
+        emb_dim,
+        feat_dim,
+        parse_router_input_mode(cfg.input_mode),
+        dict(cfg.architecture_kwargs or {}),
     )
 
 
@@ -142,14 +137,14 @@ def _weight_grid_from_df(df: pd.DataFrame) -> np.ndarray:
 
 @dataclass
 class TrainRunResult:
-    model: RouterMLP
+    model: nn.Module
     history: List[Dict[str, float]]
     best_epoch: int
     metrics: Dict[str, Any]
 
 
 def train_router(cfg: RouterTrainConfig) -> TrainRunResult:
-    """Fit RouterMLP; return model, per-epoch history, and best epoch index."""
+    """Fit a router architecture; return model, history, and best epoch index."""
     random.seed(cfg.seed)
     np.random.seed(cfg.seed)
     torch.manual_seed(cfg.seed)
@@ -166,7 +161,8 @@ def train_router(cfg: RouterTrainConfig) -> TrainRunResult:
         )
 
     mcfg = build_model_config_from_df(train_df, cfg)
-    model = RouterMLP(mcfg).to(cfg.device)
+    arch = get_architecture(cfg.architecture)
+    model = arch.build_model(mcfg).to(cfg.device)
     opt = torch.optim.AdamW(
         model.parameters(),
         lr=cfg.learning_rate,
@@ -268,7 +264,7 @@ def train_router(cfg: RouterTrainConfig) -> TrainRunResult:
     if best_state is not None:
         model.load_state_dict({k: v.to(cfg.device) for k, v in best_state.items()})
 
-    metrics = _eval_splits(model, df, wg_np, cfg.device, mcfg)
+    metrics = _eval_splits(model, df, wg_np, cfg.device, mcfg, cfg.architecture)
     return TrainRunResult(
         model=model,
         history=history,
@@ -282,7 +278,8 @@ def _eval_splits(
     df: pd.DataFrame,
     wg_np: np.ndarray,
     device: str,
-    mcfg: RouterMLPConfig,
+    mcfg: Any,
+    architecture: str,
 ) -> Dict[str, Any]:
     model.eval()
     out: Dict[str, Any] = {}
@@ -325,7 +322,10 @@ def _eval_splits(
             len(df) - int(_eligible_mask(df).sum())
         ),
     }
-    out["config_summary"] = mcfg.to_json()
+    out["config_summary"] = {
+        "architecture": architecture,
+        "model_config": mcfg.to_json(),
+    }
     return out
 
 
@@ -370,12 +370,17 @@ def export_split_predictions(
 def save_checkpoint(
     path: Path,
     model: nn.Module,
-    mcfg: RouterMLPConfig,
+    mcfg: Any,
+    *,
+    architecture: str,
+    architecture_kwargs: dict[str, Any] | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(
         {
             "state_dict": model.state_dict(),
+            "architecture": architecture,
+            "architecture_kwargs": dict(architecture_kwargs or {}),
             "config": mcfg.to_json(),
         },
         path,

@@ -16,7 +16,9 @@ from surf_rag.evaluation.artifact_paths import (
     hard_router_policy_id,
     trained_router_policy_id,
     router_dataset_dir,
+    router_model_architecture_dir,
     router_model_dir,
+    router_models_dir,
     router_oracle_dir,
     safe_benchmark_bundle_subpath,
 )
@@ -38,6 +40,11 @@ def test_router_subdirs() -> None:
     assert router_oracle_dir(rb, "v01") == rb / "v01" / "oracle"
     assert router_dataset_dir(rb, "v01") == rb / "v01" / "dataset"
     assert router_model_dir(rb, "v01") == rb / "v01" / "model"
+    assert router_models_dir(rb, "v01") == rb / "v01" / "models"
+    assert (
+        router_model_architecture_dir(rb, "v01", "mlp-v1-a")
+        == rb / "v01" / "models" / "mlp-v1-a"
+    )
 
 
 def test_policy_id_helpers() -> None:

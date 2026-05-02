@@ -92,6 +92,8 @@ def apply_pipeline_env_from_config(config: object) -> None:
     os.environ["BENCHMARK_NAME"] = _env_s(cfg.paths.benchmark_name)
     os.environ["BENCHMARK_ID"] = _env_s(cfg.paths.benchmark_id)
     os.environ["ROUTER_ID"] = _env_s(cfg.paths.router_id)
+    if cfg.paths.router_architecture_id:
+        os.environ["ROUTER_ARCHITECTURE_ID"] = _env_s(cfg.paths.router_architecture_id)
     if cfg.e2e.include_graph_provenance:
         os.environ["INCLUDE_GRAPH_PATHS_IN_PROMPT"] = "true"
     # Graph + scoring (downstream `strategies/graph.py` and `scoring_config.py`)
@@ -130,6 +132,7 @@ def apply_pipeline_env_from_config(config: object) -> None:
     os.environ["ROUTER_BATCH_SIZE"] = str(rt.batch_size)
     os.environ["ROUTER_LEARNING_RATE"] = str(rt.learning_rate)
     os.environ["ROUTER_TRAIN_DEVICE"] = str(rt.device)
+    os.environ["ROUTER_ARCHITECTURE"] = str(rt.architecture)
     os.environ["ROUTER_INPUT_MODE"] = str(rt.input_mode)
     os.environ["EMBEDDING_MODEL_FOR_ROUTER"] = _env_s(rd.embedding_model)
     em = cfg.entity_matching

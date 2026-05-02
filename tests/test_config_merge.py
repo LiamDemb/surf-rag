@@ -114,6 +114,7 @@ def test_e2e_prepare_cli_run_id_overrides_config() -> None:
     args.policy = None
     args.retrieval_asset_dir = None
     args.router_id = None
+    args.router_architecture_id = None
     args.router_base = None
     args.fusion_keep_k = 25
     args.reranker = "none"
@@ -142,6 +143,7 @@ def test_e2e_prepare_cli_run_id_overrides_config() -> None:
     )
     assert args.run_id == "from-cli"
     assert args.latency_warmup_questions == cfg.e2e.latency_warmup_questions
+    assert args.router_architecture_id == cfg.paths.router_architecture_id
 
 
 def test_e2e_common_fills_benchmark_path() -> None:
@@ -161,3 +163,40 @@ def test_e2e_common_fills_benchmark_path() -> None:
     merge_e2e_common_args(args, cfg, argv=["prog", "--config", "x.yaml"])
     rp = resolve_paths(cfg)
     assert args.benchmark_path == rp.benchmark_path
+
+
+def test_merge_router_train_includes_architecture_fields() -> None:
+    from surf_rag.config.merge import merge_router_train_args
+
+    cfg = pipeline_config_from_dict(
+        {
+            "paths": {
+                "benchmark_name": "bn",
+                "benchmark_id": "bid",
+                "router_id": "rid",
+                "router_architecture_id": "mlp-v1-default",
+            },
+            "router": {
+                "train": {
+                    "architecture": "mlp-v1",
+                    "architecture_kwargs": {"hidden_dim": 64},
+                }
+            },
+        }
+    )
+    args = Namespace(
+        router_id=None,
+        router_base=None,
+        router_architecture_id=None,
+        epochs=None,
+        batch_size=None,
+        learning_rate=None,
+        device=None,
+        architecture=None,
+        architecture_kwargs=None,
+        input_mode=None,
+    )
+    merge_router_train_args(args, cfg, argv=["prog", "--config", "x.yaml"])
+    assert args.router_architecture_id == "mlp-v1-default"
+    assert args.architecture == "mlp-v1"
+    assert args.architecture_kwargs == {"hidden_dim": 64}

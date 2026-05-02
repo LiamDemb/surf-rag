@@ -117,6 +117,8 @@ def test_learned_soft_with_router() -> None:
     router = LoadedRouter(
         model=m,
         config=cfg,
+        architecture="mlp-v1",
+        architecture_kwargs={},
         weight_grid=np.asarray([float(i) / 10.0 for i in range(11)]),
         device="cpu",
         manifest={},

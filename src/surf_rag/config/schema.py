@@ -20,6 +20,7 @@ class PathsSection:
     benchmark_name: str = "benchmark-name"
     benchmark_id: str = "v01"
     router_id: str = "v01"
+    router_architecture_id: str | None = None
     hf_home: str | None = None
     transformers_cache: str | None = None
 
@@ -91,6 +92,8 @@ class RouterTrainSection:
     batch_size: int = 32
     learning_rate: float = 0.001
     device: str = "cpu"
+    architecture: str = "mlp-v1"
+    architecture_kwargs: dict[str, Any] = field(default_factory=dict)
     input_mode: str = "both"
     input_modes: list[str] = field(
         default_factory=lambda: ["both", "query-features", "embedding"]

@@ -27,14 +27,17 @@ def test_yaml_unquoted_ids_coerce_to_str_for_paths_and_env() -> None:
                 "benchmark_name": "hotpotqa",
                 "benchmark_id": 100,
                 "router_id": 42,
+                "router_architecture_id": 7,
             }
         }
     )
     assert cfg.paths.benchmark_id == "100"
     assert cfg.paths.router_id == "42"
+    assert cfg.paths.router_architecture_id == "7"
     apply_pipeline_env_from_config(cfg)
     assert os.environ["BENCHMARK_ID"] == "100"
     assert os.environ["ROUTER_ID"] == "42"
+    assert os.environ["ROUTER_ARCHITECTURE_ID"] == "7"
 
 
 def test_load_example_pipeline(tmp_path: Path) -> None:
@@ -113,6 +116,13 @@ def test_minimal_yaml_roundtrip(tmp_path: Path) -> None:
                     "benchmark_name": "b",
                     "benchmark_id": "v1",
                     "router_id": "r1",
+                    "router_architecture_id": "mlp-v1-default",
+                },
+                "router": {
+                    "train": {
+                        "architecture": "logreg-v1",
+                        "architecture_kwargs": {},
+                    }
                 },
             }
         ),
@@ -122,6 +132,8 @@ def test_minimal_yaml_roundtrip(tmp_path: Path) -> None:
     rp = resolve_paths(cfg)
     assert rp.benchmark_name == "b"
     assert rp.router_id == "r1"
+    assert rp.router_architecture_id == "mlp-v1-default"
+    assert cfg.router.train.architecture == "logreg-v1"
 
 
 def test_graph_retrieval_sweep_bool_parsed() -> None:

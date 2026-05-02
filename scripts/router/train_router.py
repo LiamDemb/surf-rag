@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -46,11 +47,26 @@ def parse_args() -> argparse.Namespace:
         help="YAML pipeline config (router.train section).",
     )
     p.add_argument("--router-id", default=None)
+    p.add_argument(
+        "--router-architecture-id",
+        default=None,
+        help="Architecture artifact id under router models/<id>/...",
+    )
     p.add_argument("--router-base", type=Path, default=None)
     p.add_argument("--epochs", type=int, default=None)
     p.add_argument("--batch-size", type=int, default=None)
     p.add_argument("--learning-rate", type=float, default=None)
     p.add_argument("--device", default=None, help="cpu or cuda")
+    p.add_argument(
+        "--architecture",
+        default=None,
+        help="Router architecture family (e.g., mlp-v1, logreg-v1).",
+    )
+    p.add_argument(
+        "--architecture-kwargs",
+        default=None,
+        help="JSON mapping for architecture-specific kwargs.",
+    )
     p.add_argument(
         "--input-mode",
         default=None,
@@ -77,6 +93,11 @@ def main() -> int:
     if not args.router_id:
         log.error("Provide --config or --router-id.")
         return 2
+    if not args.router_architecture_id:
+        log.error(
+            "Provide --router-architecture-id (or config paths.router_architecture_id)."
+        )
+        return 2
 
     ds_paths = make_router_dataset_paths_for_cli(
         args.router_id, router_base=args.router_base
@@ -95,11 +116,28 @@ def main() -> int:
     input_mode = parse_router_input_mode(str(raw_mode))
 
     out_paths = make_router_model_paths_for_cli(
-        args.router_id, router_base=args.router_base, input_mode=input_mode
+        args.router_id,
+        router_base=args.router_base,
+        input_mode=input_mode,
+        router_architecture_id=args.router_architecture_id,
     )
     out_paths.ensure_dirs()
 
     device = args.device or os.getenv("ROUTER_TRAIN_DEVICE", "cpu")
+    architecture = str(args.architecture or os.getenv("ROUTER_ARCHITECTURE", "mlp-v1"))
+    architecture_kwargs: dict[str, object] = {}
+    if args.architecture_kwargs:
+        try:
+            payload = json.loads(str(args.architecture_kwargs))
+            if not isinstance(payload, dict):
+                raise ValueError("architecture kwargs must be a JSON object")
+            architecture_kwargs = dict(payload)
+        except Exception as exc:
+            log.error("Invalid --architecture-kwargs JSON: %s", exc)
+            return 2
+    elif getattr(args, "architecture_kwargs", None):
+        architecture_kwargs = dict(args.architecture_kwargs)
+
     cfg = RouterTrainConfig(
         parquet_path=parquet_path,
         router_id=args.router_id,
@@ -111,6 +149,8 @@ def main() -> int:
         ),
         seed=int(os.getenv("SEED", "42")),
         device=device,
+        architecture=architecture,
+        architecture_kwargs=architecture_kwargs,
         input_mode=input_mode,
     )
 
@@ -119,12 +159,21 @@ def main() -> int:
     wg = _weight_grid_from_df(df)
     mcfg = result.model.config
 
-    save_checkpoint(out_paths.checkpoint, result.model, mcfg)
+    save_checkpoint(
+        out_paths.checkpoint,
+        result.model,
+        mcfg,
+        architecture=architecture,
+        architecture_kwargs=architecture_kwargs,
+    )
 
     write_json(
         out_paths.metrics,
         {
             "router_id": args.router_id,
+            "router_architecture_id": args.router_architecture_id,
+            "architecture": architecture,
+            "architecture_kwargs": architecture_kwargs,
             "input_mode": input_mode,
             "best_epoch": result.best_epoch,
             "splits": result.metrics,
@@ -138,7 +187,10 @@ def main() -> int:
     write_router_model_manifest(
         out_paths,
         router_id=args.router_id,
+        router_architecture_id=args.router_architecture_id,
         input_mode=input_mode,
+        architecture_name=architecture,
+        architecture_kwargs=architecture_kwargs,
         dataset_manifest_path=str(ds_paths.manifest.resolve()),
         model_config=mcfg.to_json(),
         training_config={

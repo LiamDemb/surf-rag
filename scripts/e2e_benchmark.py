@@ -113,6 +113,7 @@ def cmd_prepare(args: argparse.Namespace) -> int:
         routing_policy=policy,
         retrieval_asset_dir=args.retrieval_asset_dir.resolve(),
         router_id=args.router_id,
+        router_architecture_id=getattr(args, "router_architecture_id", None),
         router_base=args.router_base,
         fusion_keep_k=args.fusion_keep_k,
         reranker_kind=args.reranker,
@@ -246,6 +247,7 @@ def main() -> int:
     )
     _add_common(p_prep)
     p_prep.add_argument("--router-id", default=None)
+    p_prep.add_argument("--router-architecture-id", default=None)
     p_prep.add_argument("--router-base", type=Path, default=None)
     p_prep.add_argument(
         "--fusion-keep-k",

@@ -20,6 +20,9 @@ def test_model_root() -> None:
         "data/router/v01/model/both"
     )
     assert build_router_model_root(
+        Path("data/router"), "v01", "both", "mlp-v1-default"
+    ) == Path("data/router/v01/models/mlp-v1-default/both")
+    assert build_router_model_root(
         Path("data/router"), "v01", "query-features"
     ) == Path("data/router/v01/model/query-features")
 
@@ -29,6 +32,11 @@ def test_paths() -> None:
     assert p.run_root == Path("/b/r1/model/both")
     assert p.checkpoint == Path("/b/r1/model/both/model.pt")
     assert p.predictions("test") == Path("/b/r1/model/both/predictions_test.jsonl")
+    p2 = make_router_model_paths_for_cli(
+        "r1", router_base=Path("/b"), router_architecture_id="logreg-v1-baseline"
+    )
+    assert p2.run_root == Path("/b/r1/models/logreg-v1-baseline/both")
+    assert p2.checkpoint == Path("/b/r1/models/logreg-v1-baseline/both/model.pt")
 
 
 def test_manifest_roundtrip(tmp_path: Path) -> None:
@@ -37,7 +45,10 @@ def test_manifest_roundtrip(tmp_path: Path) -> None:
     write_router_model_manifest(
         paths,
         router_id="m1",
+        router_architecture_id="mlp-v1-default",
         input_mode="both",
+        architecture_name="mlp-v1",
+        architecture_kwargs={"hidden_dim": 32},
         dataset_manifest_path="/x/dataset/manifest.json",
         model_config={"hidden_dim": 32},
         training_config={"epochs": 10},
@@ -46,8 +57,11 @@ def test_manifest_roundtrip(tmp_path: Path) -> None:
         weight_grid=[0.0, 0.5, 1.0],
     )
     m = read_router_model_manifest(paths)
-    assert m["model_id"] == "m1:both"
+    assert m["model_id"] == "m1:mlp-v1-default:both"
+    assert m["router_architecture_id"] == "mlp-v1-default"
     assert m["model"]["input_mode"] == "both"
+    assert m["model"]["architecture_name"] == "mlp-v1"
+    assert m["model"]["architecture_kwargs"] == {"hidden_dim": 32}
     assert m["model"]["active_inputs"] == [
         "query_embedding",
         "feature_vector_norm",

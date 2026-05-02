@@ -74,6 +74,7 @@ def load_router_inference_context(
     router_id: str,
     *,
     input_mode: str = "both",
+    router_architecture_id: Optional[str] = None,
     router_base: Optional[Path] = None,
     retrieval_asset_dir: Optional[Path] = None,
     device: str = "cpu",
@@ -102,7 +103,41 @@ def load_router_inference_context(
         raise FileNotFoundError(f"Corpus dir missing or not a directory: {corp_raw}")
     feat_ctx = _feature_context_for_corpus(corp_raw)
 
-    mp = make_router_model_paths_for_cli(router_id, router_base=rb, input_mode=mode)
+    resolved_architecture_id: Optional[str] = (
+        str(router_architecture_id).strip()
+        if router_architecture_id and str(router_architecture_id).strip()
+        else None
+    )
+    models_root = rb / str(router_id) / "models"
+    if resolved_architecture_id is None and models_root.is_dir():
+        candidates = sorted(
+            [
+                p.name
+                for p in models_root.iterdir()
+                if p.is_dir() and str(p.name).strip()
+            ]
+        )
+        if len(candidates) == 1:
+            resolved_architecture_id = candidates[0]
+        elif len(candidates) > 1:
+            raise ValueError(
+                "router_architecture_id is required when multiple router models exist: "
+                f"{candidates}"
+            )
+
+    mp = make_router_model_paths_for_cli(
+        router_id,
+        router_base=rb,
+        input_mode=mode,
+        router_architecture_id=resolved_architecture_id,
+    )
+    if not mp.checkpoint.is_file() and resolved_architecture_id is not None:
+        raise FileNotFoundError(f"Missing router checkpoint: {mp.checkpoint}")
+    if not mp.checkpoint.is_file():
+        # Backward compatibility: legacy single-model location
+        mp = make_router_model_paths_for_cli(
+            router_id, router_base=rb, input_mode=mode, router_architecture_id=None
+        )
     if not mp.checkpoint.is_file():
         raise FileNotFoundError(f"Missing router checkpoint: {mp.checkpoint}")
     router = load_router_checkpoint(
