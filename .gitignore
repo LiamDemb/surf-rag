@@ -67,3 +67,6 @@ prompts/dev
 /configs
 
 .file_tree.txt
+
+# Figures
+figures/
