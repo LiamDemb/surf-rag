@@ -277,7 +277,7 @@ def resolve_paths(cfg: PipelineConfig) -> ResolvedPaths:
     )
     if p.figures_base and str(p.figures_base).strip():
         figures_base = Path(str(p.figures_base).strip()).expanduser().resolve()
-        if figures_base == Path("figures"):
+        if figures_base == Path("/").resolve():
             raise ValueError(
                 "paths.figures_base cannot be '/' — figures would be written under "
                 "/benchmarks/... or /router/... on the filesystem root. Omit "

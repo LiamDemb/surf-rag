@@ -1,4 +1,24 @@
 #!/usr/bin/env python3
+"""Compare two completed E2E runs: nDCG@10 improves on final context but QA max-F1 does not.
+
+Writes ``interesting.jsonl``, ``interesting.md``, and ``manifest.json`` under
+``--output-root/--test-id`` (default ``temp/discrepancy-debugging``).
+
+Baseline is run A; run B is the candidate. Use ``--policy-a`` / ``--policy-b`` when runs
+live under different ``evaluations/<policy>/<run_id>/`` directories.
+
+Examples:
+
+    poetry run python scripts/discrepancy_debug_e2e.py --config configs/gen-debug/001.yaml
+
+    poetry run python scripts/discrepancy_debug_e2e.py \\
+        --benchmark-path data/benchmarks/surf-bench/main/benchmark/benchmark.jsonl \\
+        --run-root-a .../evaluations/learned-soft/run-A \\
+        --run-root-b .../evaluations/learned-soft/run-B \\
+        --test-id 1
+
+    make gen-debug CONFIG=configs/gen-debug/001.yaml
+"""
 
 from __future__ import annotations
 
@@ -161,10 +181,18 @@ def finalize_benchmark_and_requirements(args: argparse.Namespace) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    raw_doc = (__doc__ or "").strip()
+    doc_parts = raw_doc.split("\n\n") if raw_doc else []
+    description = (
+        doc_parts[0]
+        if doc_parts
+        else "E2E retrieval vs QA discrepancy debug (nDCG@10 vs max-F1)."
+    )
+    epilog = "\n".join(doc_parts[3:]).strip() if len(doc_parts) > 3 else ""
     p = argparse.ArgumentParser(
-        description=__doc__.split("\n\n")[0],
+        description=description,
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="\n".join(__doc__.split("\n\n")[3:]).strip(),
+        epilog=epilog or None,
     )
     p.add_argument(
         "--config",
