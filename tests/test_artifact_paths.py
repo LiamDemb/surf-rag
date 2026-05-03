@@ -8,6 +8,7 @@ import pytest
 
 from surf_rag.evaluation.artifact_paths import (
     benchmark_bundle_dir,
+    benchmark_jsonl_path,
     default_benchmark_base,
     default_data_base,
     default_router_base,
@@ -28,6 +29,9 @@ def test_benchmark_bundle_and_eval_paths() -> None:
     base = Path("data") / "benchmarks"
     b = base / "mix" / "v01"
     assert benchmark_bundle_dir(base, "mix", "v01") == b
+    assert (
+        benchmark_jsonl_path(base, "mix", "v01") == b / "benchmark" / "benchmark.jsonl"
+    )
     assert evaluations_root(base, "mix", "v01") == b / "evaluations"
     assert (
         evaluation_policy_dir(base, "mix", "v01", "50-50")

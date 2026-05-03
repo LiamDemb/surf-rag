@@ -41,6 +41,15 @@ def benchmark_bundle_dir(
     return benchmark_base / benchmark_name / benchmark_id
 
 
+def benchmark_jsonl_path(
+    benchmark_base: Path, benchmark_name: str, benchmark_id: str
+) -> Path:
+    """Canonical ``benchmark/benchmark.jsonl`` under the bundle (matches ``resolve_paths``)."""
+    return benchmark_bundle_dir(benchmark_base, benchmark_name, benchmark_id).joinpath(
+        "benchmark", "benchmark.jsonl"
+    )
+
+
 _BUNDLE_SUBPATH_SAFE = re.compile(r"[^a-zA-Z0-9._-]+")
 
 

@@ -2,6 +2,7 @@
 
 from surf_rag.evaluation.artifact_paths import (
     benchmark_bundle_dir,
+    benchmark_jsonl_path,
     default_benchmark_base,
     default_data_base,
     default_router_base,
@@ -73,6 +74,7 @@ __all__ = [
     "default_benchmark_base",
     "default_router_base",
     "benchmark_bundle_dir",
+    "benchmark_jsonl_path",
     "router_bundle_dir",
     "router_oracle_dir",
     "router_dataset_dir",

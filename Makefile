@@ -7,6 +7,7 @@
 	validate-oracle-config validate-router-config validate-router-train \
 	e2e-print-config e2e-prepare e2e-submit e2e-collect e2e-evaluate e2e-run \
 	e2e-run-all-policies e2e-collect-all-policies e2e-evaluate-all-policies e2e-smoke-test-v01 \
+	gen-debug discrepancy-debug-e2e \
 	build-entity-matching-artifacts corpus-ie-run corpus-ie-retry corpus-finalize corpus-ie-retry-and-finalize
 
 # Default experiment recipe (override per run: make build-corpus CONFIG=configs/e2e/.../x.yaml)
@@ -52,6 +53,7 @@ help:
 	@echo "  make oracle-labels            — oracle + router labels"
 	@echo "  make router-pipeline         — oracle-labels + router-build-dataset"
 	@echo "  make e2e-submit / e2e-collect / e2e-evaluate   (+ optional E2E_RUN_ID= E2E_POLICY=)"
+	@echo "  make gen-debug          (CONFIG=configs/gen-debug/….yaml)"
 	@echo ""
 	@echo "Full reference: docs/config-driven-workflows.md"
 
@@ -220,3 +222,10 @@ E2E_SMOKE_RUN_ID ?= smoke-$(shell date +%Y%m%d-%H%M%S)
 e2e-smoke-test-v01:
 	$(PY) -m scripts.e2e_benchmark --config "$(CONFIG)" prepare --dry-run --limit 1 \
 		--run-id "$(E2E_SMOKE_RUN_ID)" --policy dense-only
+
+# Testing cases where retrieval performance increases and QA decreases to understand the LLM bottleneck
+gen-debug:
+	$(PY) scripts/discrepancy_debug_e2e.py --config "$(CONFIG)"
+
+# Back-compat alias
+discrepancy-debug-e2e: gen-debug

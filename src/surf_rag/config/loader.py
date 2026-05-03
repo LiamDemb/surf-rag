@@ -11,6 +11,7 @@ import yaml
 import surf_rag.config.schema as _schema_module
 from surf_rag.evaluation.artifact_paths import (
     benchmark_bundle_dir,
+    benchmark_jsonl_path,
     router_dataset_dir,
     router_model_dir,
     router_oracle_dir,
@@ -260,8 +261,8 @@ def resolve_paths(cfg: PipelineConfig) -> ResolvedPaths:
     name, bid = p.benchmark_name, p.benchmark_id
     rid = p.router_id
     bundle = benchmark_bundle_dir(bbase, name, bid)
-    benchmark_dir = bundle / "benchmark"
-    benchmark_path = benchmark_dir / "benchmark.jsonl"
+    benchmark_path = benchmark_jsonl_path(bbase, name, bid)
+    benchmark_dir = benchmark_path.parent
     corpus_dir = bundle / "corpus"
     docstore_path = corpus_dir / "docstore.sqlite"
     corpus_path = corpus_dir / "corpus.jsonl"
