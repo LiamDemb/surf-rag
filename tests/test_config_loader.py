@@ -123,6 +123,17 @@ def test_validate_e2e_learned_requires_router_id() -> None:
         validate_e2e_config(cfg)
 
 
+def test_validate_e2e_learned_hybrid_requires_router_id() -> None:
+    cfg = pipeline_config_from_dict(
+        {
+            "paths": {"router_id": ""},
+            "e2e": {"policy": "learned-hybrid"},
+        }
+    )
+    with pytest.raises(ValueError, match="router_id"):
+        validate_e2e_config(cfg)
+
+
 def test_validate_e2e_oracle_upper_bound_requires_router_id() -> None:
     cfg = pipeline_config_from_dict(
         {

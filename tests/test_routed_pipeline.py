@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import numpy as np
 import pytest
 
@@ -135,3 +137,74 @@ def test_learned_soft_with_router() -> None:
         feature_vector=feat,
     )
     assert d.calls == 1 and g.calls == 1
+
+
+def _router_and_counting_pipeline() -> (
+    tuple[RoutedFusionPipeline, _CountingRetriever, _CountingRetriever]
+):
+    cfg = RouterMLPConfig(
+        embedding_dim=4,
+        feature_dim=2,
+        embed_proj_dim=2,
+        feat_proj_dim=2,
+        hidden_dim=4,
+        dropout=0.0,
+    )
+    m = RouterMLP(cfg)
+    router = LoadedRouter(
+        model=m,
+        config=cfg,
+        architecture="mlp-v1",
+        architecture_kwargs={},
+        weight_grid=np.asarray([float(i) / 10.0 for i in range(11)]),
+        device="cpu",
+        manifest={},
+    )
+    d = _CountingRetriever("Dense", _ok("Dense", ["a"]))
+    g = _CountingRetriever("Graph", _ok("Graph", ["b"]))
+    pl = RoutedFusionPipeline(d, g, fusion_keep_k=3, router=router)
+    return pl, d, g
+
+
+@patch("surf_rag.router.inference.predict_batch", return_value=np.asarray([0.25]))
+def test_learned_hybrid_graph_only_branch(_mock_pb: object) -> None:
+    pl, d, g = _router_and_counting_pipeline()
+    emb = np.ones(4, dtype=np.float32)
+    feat = np.zeros(2, dtype=np.float32)
+    pl.run(
+        "q",
+        RoutingPolicyName.LEARNED_HYBRID,
+        query_embedding=emb,
+        feature_vector=feat,
+    )
+    assert d.calls == 0 and g.calls == 1
+
+
+@patch("surf_rag.router.inference.predict_batch", return_value=np.asarray([0.5]))
+def test_learned_hybrid_fusion_both_branches(_mock_pb: object) -> None:
+    pl, d, g = _router_and_counting_pipeline()
+    emb = np.ones(4, dtype=np.float32)
+    feat = np.zeros(2, dtype=np.float32)
+    out = pl.run(
+        "q",
+        RoutingPolicyName.LEARNED_HYBRID,
+        query_embedding=emb,
+        feature_vector=feat,
+    )
+    assert d.calls == 1 and g.calls == 1
+    assert "dense_retrieval" in out.latency_ms
+    assert "graph_retrieval" in out.latency_ms
+
+
+@patch("surf_rag.router.inference.predict_batch", return_value=np.asarray([0.75]))
+def test_learned_hybrid_dense_only_branch(_mock_pb: object) -> None:
+    pl, d, g = _router_and_counting_pipeline()
+    emb = np.ones(4, dtype=np.float32)
+    feat = np.zeros(2, dtype=np.float32)
+    pl.run(
+        "q",
+        RoutingPolicyName.LEARNED_HYBRID,
+        query_embedding=emb,
+        feature_vector=feat,
+    )
+    assert d.calls == 1 and g.calls == 0

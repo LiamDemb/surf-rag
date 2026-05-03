@@ -15,6 +15,7 @@ def parse_routing_policy(name: str) -> str:
     aliases = {
         "learnedsoft": RoutingPolicyName.LEARNED_SOFT,
         "learnedhard": RoutingPolicyName.LEARNED_HARD,
+        "learnedhybrid": RoutingPolicyName.LEARNED_HYBRID,
         "5050": RoutingPolicyName.EQUAL_50_50,
         "50-50": RoutingPolicyName.EQUAL_50_50,
         "equal": RoutingPolicyName.EQUAL_50_50,

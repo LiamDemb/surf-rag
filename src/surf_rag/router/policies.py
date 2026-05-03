@@ -1,6 +1,10 @@
-"""Routing policies: learned soft/hard, constant 50/50, dense-only, graph-only."""
+"""Routing policies: learned soft/hard/hybrid, constant 50/50, dense-only, graph-only."""
 
 from __future__ import annotations
+
+# Fusion band is inclusive on both ends; outer bands are strict (< low, > high).
+LEARNED_HYBRID_FUSION_MIN = 0.4
+LEARNED_HYBRID_FUSION_MAX = 0.6
 
 from dataclasses import dataclass
 from enum import Enum
@@ -10,6 +14,7 @@ from typing import Any, Dict, Literal, Optional
 class RoutingPolicyName(str, Enum):
     LEARNED_SOFT = "learned-soft"
     LEARNED_HARD = "learned-hard"
+    LEARNED_HYBRID = "learned-hybrid"
     EQUAL_50_50 = "50-50"
     DENSE_ONLY = "dense-only"
     GRAPH_ONLY = "graph-only"
@@ -95,6 +100,36 @@ def decide_routing(
             predicted_weight=clipped,
             hard_branch=branch,
             tie_break=reason,
+        )
+    if policy == RoutingPolicyName.LEARNED_HYBRID:
+        if clipped < LEARNED_HYBRID_FUSION_MIN:
+            return RoutingDecision(
+                policy=policy,
+                dense_weight=clipped,
+                run_dense=False,
+                run_graph=True,
+                predicted_weight=clipped,
+                hard_branch="graph",
+                tie_break="weight_lt_0.4",
+            )
+        if clipped <= LEARNED_HYBRID_FUSION_MAX:
+            return RoutingDecision(
+                policy=policy,
+                dense_weight=clipped,
+                run_dense=True,
+                run_graph=True,
+                predicted_weight=clipped,
+                hard_branch=None,
+                tie_break="fusion_band_inclusive",
+            )
+        return RoutingDecision(
+            policy=policy,
+            dense_weight=clipped,
+            run_dense=True,
+            run_graph=False,
+            predicted_weight=clipped,
+            hard_branch="dense",
+            tie_break="weight_gt_0.6",
         )
     raise ValueError(f"unknown policy {policy}")
 

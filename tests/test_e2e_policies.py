@@ -10,6 +10,12 @@ def test_parse_routing_policy_aliases() -> None:
     assert parse_routing_policy("dense") == RoutingPolicyName.DENSE_ONLY.value
     assert parse_routing_policy("50_50") == RoutingPolicyName.EQUAL_50_50.value
     assert parse_routing_policy("learned-soft") == RoutingPolicyName.LEARNED_SOFT.value
+    assert (
+        parse_routing_policy("learned-hybrid") == RoutingPolicyName.LEARNED_HYBRID.value
+    )
+    assert (
+        parse_routing_policy("learnedhybrid") == RoutingPolicyName.LEARNED_HYBRID.value
+    )
     assert parse_routing_policy("oracle-upper-bound") == ORACLE_UPPER_BOUND_POLICY
 
 

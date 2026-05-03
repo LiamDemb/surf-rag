@@ -158,6 +158,7 @@ class E2ESection:
             "50-50",
             "learned-soft",
             "learned-hard",
+            "learned-hybrid",
             "oracle-upper-bound",
         ]
     )

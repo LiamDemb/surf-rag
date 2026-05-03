@@ -55,8 +55,8 @@ def _add_common(p: argparse.ArgumentParser) -> None:
         "--policy",
         default=None,
         help=(
-            "Routing policy: learned-soft, learned-hard, 50-50, dense-only, "
-            "graph-only, oracle-upper-bound"
+            "Routing policy: learned-soft, learned-hard, learned-hybrid, 50-50, "
+            "dense-only, graph-only, oracle-upper-bound"
         ),
     )
     p.add_argument("--retrieval-asset-dir", type=Path, default=None)

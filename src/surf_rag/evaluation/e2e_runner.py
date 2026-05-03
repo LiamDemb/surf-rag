@@ -508,6 +508,7 @@ def e2e_prepare_and_submit(
     if policy in (
         RoutingPolicyName.LEARNED_SOFT.value,
         RoutingPolicyName.LEARNED_HARD.value,
+        RoutingPolicyName.LEARNED_HYBRID.value,
         ORACLE_UPPER_BOUND_POLICY,
     ):
         if not router_id or not str(router_id).strip():
@@ -574,12 +575,14 @@ def e2e_prepare_and_submit(
         RoutingPolicyName.EQUAL_50_50.value,
         RoutingPolicyName.LEARNED_SOFT.value,
         RoutingPolicyName.LEARNED_HARD.value,
+        RoutingPolicyName.LEARNED_HYBRID.value,
     )
     need_graph = policy in (
         RoutingPolicyName.GRAPH_ONLY.value,
         RoutingPolicyName.EQUAL_50_50.value,
         RoutingPolicyName.LEARNED_SOFT.value,
         RoutingPolicyName.LEARNED_HARD.value,
+        RoutingPolicyName.LEARNED_HYBRID.value,
     )
 
     if need_dense:
@@ -605,6 +608,7 @@ def e2e_prepare_and_submit(
     if policy in (
         RoutingPolicyName.LEARNED_SOFT.value,
         RoutingPolicyName.LEARNED_HARD.value,
+        RoutingPolicyName.LEARNED_HYBRID.value,
     ):
         t_router = time.perf_counter()
         router_ctx = load_router_inference_context(

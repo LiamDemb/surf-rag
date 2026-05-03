@@ -110,6 +110,7 @@ class RoutedFusionPipeline:
         if policy in (
             RoutingPolicyName.LEARNED_SOFT,
             RoutingPolicyName.LEARNED_HARD,
+            RoutingPolicyName.LEARNED_HYBRID,
         ):
             if self.router is None:
                 raise ValueError("learned policies require a loaded router")
