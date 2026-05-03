@@ -57,7 +57,25 @@ _BENCHMARK_ORACLE_HEATMAP_ALLOWED = frozenset(
     }
 )
 
-_KNOWN_KINDS_HINT = "router_pred_vs_oracle, router_pred_vs_oracle_intervals, benchmark_oracle_ndcg_heatmap"
+_ORACLE_ARGMAX_WEIGHT_HISTOGRAM_ALLOWED = frozenset(
+    {
+        "kind",
+        "split",
+        "exclude_all_zero_queries",
+        "rtol",
+        "atol",
+        "filename_stem",
+        "fig_width",
+        "fig_height",
+        "hist_bins",
+        "show_plot_subtitle",
+    }
+)
+
+_KNOWN_KINDS_HINT = (
+    "router_pred_vs_oracle, router_pred_vs_oracle_intervals, "
+    "benchmark_oracle_ndcg_heatmap, oracle_argmax_weight_histogram"
+)
 
 
 @dataclass(frozen=True)
@@ -278,6 +296,62 @@ class BenchmarkOracleHeatmapSpec(BaseFigureSpec):
         )
 
 
+@dataclass(frozen=True)
+class OracleArgmaxWeightHistogramSpec(BaseFigureSpec):
+    """Stacked histogram of dense weights where the oracle curve attains its maximum.
+
+    **Every** grid bin tied for the maximum is counted (not a single argmax).
+    Green: query had a **unique** maximizing bin. Orange: query had **≥2** bins at
+    the maximum — each tied bin gets one count.
+
+    **hist_bins**: ``0`` (default) = one bar per ``weight_grid`` value in the dataset
+    (e.g. 11 points 0..1). ``N > 0`` = ``N`` equal-width bins on ``[0, 1]``.
+    """
+
+    split: HeatmapSplitName
+    exclude_all_zero_queries: bool = True
+    hist_bins: int = 0
+    rtol: float = 1e-5
+    atol: float = 1e-8
+    filename_stem: str = "oracle_argmax_weight_histogram"
+    fig_width: float = 8.0
+    fig_height: float = 4.5
+    show_plot_subtitle: bool = True
+
+    def __post_init__(self) -> None:
+        if self.kind != "oracle_argmax_weight_histogram":
+            raise ValueError(f"unexpected kind {self.kind!r}")
+        if self.rtol < 0 or self.atol < 0:
+            raise ValueError("rtol/atol must be non-negative")
+        if self.fig_width <= 0 or self.fig_height <= 0:
+            raise ValueError("fig_width and fig_height must be positive")
+        if self.hist_bins > 500:
+            raise ValueError("hist_bins must be <= 500 when using equal-width binning")
+
+    @staticmethod
+    def from_mapping(m: Mapping[str, Any]) -> OracleArgmaxWeightHistogramSpec:
+        extra = frozenset(m.keys()) - _ORACLE_ARGMAX_WEIGHT_HISTOGRAM_ALLOWED
+        if extra:
+            raise ValueError(
+                f"Unknown keys for oracle_argmax_weight_histogram plot: {sorted(extra)}"
+            )
+        split = m.get("split", "all")
+        if split not in ("all", "train", "dev", "test"):
+            raise ValueError(f"split must be all|train|dev|test, got {split!r}")
+        return OracleArgmaxWeightHistogramSpec(
+            kind="oracle_argmax_weight_histogram",
+            split=split,  # type: ignore[arg-type]
+            exclude_all_zero_queries=bool(m.get("exclude_all_zero_queries", True)),
+            hist_bins=int(m.get("hist_bins", 0)),
+            rtol=float(m.get("rtol", 1e-5)),
+            atol=float(m.get("atol", 1e-8)),
+            filename_stem=str(m.get("filename_stem", "oracle_argmax_weight_histogram")),
+            fig_width=float(m.get("fig_width", 8.0)),
+            fig_height=float(m.get("fig_height", 4.5)),
+            show_plot_subtitle=bool(m.get("show_plot_subtitle", True)),
+        )
+
+
 def figure_spec_from_mapping(plot: Mapping[str, Any]) -> BaseFigureSpec:
     """Dispatch on ``kind`` for one entry under ``figures.plots``."""
     kind = plot.get("kind")
@@ -290,4 +364,6 @@ def figure_spec_from_mapping(plot: Mapping[str, Any]) -> BaseFigureSpec:
         return RouterPredVsOracleIntervalsSpec.from_mapping(plot)
     if key == "benchmark_oracle_ndcg_heatmap":
         return BenchmarkOracleHeatmapSpec.from_mapping(plot)
+    if key == "oracle_argmax_weight_histogram":
+        return OracleArgmaxWeightHistogramSpec.from_mapping(plot)
     raise ValueError(f"Unknown figure kind {key!r}. Known kinds: {_KNOWN_KINDS_HINT}")

@@ -4,6 +4,7 @@ import pytest
 
 from surf_rag.viz.specs import (
     BenchmarkOracleHeatmapSpec,
+    OracleArgmaxWeightHistogramSpec,
     RouterPredVsOracleIntervalsSpec,
     RouterPredVsOracleSpec,
     figure_spec_from_mapping,
@@ -153,3 +154,17 @@ def test_benchmark_heatmap_colormap_from_yaml() -> None:
 def test_figure_spec_benchmark_dispatch() -> None:
     spec = figure_spec_from_mapping({"kind": "benchmark_oracle_ndcg_heatmap"})
     assert isinstance(spec, BenchmarkOracleHeatmapSpec)
+
+
+def test_oracle_argmax_histogram_from_mapping_defaults() -> None:
+    s = OracleArgmaxWeightHistogramSpec.from_mapping(
+        {"kind": "oracle_argmax_weight_histogram"}
+    )
+    assert s.split == "all"
+    assert s.hist_bins == 0
+    assert s.exclude_all_zero_queries is True
+
+
+def test_figure_spec_oracle_argmax_histogram_dispatch() -> None:
+    spec = figure_spec_from_mapping({"kind": "oracle_argmax_weight_histogram"})
+    assert isinstance(spec, OracleArgmaxWeightHistogramSpec)

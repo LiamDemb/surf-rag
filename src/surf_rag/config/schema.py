@@ -201,7 +201,7 @@ class FiguresSection:
     When ``output_dir`` is unset, the output directory depends on each plot's
     ``kind``: router plots use
     :func:`surf_rag.viz.paths_layout.canonical_router_figure_dir`, and
-    ``benchmark_oracle_ndcg_heatmap`` uses
+    ``benchmark_oracle_ndcg_heatmap`` and ``oracle_argmax_weight_histogram`` use
     :func:`surf_rag.viz.paths_layout.canonical_benchmark_figure_dir`
     (``{figures_base}/benchmarks/{name}/{id}/``). Set ``output_dir`` to force a
     single directory for all plots in the run.

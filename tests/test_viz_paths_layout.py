@@ -15,7 +15,11 @@ from surf_rag.viz.paths_layout import (
     canonical_router_figure_dir,
     resolve_figure_output_dir,
 )
-from surf_rag.viz.specs import BenchmarkOracleHeatmapSpec, RouterPredVsOracleSpec
+from surf_rag.viz.specs import (
+    BenchmarkOracleHeatmapSpec,
+    OracleArgmaxWeightHistogramSpec,
+    RouterPredVsOracleSpec,
+)
 
 
 def test_canonical_router_figure_dir_default_figures_base(tmp_path: Path) -> None:
@@ -135,3 +139,8 @@ def test_resolve_figure_output_dir_router_vs_benchmark(tmp_path: Path) -> None:
     )
     out_b = resolve_figure_output_dir(cfg, rp, heat_spec, None)
     assert out_b == tmp_path / "f" / "benchmarks" / "b" / "id"
+    hist_spec = OracleArgmaxWeightHistogramSpec(
+        kind="oracle_argmax_weight_histogram", split="all"
+    )
+    out_h = resolve_figure_output_dir(cfg, rp, hist_spec, None)
+    assert out_h == out_b

@@ -67,9 +67,12 @@ def resolve_figure_output_dir(
         return Path(str(fig.output_dir).strip()).expanduser().resolve()
 
     from surf_rag.router.model import parse_router_input_mode
-    from surf_rag.viz.specs import BenchmarkOracleHeatmapSpec
+    from surf_rag.viz.specs import (
+        BenchmarkOracleHeatmapSpec,
+        OracleArgmaxWeightHistogramSpec,
+    )
 
-    if isinstance(spec, BenchmarkOracleHeatmapSpec):
+    if isinstance(spec, (BenchmarkOracleHeatmapSpec, OracleArgmaxWeightHistogramSpec)):
         return canonical_benchmark_figure_dir(rp).resolve()
 
     rt = cfg.router.train
