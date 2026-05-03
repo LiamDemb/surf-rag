@@ -6,6 +6,11 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import torch
+
+from surf_rag.router.excluded_features import (
+    active_feature_column_indices,
+    normalize_excluded_features,
+)
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -58,6 +63,7 @@ class RouterMLPConfig:
     feat_proj_dim: int = 16
     hidden_dim: int = 32
     dropout: float = 0.1
+    excluded_features: Tuple[str, ...] = ()
 
     def to_json(self) -> Dict[str, Any]:
         return {
@@ -68,6 +74,7 @@ class RouterMLPConfig:
             "feat_proj_dim": self.feat_proj_dim,
             "hidden_dim": self.hidden_dim,
             "dropout": self.dropout,
+            "excluded_features": list(self.excluded_features),
         }
 
     @classmethod
@@ -80,6 +87,7 @@ class RouterMLPConfig:
                 input_mode = parse_router_input_mode(raw_mode)
             except ValueError:
                 input_mode = ROUTER_INPUT_MODE_BOTH
+        excl = normalize_excluded_features(d.get("excluded_features"))
         return cls(
             embedding_dim=int(d.get("embedding_dim", 384)),
             feature_dim=int(d.get("feature_dim", 14)),
@@ -88,6 +96,7 @@ class RouterMLPConfig:
             feat_proj_dim=int(d.get("feat_proj_dim", 16)),
             hidden_dim=int(d.get("hidden_dim", 32)),
             dropout=float(d.get("dropout", 0.1)),
+            excluded_features=excl,
         )
 
 
@@ -99,6 +108,7 @@ class RouterMLP(nn.Module):
         d = config
         self.config = d
         mode = parse_router_input_mode(d.input_mode)
+        excluded = frozenset(d.excluded_features)
 
         self.embed_ln: Optional[nn.Module]
         self.embed_proj: Optional[nn.Module]
@@ -112,13 +122,30 @@ class RouterMLP(nn.Module):
             self.embed_proj = None
 
         if mode in (ROUTER_INPUT_MODE_BOTH, ROUTER_INPUT_MODE_QUERY_FEATURES):
-            self.feat_proj = nn.Linear(d.feature_dim, d.feat_proj_dim)
+            feat_idx = active_feature_column_indices(d.feature_dim, excluded)
+            if mode == ROUTER_INPUT_MODE_QUERY_FEATURES and not feat_idx:
+                raise ValueError(
+                    "mlp-v1 query-features mode needs at least one non-excluded feature"
+                )
+            if feat_idx:
+                idx_t = torch.tensor(feat_idx, dtype=torch.long)
+                self.register_buffer("_feat_gather_idx", idx_t)
+                self.feat_proj = nn.Linear(len(feat_idx), d.feat_proj_dim)
+            else:
+                self.register_buffer(
+                    "_feat_gather_idx", torch.empty(0, dtype=torch.long)
+                )
+                self.feat_proj = None
         else:
+            self.register_buffer("_feat_gather_idx", torch.empty(0, dtype=torch.long))
             self.feat_proj = None
 
         if mode == ROUTER_INPUT_MODE_BOTH:
-            in_h = d.embed_proj_dim + d.feat_proj_dim
+            in_h = d.embed_proj_dim + (
+                d.feat_proj_dim if self.feat_proj is not None else 0
+            )
         elif mode == ROUTER_INPUT_MODE_QUERY_FEATURES:
+            assert self.feat_proj is not None
             in_h = d.feat_proj_dim
         else:
             in_h = d.embed_proj_dim
@@ -130,6 +157,12 @@ class RouterMLP(nn.Module):
             nn.Linear(d.hidden_dim, 1),
         )
 
+    def _select_features(self, feature_vector: torch.Tensor) -> torch.Tensor:
+        buf = self._feat_gather_idx
+        if buf.numel() == 0:
+            return feature_vector[..., :0]
+        return feature_vector.index_select(-1, buf)
+
     def forward(
         self,
         query_embedding: torch.Tensor,
@@ -138,14 +171,18 @@ class RouterMLP(nn.Module):
         mode = parse_router_input_mode(self.config.input_mode)
         if mode == ROUTER_INPUT_MODE_BOTH:
             assert self.embed_ln is not None and self.embed_proj is not None
-            assert self.feat_proj is not None
             z = self.embed_ln(query_embedding)
             e = F.gelu(self.embed_proj(z))
-            f = F.gelu(self.feat_proj(feature_vector))
-            h = torch.cat([e, f], dim=-1)
+            if self.feat_proj is not None:
+                xf = self._select_features(feature_vector)
+                f = F.gelu(self.feat_proj(xf))
+                h = torch.cat([e, f], dim=-1)
+            else:
+                h = e
         elif mode == ROUTER_INPUT_MODE_QUERY_FEATURES:
             assert self.feat_proj is not None
-            h = F.gelu(self.feat_proj(feature_vector))
+            xf = self._select_features(feature_vector)
+            h = F.gelu(self.feat_proj(xf))
         else:
             assert self.embed_ln is not None and self.embed_proj is not None
             z = self.embed_ln(query_embedding)

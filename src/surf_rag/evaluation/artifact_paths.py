@@ -41,6 +41,15 @@ def benchmark_bundle_dir(
     return benchmark_base / benchmark_name / benchmark_id
 
 
+def benchmark_jsonl_path(
+    benchmark_base: Path, benchmark_name: str, benchmark_id: str
+) -> Path:
+    """Canonical ``benchmark/benchmark.jsonl`` under the bundle (matches ``resolve_paths``)."""
+    return benchmark_bundle_dir(benchmark_base, benchmark_name, benchmark_id).joinpath(
+        "benchmark", "benchmark.jsonl"
+    )
+
+
 _BUNDLE_SUBPATH_SAFE = re.compile(r"[^a-zA-Z0-9._-]+")
 
 
@@ -70,6 +79,16 @@ def router_dataset_dir(router_base: Path, router_id: str) -> Path:
 
 def router_model_dir(router_base: Path, router_id: str) -> Path:
     return router_bundle_dir(router_base, router_id) / "model"
+
+
+def router_models_dir(router_base: Path, router_id: str) -> Path:
+    return router_bundle_dir(router_base, router_id) / "models"
+
+
+def router_model_architecture_dir(
+    router_base: Path, router_id: str, router_architecture_id: str
+) -> Path:
+    return router_models_dir(router_base, router_id) / str(router_architecture_id)
 
 
 def evaluations_root(

@@ -254,3 +254,32 @@ def test_score_retrieval_result_handles_ok_result():
     )
     suite = score_retrieval_result(res, ["target"], dataset_source="nq", ks=(5,))
     assert suite[0].ndcg == pytest.approx(1.0)
+
+
+def test_score_retrieval_result_returns_5_10_20_with_single_chunk():
+    res = RetrievalResult(
+        query="q",
+        retriever_name="Dense",
+        status="OK",
+        chunks=[_chunk("c1", "target", score=1.0)],
+    )
+    suite = score_retrieval_result(
+        res, ["target"], dataset_source="nq", ks=DEFAULT_NDCG_KS
+    )
+    assert [s.k for s in suite] == [5, 10, 20]
+    assert all(0.0 <= s.ndcg <= 1.0 for s in suite)
+
+
+def test_non_ok_results_emit_zeroed_5_10_20():
+    res = RetrievalResult(
+        query="q",
+        retriever_name="Dense",
+        status="ERROR",
+        chunks=[],
+        error="x",
+    )
+    suite = score_retrieval_result(
+        res, ["target"], dataset_source="nq", ks=DEFAULT_NDCG_KS
+    )
+    assert [s.k for s in suite] == [5, 10, 20]
+    assert all(s.ndcg == 0.0 and s.hit == 0.0 and s.recall == 0.0 for s in suite)

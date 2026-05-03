@@ -1,51 +1,20 @@
-"""Deterministic train/dev/test assignment with oracle-curve stratification."""
+"""Deterministic train/dev/test assignment stratified by benchmark ``dataset_source``."""
 
 from __future__ import annotations
 
-import math
 import random
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
 
-def std_bucket(oracle_curve_std: float, q1: float, q2: float) -> str:
-    """Tertile bucket labels: low / mid / high."""
-    e = float(oracle_curve_std)
-    if e <= q1:
-        return "low"
-    if e <= q2:
-        return "mid"
-    return "high"
+def normalize_dataset_source(dataset_source: str) -> str:
+    """Strip whitespace; empty sources bucket to ``\"unknown\"``."""
+    s = str(dataset_source or "").strip()
+    return s if s else "unknown"
 
 
-def _quantiles(values: Sequence[float]) -> Tuple[float, float]:
-    xs = sorted(float(x) for x in values)
-    n = len(xs)
-    if n == 0:
-        return 0.0, 0.0
-    if n == 1:
-        return xs[0], xs[0]
-
-    def q(p: float) -> float:
-        if n == 1:
-            return xs[0]
-        idx = p * (n - 1)
-        lo = int(math.floor(idx))
-        hi = int(math.ceil(idx))
-        if lo == hi:
-            return xs[lo]
-        return xs[lo] + (idx - lo) * (xs[hi] - xs[lo])
-
-    return q(1.0 / 3.0), q(2.0 / 3.0)
-
-
-def stratum_key(
-    oracle_best_weight: float, curve_std: float, q1: float, q2: float
-) -> str:
-    w = float(oracle_best_weight)
-    # One decimal for grid-aligned weights
-    wk = f"{w:.1f}"
-    b = std_bucket(curve_std, q1, q2)
-    return f"{wk}__{b}"
+def stratum_key_dataset_source(dataset_source: str) -> str:
+    """Split stratum label (one stratum per normalized dataset source)."""
+    return normalize_dataset_source(dataset_source)
 
 
 def _split_sizes(
@@ -69,7 +38,7 @@ def _split_sizes(
 
 
 def assign_splits_stratified(
-    label_rows: Sequence[Dict[str, Any]],
+    rows: Sequence[Mapping[str, Any]],
     *,
     train_ratio: float,
     dev_ratio: float,
@@ -78,24 +47,20 @@ def assign_splits_stratified(
 ) -> Dict[str, str]:
     """Return ``question_id -> split`` where split is train|dev|test.
 
-    Uses ``oracle_best_weight`` + tertile ``oracle_curve_std`` buckets for strata.
-    Rows missing ``question_id`` or target fields are assigned ``train`` (defensive).
+    Each row must provide ``question_id`` and ``dataset_source`` (typically from
+    the benchmark row). Splits are stratified per distinct source (e.g. NQ vs
+    2WikiMultiHopQA) so each source gets approximately the same train/dev/test mix.
     """
-    stds = [float(r["oracle_curve_std"]) for r in label_rows if "oracle_curve_std" in r]
-    q1, q2 = _quantiles(stds)
     by_stratum: Dict[str, List[str]] = {}
-    for r in label_rows:
+    for r in rows:
         qid = str(r.get("question_id", "")).strip()
         if not qid:
             continue
         try:
-            aw = float(r.get("oracle_best_weight", 0.0))
-            ent = float(r.get("oracle_curve_std", 0.0))
+            ds = stratum_key_dataset_source(str(r.get("dataset_source", "")))
         except (TypeError, ValueError):
-            by_stratum.setdefault("unknown__mid", []).append(qid)
-            continue
-        sk = stratum_key(aw, ent, q1, q2)
-        by_stratum.setdefault(sk, []).append(qid)
+            ds = "unknown"
+        by_stratum.setdefault(ds, []).append(qid)
 
     out: Dict[str, str] = {}
     rng = random.Random(int(seed))
@@ -116,7 +81,7 @@ def assign_splits_stratified(
 
 def split_summary(
     qid_to_split: Dict[str, str],
-    label_rows: Sequence[Dict[str, Any]],
+    label_rows: Sequence[Any],
 ) -> Dict[str, Any]:
     by_split = {"train": 0, "dev": 0, "test": 0, "other": 0}
     for sp in qid_to_split.values():

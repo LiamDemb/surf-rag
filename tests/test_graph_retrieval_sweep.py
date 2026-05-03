@@ -28,7 +28,9 @@ def _trial(
         run_id=trial_run_id(idx),
         combo_key=key,
         retrieval_overrides={"graph_ppr_alpha": 0.8 + idx * 0.01},
-        objective_path="overlap.all.retrieval_at_k.10.ndcg",
+        objective_path=(
+            "overlap_breakdown.all.retrieval_before_ce.retrieval_at_k.10.ndcg"
+        ),
         objective_score=score,
         status=status,
         error=None if status == "ok" else "boom",

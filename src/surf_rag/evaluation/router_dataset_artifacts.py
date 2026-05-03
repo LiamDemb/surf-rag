@@ -49,6 +49,10 @@ class RouterDatasetPaths:
         return self.run_root / "feature_stats.json"
 
     @property
+    def ignored_router_questions(self) -> Path:
+        return self.run_root / "ignored_router_questions.json"
+
+    @property
     def reports_dir(self) -> Path:
         return self.run_root / "reports"
 
@@ -75,11 +79,18 @@ def build_split_question_ids_dict(
 ) -> Dict[str, Any]:
     """Shape written to ``split_question_ids.json`` (audit + overlap reporting)."""
     out: dict[str, list[str]] = {"train": [], "dev": [], "test": []}
+    eligible_counts: dict[str, int] = {"train": 0, "dev": 0, "test": 0}
+    ignored_counts: dict[str, int] = {"train": 0, "dev": 0, "test": 0}
     for _, row in df.iterrows():
         sp = str(row.get("split", "") or "")
         qid = str(row.get("question_id", "") or "")
         if sp in out and qid:
             out[sp].append(qid)
+            is_valid = bool(row.get("is_valid_for_router_training", False))
+            if is_valid:
+                eligible_counts[sp] += 1
+            else:
+                ignored_counts[sp] += 1
     counts = {k: len(v) for k, v in out.items()}
     return {
         "router_id": router_id,
@@ -90,6 +101,9 @@ def build_split_question_ids_dict(
         "dev": out["dev"],
         "test": out["test"],
         "counts": counts,
+        "counts_total": counts,
+        "counts_router_eligible": eligible_counts,
+        "counts_router_ignored_all_zero": ignored_counts,
         "canonical_question_hash_available": False,
     }
 
@@ -144,6 +158,7 @@ def write_router_dataset_manifest(
         "feature_set_version": feature_set_version,
         "embedding_model": embedding_model,
         "split": {
+            "stratification": "dataset_source",
             "seed": int(split_seed),
             "train_ratio": float(train_ratio),
             "dev_ratio": float(dev_ratio),
@@ -199,6 +214,60 @@ def write_feature_stats(path: Path, stats: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(stats, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
+def build_ignored_router_questions_payload(
+    df: pd.DataFrame, *, router_id: str
+) -> Dict[str, Any]:
+    """Build ignored-question report payload for all-zero oracle rows."""
+    splits = ("train", "dev", "test")
+    ignored_ids_by_split: Dict[str, List[str]] = {sp: [] for sp in splits}
+    counts_by_split: Dict[str, Dict[str, int]] = {
+        sp: {"total": 0, "eligible": 0, "ignored": 0} for sp in splits
+    }
+
+    for _, row in df.iterrows():
+        sp = str(row.get("split", "") or "")
+        if sp not in ignored_ids_by_split:
+            continue
+        qid = str(row.get("question_id", "") or "").strip()
+        is_valid = bool(row.get("is_valid_for_router_training", False))
+        counts_by_split[sp]["total"] += 1
+        if is_valid:
+            counts_by_split[sp]["eligible"] += 1
+        else:
+            counts_by_split[sp]["ignored"] += 1
+            if qid:
+                ignored_ids_by_split[sp].append(qid)
+
+    for sp in splits:
+        ignored_ids_by_split[sp] = sorted(set(ignored_ids_by_split[sp]))
+
+    ignored_all = sorted(
+        {qid for qids in ignored_ids_by_split.values() for qid in qids}
+    )
+    ignored_total = sum(counts_by_split[sp]["ignored"] for sp in splits)
+    eligible_total = sum(counts_by_split[sp]["eligible"] for sp in splits)
+    total = sum(counts_by_split[sp]["total"] for sp in splits)
+
+    return {
+        "router_id": router_id,
+        "reason": "all_zero_oracle_score",
+        "num_rows_total": int(total),
+        "ignored_count_total": int(ignored_total),
+        "eligible_count_total": int(eligible_total),
+        "counts_by_split": counts_by_split,
+        "ignored_question_ids_by_split": ignored_ids_by_split,
+        "ignored_question_ids_all": ignored_all,
+    }
+
+
+def write_ignored_router_questions(path: Path, payload: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
 

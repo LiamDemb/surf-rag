@@ -19,8 +19,6 @@ def test_oracle_label_from_curve_basics() -> None:
     rec = oracle_label_from_curve(
         oracle_curve=curve, weight_grid=grid, dataset_source="nq"
     )
-    assert rec["oracle_best_index"] == 1
-    assert rec["oracle_best_weight"] == pytest.approx(0.5)
     assert rec["oracle_best_score"] == pytest.approx(0.3)
     assert rec["dataset_source"] == "nq"
     assert rec["is_valid_for_router_training"] is True
@@ -74,5 +72,6 @@ def test_materialize_router_labels_writes_expected_jsonl(tmp_path: Path):
     assert [r["question_id"] for r in records] == ["q1", "q2"]
     for rec in records:
         assert len(rec["oracle_curve"]) == 3
-        assert rec["oracle_best_index"] in (0, 2)
-        assert 0.0 <= rec["oracle_best_weight"] <= 1.0
+        assert rec["oracle_best_score"] == pytest.approx(max(rec["oracle_curve"]))
+        assert "oracle_best_weight" not in rec
+        assert "oracle_best_index" not in rec

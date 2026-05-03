@@ -18,21 +18,18 @@ except OSError:
     pytest.skip("en_core_web_sm", allow_module_level=True)
 
 
-def _label_row(
-    qid: str, *, std: float = 0.5, aw: float = 0.5, curve: list[float] | None = None
-) -> dict:
+def _label_row(qid: str, *, std: float = 0.5, curve: list[float] | None = None) -> dict:
     w = [float(x) for x in DEFAULT_DENSE_WEIGHT_GRID]
     c = curve if curve is not None else [float(x) for x in DEFAULT_DENSE_WEIGHT_GRID]
+    best_score = float(max(c))
     return {
         "question_id": qid,
         "dataset_source": "nq",
         "weight_grid": w,
         "oracle_curve": c,
-        "oracle_best_weight": aw,
-        "oracle_best_index": 5,
-        "oracle_best_score": 0.5,
+        "oracle_best_score": best_score,
         "oracle_curve_std": std,
-        "is_valid_for_router_training": True,
+        "is_valid_for_router_training": bool(best_score > 0.0),
     }
 
 
@@ -55,8 +52,8 @@ def test_build_dataframe_shape(monkeypatch: pytest.MonkeyPatch) -> None:
         },
     ]
     lab = [
-        _label_row("a1", std=0.1, aw=0.0),
-        _label_row("a2", std=0.9, aw=1.0),
+        _label_row("a1", std=0.1),
+        _label_row("a2", std=0.9),
     ]
     ctx = QueryFeatureContext(nlp=_nlp)
     df, norm, _sum = build_router_dataframe(
@@ -74,3 +71,5 @@ def test_build_dataframe_shape(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "feature_raw__content_token_len" in df.columns
     assert "query_embedding" in df.columns
     assert len(df["query_embedding"].iloc[0]) == 4
+    assert "oracle_best_weight" not in df.columns
+    assert df["split_stratum"].tolist() == ["nq", "nq"]

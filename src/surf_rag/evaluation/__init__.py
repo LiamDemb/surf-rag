@@ -2,6 +2,7 @@
 
 from surf_rag.evaluation.artifact_paths import (
     benchmark_bundle_dir,
+    benchmark_jsonl_path,
     default_benchmark_base,
     default_data_base,
     default_router_base,
@@ -14,7 +15,9 @@ from surf_rag.evaluation.artifact_paths import (
     POLICY_GRAPH_ONLY,
     router_bundle_dir,
     router_dataset_dir,
+    router_model_architecture_dir,
     router_model_dir,
+    router_models_dir,
     router_oracle_dir,
     trained_router_policy_id,
 )
@@ -71,10 +74,13 @@ __all__ = [
     "default_benchmark_base",
     "default_router_base",
     "benchmark_bundle_dir",
+    "benchmark_jsonl_path",
     "router_bundle_dir",
     "router_oracle_dir",
     "router_dataset_dir",
     "router_model_dir",
+    "router_models_dir",
+    "router_model_architecture_dir",
     "RouterModelPaths",
     "build_router_model_root",
     "make_router_model_paths_for_cli",

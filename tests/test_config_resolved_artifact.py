@@ -11,7 +11,6 @@ from surf_rag.config.loader import load_pipeline_config, resolve_paths
 from surf_rag.config.resolved import write_resolved_config_yaml
 from surf_rag.evaluation.e2e_runner import make_e2e_run_paths
 from surf_rag.evaluation.manifest import update_manifest_artifacts, write_manifest
-from surf_rag.router.policies import RoutingPolicyName
 
 
 def test_write_resolved_config_yaml_roundtrip(tmp_path: Path) -> None:
@@ -26,6 +25,8 @@ def test_write_resolved_config_yaml_roundtrip(tmp_path: Path) -> None:
     data = yaml.safe_load(out.read_text(encoding="utf-8"))
     assert data["paths"]["benchmark_name"] == "surf-bench"
     assert data["resolved_paths"]["corpus_dir"] == str(rp.corpus_dir)
+    assert data["resolved_paths"]["figures_base"] == str(rp.figures_base)
+    assert data["resolved_paths"]["router_architecture_id"] == rp.router_architecture_id
 
 
 def test_manifest_accepts_resolved_config_artifact(tmp_path: Path) -> None:
@@ -39,7 +40,7 @@ def test_manifest_accepts_resolved_config_artifact(tmp_path: Path) -> None:
         benchmark_base=tmp_path,
         benchmark_name=cfg.paths.benchmark_name,
         benchmark_id=cfg.paths.benchmark_id,
-        policy=RoutingPolicyName.LEARNED_SOFT,
+        policy="learned-soft",
         run_id="run-1",
     )
     write_manifest(

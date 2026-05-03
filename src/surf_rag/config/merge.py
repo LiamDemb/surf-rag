@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from argparse import Namespace
 from pathlib import Path
 
 from surf_rag.config.argv import argv_provides
+from surf_rag.router.excluded_features import normalize_excluded_features
 from surf_rag.config.loader import (
     PipelineConfig,
     load_pipeline_config,
@@ -233,14 +235,54 @@ def merge_router_train_args(
         args.learning_rate = rt.learning_rate
     if not argv_provides(argv, "--device"):
         args.device = rt.device
+    if not argv_provides(argv, "--architecture"):
+        args.architecture = rt.architecture
+    if not argv_provides(argv, "--architecture-kwargs"):
+        args.architecture_kwargs = dict(rt.architecture_kwargs)
+    if (
+        not argv_provides(argv, "--router-architecture-id")
+        and cfg.paths.router_architecture_id
+    ):
+        args.router_architecture_id = cfg.paths.router_architecture_id
     if not argv_provides(argv, "--input-mode"):
         args.input_mode = rt.input_mode
+    if not argv_provides(argv, "--router-loss"):
+        args.loss = rt.loss
+    if not argv_provides(argv, "--loss-kwargs"):
+        args.loss_kwargs = dict(rt.loss_kwargs)
+    if not argv_provides(argv, "--midpoint-balance-masking") and not argv_provides(
+        argv, "--no-midpoint-balance-masking"
+    ):
+        args.midpoint_balance_masking = rt.midpoint_balance_masking
+    if not argv_provides(argv, "--midpoint-balance-epsilon"):
+        args.midpoint_balance_epsilon = rt.midpoint_balance_epsilon
+    if argv_provides(argv, "--excluded-features"):
+        raw_ef = getattr(args, "excluded_features", None)
+        if raw_ef is None or (isinstance(raw_ef, str) and not str(raw_ef).strip()):
+            args.excluded_features = ()
+        elif isinstance(raw_ef, str):
+            args.excluded_features = normalize_excluded_features(json.loads(raw_ef))
+        else:
+            args.excluded_features = normalize_excluded_features(raw_ef)
+    else:
+        args.excluded_features = normalize_excluded_features(rt.excluded_features or [])
 
 
 def merge_router_evaluate_args(
     args: Namespace, cfg: PipelineConfig, argv: list[str] | None = None
 ) -> None:
     merge_router_train_args(args, cfg, argv=argv)
+
+
+def merge_figures_render_args(
+    args: Namespace, cfg: PipelineConfig, argv: list[str] | None = None
+) -> None:
+    """Fill ``render_figures`` CLI fields from pipeline config when flags omitted."""
+    argv = argv if argv is not None else sys.argv
+    merge_router_train_args(args, cfg, argv=argv)
+    fig = cfg.figures
+    if not argv_provides(argv, "--figures-output-dir") and fig.output_dir:
+        args.figures_output_dir = str(fig.output_dir).strip() or None
 
 
 def merge_e2e_common_args(
@@ -277,6 +319,8 @@ def merge_e2e_prepare_args(
     p = cfg.paths
     if not argv_provides(argv, "--router-id") and p.router_id:
         args.router_id = p.router_id
+    if not argv_provides(argv, "--router-architecture-id") and p.router_architecture_id:
+        args.router_architecture_id = p.router_architecture_id
     rb = resolve_paths(cfg).router_base
     if not argv_provides(argv, "--router-base"):
         args.router_base = rb
@@ -290,6 +334,11 @@ def merge_e2e_prepare_args(
         args.rerank_top_k = e.rerank_top_k
     if not argv_provides(argv, "--cross-encoder-model") and e.cross_encoder_model:
         args.cross_encoder_model = e.cross_encoder_model
+    if (
+        not argv_provides(argv, "--cross-encoder-device")
+        and cfg.model_setup.cross_encoder_device
+    ):
+        args.cross_encoder_device = cfg.model_setup.cross_encoder_device
     if e.limit is not None and not argv_provides(argv, "--limit"):
         args.limit = e.limit
     if not argv_provides(argv, "--completion-window") and e.completion_window:
@@ -308,6 +357,8 @@ def merge_e2e_prepare_args(
         args.router_input_mode = e.router_input_mode
     if not argv_provides(argv, "--router-inference-batch-size"):
         args.router_inference_batch_size = e.router_inference_batch_size
+    if not argv_provides(argv, "--latency-warmup-questions"):
+        args.latency_warmup_questions = e.latency_warmup_questions
     if e.only_question_ids and not argv_provides(argv, "--only-question-id"):
         args.only_question_id = list(e.only_question_ids)
 
@@ -321,5 +372,7 @@ def merge_e2e_evaluate_args(
     rb = resolve_paths(cfg).router_base
     if not argv_provides(argv, "--router-id") and p.router_id:
         args.router_id = p.router_id
+    if not argv_provides(argv, "--router-architecture-id") and p.router_architecture_id:
+        args.router_architecture_id = p.router_architecture_id
     if not argv_provides(argv, "--router-base"):
         args.router_base = rb

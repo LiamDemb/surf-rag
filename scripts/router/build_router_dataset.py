@@ -22,9 +22,11 @@ from surf_rag.evaluation.oracle_artifacts import (
 )
 from surf_rag.evaluation.artifact_paths import default_router_base
 from surf_rag.evaluation.router_dataset_artifacts import (
+    build_ignored_router_questions_payload,
     build_split_question_ids_dict,
     make_router_dataset_paths_for_cli,
     write_feature_stats,
+    write_ignored_router_questions,
     write_router_dataset_manifest,
     write_split_question_ids,
     write_split_summary,
@@ -225,6 +227,10 @@ def main() -> int:
     write_parquet(r_paths.router_dataset_parquet, df)
     write_feature_stats(r_paths.feature_stats, normalizer.to_json())
     write_split_summary(r_paths.split_summary, sum_meta, run_root=r_paths.run_root)
+    ignored_payload = build_ignored_router_questions_payload(
+        df, router_id=args.router_id
+    )
+    write_ignored_router_questions(r_paths.ignored_router_questions, ignored_payload)
     split_payload = build_split_question_ids_dict(
         df,
         router_id=args.router_id,
@@ -250,7 +256,15 @@ def main() -> int:
         train_ratio=tr,
         dev_ratio=dv,
         test_ratio=te,
-        extra={"row_count": int(len(df))},
+        extra={
+            "row_count": int(len(df)),
+            "row_count_total": int(ignored_payload["num_rows_total"]),
+            "row_count_router_eligible": int(ignored_payload["eligible_count_total"]),
+            "row_count_router_ignored_all_zero": int(
+                ignored_payload["ignored_count_total"]
+            ),
+            "ignored_questions_report": r_paths.ignored_router_questions.name,
+        },
     )
     if getattr(args, "_pipeline_cfg", None) is not None:
         write_resolved_config_yaml(

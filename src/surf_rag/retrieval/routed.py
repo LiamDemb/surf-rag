@@ -50,6 +50,14 @@ def _merge_debug(
     return out
 
 
+@dataclass(frozen=True)
+class RoutedRunOutput:
+    """Retrieval outputs for evaluation and generation paths."""
+
+    pretrunc_result: RetrievalResult
+    generation_result: RetrievalResult
+
+
 @dataclass
 class RoutedFusionPipeline:
     """Run dense/graph per routing policy; learned router optional."""
@@ -70,14 +78,39 @@ class RoutedFusionPipeline:
         feature_vector: Optional[np.ndarray] = None,
         **retriever_kwargs: Any,
     ) -> RetrievalResult:
-        """Execute routing and return a ``RetrievalResult`` (fused or single-branch)."""
+        """Execute routing and return generation-path retrieval."""
+        out = self.run_with_pretrunc(
+            query,
+            policy,
+            dense_result=dense_result,
+            graph_result=graph_result,
+            query_embedding=query_embedding,
+            feature_vector=feature_vector,
+            **retriever_kwargs,
+        )
+        return out.generation_result
+
+    def run_with_pretrunc(
+        self,
+        query: str,
+        policy: RoutingPolicyName,
+        *,
+        dense_result: Optional[RetrievalResult] = None,
+        graph_result: Optional[RetrievalResult] = None,
+        query_embedding: Optional[np.ndarray] = None,
+        feature_vector: Optional[np.ndarray] = None,
+        **retriever_kwargs: Any,
+    ) -> RoutedRunOutput:
+        """Execute routing and return pre-truncation + generation retrieval."""
         from surf_rag.router.inference import predict_batch
 
         t0 = time.perf_counter()
         pred_weight: Optional[float] = None
+        routing_predict_ms = 0.0
         if policy in (
             RoutingPolicyName.LEARNED_SOFT,
             RoutingPolicyName.LEARNED_HARD,
+            RoutingPolicyName.LEARNED_HYBRID,
         ):
             if self.router is None:
                 raise ValueError("learned policies require a loaded router")
@@ -85,7 +118,9 @@ class RoutedFusionPipeline:
                 raise ValueError(
                     "learned policies require query_embedding and feature_vector"
                 )
+            p0 = time.perf_counter()
             pred = predict_batch(self.router, query_embedding, feature_vector)
+            routing_predict_ms = (time.perf_counter() - p0) * 1000.0
             pred_weight = float(pred.reshape(-1)[0])
 
         decision = decide_routing(policy, predicted_weight=pred_weight)
@@ -94,37 +129,81 @@ class RoutedFusionPipeline:
         if not decision.run_graph:
             if dense_result is None:
                 dense_result = self.dense_retriever.retrieve(query, **retriever_kwargs)
-            out = trim_retrieval_top_k(dense_result, self.fusion_keep_k)
-            di = _merge_debug(out.debug_info, {"routing": debug})
-            return RetrievalResult(
-                query=out.query,
-                retriever_name=out.retriever_name,
-                status=out.status,
-                chunks=out.chunks,
-                latency_ms={
-                    **dict(out.latency_ms),
-                    "total_ms": (time.perf_counter() - t0) * 1000.0,
-                },
-                error=out.error,
-                debug_info=di,
+            pre = RetrievalResult(
+                query=dense_result.query,
+                retriever_name=dense_result.retriever_name,
+                status=dense_result.status,
+                chunks=list(dense_result.chunks),
+                latency_ms=dict(dense_result.latency_ms),
+                error=dense_result.error,
+                debug_info=(
+                    dict(dense_result.debug_info) if dense_result.debug_info else None
+                ),
+            )
+            gen = trim_retrieval_top_k(pre, self.fusion_keep_k)
+            total_ms = (time.perf_counter() - t0) * 1000.0
+            pre_di = _merge_debug(pre.debug_info, {"routing": debug})
+            gen_di = _merge_debug(gen.debug_info, {"routing": debug})
+            common = {"routing_predict_ms": routing_predict_ms, "total_ms": total_ms}
+            return RoutedRunOutput(
+                pretrunc_result=RetrievalResult(
+                    query=pre.query,
+                    retriever_name=pre.retriever_name,
+                    status=pre.status,
+                    chunks=pre.chunks,
+                    latency_ms={**dict(pre.latency_ms), **common},
+                    error=pre.error,
+                    debug_info=pre_di,
+                ),
+                generation_result=RetrievalResult(
+                    query=gen.query,
+                    retriever_name=gen.retriever_name,
+                    status=gen.status,
+                    chunks=gen.chunks,
+                    latency_ms={**dict(gen.latency_ms), **common},
+                    error=gen.error,
+                    debug_info=gen_di,
+                ),
             )
 
         if not decision.run_dense:
             if graph_result is None:
                 graph_result = self.graph_retriever.retrieve(query, **retriever_kwargs)
-            out = trim_retrieval_top_k(graph_result, self.fusion_keep_k)
-            di = _merge_debug(out.debug_info, {"routing": debug})
-            return RetrievalResult(
-                query=out.query,
-                retriever_name=out.retriever_name,
-                status=out.status,
-                chunks=out.chunks,
-                latency_ms={
-                    **dict(out.latency_ms),
-                    "total_ms": (time.perf_counter() - t0) * 1000.0,
-                },
-                error=out.error,
-                debug_info=di,
+            pre = RetrievalResult(
+                query=graph_result.query,
+                retriever_name=graph_result.retriever_name,
+                status=graph_result.status,
+                chunks=list(graph_result.chunks),
+                latency_ms=dict(graph_result.latency_ms),
+                error=graph_result.error,
+                debug_info=(
+                    dict(graph_result.debug_info) if graph_result.debug_info else None
+                ),
+            )
+            gen = trim_retrieval_top_k(pre, self.fusion_keep_k)
+            total_ms = (time.perf_counter() - t0) * 1000.0
+            pre_di = _merge_debug(pre.debug_info, {"routing": debug})
+            gen_di = _merge_debug(gen.debug_info, {"routing": debug})
+            common = {"routing_predict_ms": routing_predict_ms, "total_ms": total_ms}
+            return RoutedRunOutput(
+                pretrunc_result=RetrievalResult(
+                    query=pre.query,
+                    retriever_name=pre.retriever_name,
+                    status=pre.status,
+                    chunks=pre.chunks,
+                    latency_ms={**dict(pre.latency_ms), **common},
+                    error=pre.error,
+                    debug_info=pre_di,
+                ),
+                generation_result=RetrievalResult(
+                    query=gen.query,
+                    retriever_name=gen.retriever_name,
+                    status=gen.status,
+                    chunks=gen.chunks,
+                    latency_ms={**dict(gen.latency_ms), **common},
+                    error=gen.error,
+                    debug_info=gen_di,
+                ),
             )
 
         if dense_result is None:
@@ -133,22 +212,43 @@ class RoutedFusionPipeline:
             graph_result = self.graph_retriever.retrieve(query, **retriever_kwargs)
 
         f0 = time.perf_counter()
-        fused = build_fused_retrieval_result(
+        fused_pre = build_fused_retrieval_result(
             query=query,
             dense=dense_result,
             graph=graph_result,
             dense_weight=decision.dense_weight,
-            fusion_keep_k=self.fusion_keep_k,
+            fusion_keep_k=None,
             fusion_ms=(time.perf_counter() - f0) * 1000.0,
             total_ms=(time.perf_counter() - t0) * 1000.0,
         )
-        di = _merge_debug(fused.debug_info, {"routing": debug})
-        return RetrievalResult(
-            query=fused.query,
-            retriever_name=FUSED_RETRIEVER_NAME,
-            status=fused.status,
-            chunks=fused.chunks,
-            latency_ms=fused.latency_ms,
-            error=fused.error,
-            debug_info=di,
+        fused_gen = trim_retrieval_top_k(fused_pre, self.fusion_keep_k)
+        pre_di = _merge_debug(fused_pre.debug_info, {"routing": debug})
+        gen_di = _merge_debug(fused_gen.debug_info, {"routing": debug})
+        common = {
+            "routing_predict_ms": routing_predict_ms,
+            "total_ms": float(
+                dict(fused_pre.latency_ms).get(
+                    "total_ms", fused_pre.latency_ms.get("total", 0.0)
+                )
+            ),
+        }
+        return RoutedRunOutput(
+            pretrunc_result=RetrievalResult(
+                query=fused_pre.query,
+                retriever_name=FUSED_RETRIEVER_NAME,
+                status=fused_pre.status,
+                chunks=fused_pre.chunks,
+                latency_ms={**dict(fused_pre.latency_ms), **common},
+                error=fused_pre.error,
+                debug_info=pre_di,
+            ),
+            generation_result=RetrievalResult(
+                query=fused_gen.query,
+                retriever_name=FUSED_RETRIEVER_NAME,
+                status=fused_gen.status,
+                chunks=fused_gen.chunks,
+                latency_ms={**dict(fused_gen.latency_ms), **common},
+                error=fused_gen.error,
+                debug_info=gen_di,
+            ),
         )

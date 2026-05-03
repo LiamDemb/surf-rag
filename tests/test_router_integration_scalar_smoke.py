@@ -25,6 +25,8 @@ def test_scalar_predict_and_policy_smoke() -> None:
     router = LoadedRouter(
         model=model,
         config=cfg,
+        architecture="mlp-v1",
+        architecture_kwargs={},
         weight_grid=np.asarray([float(i) / 10.0 for i in range(11)], dtype=np.float32),
         device="cpu",
         manifest={},

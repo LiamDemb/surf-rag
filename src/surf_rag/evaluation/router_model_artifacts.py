@@ -1,4 +1,4 @@
-"""Trained router bundle under ``data/router/<router_id>/model/<input_mode>/``."""
+"""Trained router bundle paths under ``data/router/<router_id>/models/<arch>/<mode>/``."""
 
 from __future__ import annotations
 
@@ -17,9 +17,15 @@ from surf_rag.router.model import (
 
 
 def build_router_model_root(
-    router_base: Path, router_id: str, input_mode: str = "both"
+    router_base: Path,
+    router_id: str,
+    input_mode: str = "both",
+    router_architecture_id: str | None = None,
 ) -> Path:
     mode = parse_router_input_mode(input_mode)
+    if router_architecture_id and str(router_architecture_id).strip():
+        rid = str(router_architecture_id).strip()
+        return router_base / router_id / "models" / rid / mode
     return router_base / router_id / "model" / mode
 
 
@@ -64,10 +70,16 @@ def make_router_model_paths_for_cli(
     router_id: str,
     router_base: Optional[Path] = None,
     input_mode: str = "both",
+    router_architecture_id: str | None = None,
 ) -> RouterModelPaths:
     base = router_base if router_base is not None else default_router_base()
     return RouterModelPaths(
-        run_root=build_router_model_root(base, router_id, input_mode)
+        run_root=build_router_model_root(
+            base,
+            router_id,
+            input_mode,
+            router_architecture_id=router_architecture_id,
+        )
     )
 
 
@@ -100,8 +112,11 @@ def write_router_model_manifest(
     paths: RouterModelPaths,
     *,
     router_id: str,
+    router_architecture_id: str | None = None,
     input_mode: str = "both",
     dataset_manifest_path: str,
+    architecture_name: str = "mlp-v1",
+    architecture_kwargs: Optional[Dict[str, Any]] = None,
     model_config: Dict[str, Any],
     training_config: Dict[str, Any],
     feature_set_version: str,
@@ -116,7 +131,16 @@ def write_router_model_manifest(
         "schema_version": 1,
         "created_at": utc_now_iso(),
         "router_id": router_id,
-        "model_id": f"{router_id}:{mode}",
+        "router_architecture_id": (
+            str(router_architecture_id).strip()
+            if router_architecture_id and str(router_architecture_id).strip()
+            else None
+        ),
+        "model_id": (
+            f"{router_id}:{str(router_architecture_id).strip()}:{mode}"
+            if router_architecture_id and str(router_architecture_id).strip()
+            else f"{router_id}:{mode}"
+        ),
         "source": {
             "router_dataset_manifest": dataset_manifest_path,
         },
@@ -126,6 +150,8 @@ def write_router_model_manifest(
             "feature_set_version": feature_set_version,
             "embedding_model": embedding_model,
             "weight_grid": [float(x) for x in weight_grid],
+            "architecture_name": architecture_name,
+            "architecture_kwargs": dict(architecture_kwargs or {}),
             "architecture": model_config,
         },
         "training": training_config,

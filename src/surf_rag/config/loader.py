@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, fields, is_dataclass, replace
 from pathlib import Path
-from typing import Any, Type, TypeVar
+from typing import Any, Type, TypeVar, get_type_hints
 
 import yaml
 
+import surf_rag.config.schema as _schema_module
 from surf_rag.evaluation.artifact_paths import (
     benchmark_bundle_dir,
+    benchmark_jsonl_path,
     router_dataset_dir,
     router_model_dir,
     router_oracle_dir,
@@ -19,6 +21,7 @@ from surf_rag.config.schema import (
     CorpusSection,
     E2ESection,
     EntityMatchingSection,
+    FiguresSection,
     GenerationSection,
     GraphRetrievalSweepSection,
     ModelSetupSection,
@@ -39,14 +42,26 @@ T = TypeVar("T")
 def _merge_dataclass(cls: Type[T], data: dict[str, Any] | None, defaults: T) -> T:
     if not data:
         return defaults
+    # ``schema`` uses ``from __future__ import annotations``; ``fields().type`` may be
+    # a string. Resolve real types so nested dataclasses (e.g. ``FiguresSection.theme``)
+    # merge instead of being left as raw dicts.
+    try:
+        hints = get_type_hints(
+            cls,
+            globalns=vars(_schema_module),
+            localns=vars(_schema_module),
+        )
+    except Exception:
+        hints = {}
     kwargs: dict[str, Any] = {}
     for f in fields(defaults):
         if f.name not in data:
             continue
         val = data[f.name]
-        if is_dataclass(f.type) and isinstance(val, dict):
+        field_type = hints.get(f.name, f.type)
+        if is_dataclass(field_type) and isinstance(val, dict):
             sub_default = getattr(defaults, f.name)
-            kwargs[f.name] = _merge_dataclass(f.type, val, sub_default)  # type: ignore[arg-type]
+            kwargs[f.name] = _merge_dataclass(field_type, val, sub_default)  # type: ignore[arg-type]
         else:
             kwargs[f.name] = val
     return replace(defaults, **kwargs)
@@ -109,6 +124,7 @@ def pipeline_config_from_dict(raw: dict[str, Any]) -> PipelineConfig:
             raw.get("graph_retrieval_sweep"),
             base.graph_retrieval_sweep,
         ),
+        figures=_merge_dataclass(FiguresSection, raw.get("figures"), base.figures),
     )
     e2e = out.e2e
     if e2e.completion_window is None:
@@ -161,9 +177,11 @@ def _coerce_yaml_scalar_types(cfg: PipelineConfig) -> PipelineConfig:
         data_base=str(p.data_base),
         benchmark_base=_opt_path_str(p.benchmark_base),
         router_base=_opt_path_str(p.router_base),
+        figures_base=_opt_path_str(p.figures_base),
         benchmark_name=str(p.benchmark_name),
         benchmark_id=str(p.benchmark_id),
         router_id=_id_str(p.router_id),
+        router_architecture_id=_opt_path_str(p.router_architecture_id),
         hf_home=_opt_path_str(p.hf_home),
         transformers_cache=_opt_path_str(p.transformers_cache),
     )
@@ -180,6 +198,14 @@ def _coerce_yaml_scalar_types(cfg: PipelineConfig) -> PipelineConfig:
     out = replace(cfg, paths=paths, raw_sources=raw_sources)
     if out.experiment_id is not None:
         out = replace(out, experiment_id=str(out.experiment_id))
+    fg = out.figures
+    out = replace(
+        out,
+        figures=replace(
+            fg,
+            image_format=str(fg.image_format or "png").strip().lower(),
+        ),
+    )
     return out
 
 
@@ -198,11 +224,13 @@ class ResolvedPaths:
     """Absolute paths derived from a :class:`PipelineConfig`."""
 
     data_base: Path
+    figures_base: Path
     benchmark_base: Path
     router_base: Path
     benchmark_name: str
     benchmark_id: str
     router_id: str
+    router_architecture_id: str | None
     bundle: Path
     benchmark_dir: Path
     benchmark_path: Path
@@ -233,8 +261,8 @@ def resolve_paths(cfg: PipelineConfig) -> ResolvedPaths:
     name, bid = p.benchmark_name, p.benchmark_id
     rid = p.router_id
     bundle = benchmark_bundle_dir(bbase, name, bid)
-    benchmark_dir = bundle / "benchmark"
-    benchmark_path = benchmark_dir / "benchmark.jsonl"
+    benchmark_path = benchmark_jsonl_path(bbase, name, bid)
+    benchmark_dir = benchmark_path.parent
     corpus_dir = bundle / "corpus"
     docstore_path = corpus_dir / "docstore.sqlite"
     corpus_path = corpus_dir / "corpus.jsonl"
@@ -247,13 +275,25 @@ def resolve_paths(cfg: PipelineConfig) -> ResolvedPaths:
         if p.transformers_cache
         else hf / "transformers"
     )
+    if p.figures_base and str(p.figures_base).strip():
+        figures_base = Path(str(p.figures_base).strip()).expanduser().resolve()
+        if figures_base == Path("/").resolve():
+            raise ValueError(
+                "paths.figures_base cannot be '/' — figures would be written under "
+                "/benchmarks/... or /router/... on the filesystem root. Omit "
+                "figures_base for ~/figures, or set e.g. ~/figures or data/figures."
+            )
+    else:
+        figures_base = (Path.home() / "figures").resolve()
     return ResolvedPaths(
         data_base=data_base,
+        figures_base=figures_base,
         benchmark_base=bbase,
         router_base=rbase,
         benchmark_name=name,
         benchmark_id=bid,
         router_id=rid,
+        router_architecture_id=p.router_architecture_id,
         bundle=bundle,
         benchmark_dir=benchmark_dir,
         benchmark_path=benchmark_path,
@@ -284,6 +324,7 @@ def config_to_resolved_dict(cfg: PipelineConfig, rp: ResolvedPaths) -> dict[str,
     d = asdict(cfg)
     d["resolved_paths"] = {
         "data_base": str(rp.data_base),
+        "figures_base": str(rp.figures_base),
         "benchmark_base": str(rp.benchmark_base),
         "router_base": str(rp.router_base),
         "bundle": str(rp.bundle),
@@ -297,12 +338,15 @@ def config_to_resolved_dict(cfg: PipelineConfig, rp: ResolvedPaths) -> dict[str,
         "router_oracle_dir": str(rp.router_oracle_dir),
         "router_dataset_dir": str(rp.router_dataset_dir),
         "router_model_dir": str(rp.router_model_dir),
+        "router_architecture_id": rp.router_architecture_id,
     }
     return d
 
 
 def validate_e2e_config(cfg: PipelineConfig) -> None:
     pol = (cfg.e2e.policy or "").strip().lower().replace("_", "-")
-    if pol in ("learned-soft", "learned-hard"):
+    if pol in ("learned-soft", "learned-hard", "learned-hybrid", "oracle-upper-bound"):
         if not str(cfg.paths.router_id).strip():
-            raise ValueError("e2e policy learned-* requires paths.router_id")
+            raise ValueError(
+                "e2e policy learned-* and oracle-upper-bound require paths.router_id"
+            )

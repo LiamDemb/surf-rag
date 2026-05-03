@@ -383,10 +383,10 @@ def run_retrieval_only_trial(
     validate_e2e_config(cfg)
     e = cfg.e2e
     policy = parse_routing_policy(e.policy)
-    if policy != RoutingPolicyName.GRAPH_ONLY:
+    if policy != RoutingPolicyName.GRAPH_ONLY.value:
         raise ValueError(
             "graph_retrieval_sweep requires e2e.policy == graph-only "
-            f"(got {policy.value!r})."
+            f"(got {policy!r})."
         )
 
     rp = resolve_paths(cfg)
@@ -410,14 +410,18 @@ def run_retrieval_only_trial(
         fusion_keep_k=e.fusion_keep_k,
         router=None,
     )
-    reranker = build_reranker(e.reranker, cross_encoder_model=e.cross_encoder_model)
+    reranker = build_reranker(
+        e.reranker,
+        cross_encoder_model=e.cross_encoder_model,
+        cross_encoder_device=cfg.model_setup.cross_encoder_device,
+    )
 
     retrieval_path = run_paths.retrieval_results_jsonl()
     with retrieval_path.open("w", encoding="utf-8") as retrieval_fp:
         for sample in rows:
             question = str(sample.get("question", "")).strip()
             qid = str(sample.get("question_id", "")).strip()
-            rr = pipeline.run(question, policy)
+            rr = pipeline.run(question, RoutingPolicyName(policy))
             rr = reranker.rerank(question, rr, top_k=e.rerank_top_k)
             write_retrieval_line(retrieval_fp, rr, qid)
 
@@ -428,7 +432,8 @@ def run_retrieval_only_trial(
     )
     score = float(get_nested(report, objective_path))
     all10 = (
-        ((report.get("overlap") or {}).get("all") or {})
+        ((report.get("overlap_breakdown") or {}).get("all") or {})
+        .get("retrieval_before_ce", {})
         .get("retrieval_at_k", {})
         .get("10", {})
     )
@@ -454,7 +459,7 @@ def run_retrieval_only_trial(
         metrics_path=str(metrics_path.resolve()),
         run_root=str(run_paths.run_root.resolve()),
         metric_all_count=int(
-            ((report.get("overlap") or {}).get("all") or {}).get("count", 0)
+            ((report.get("overlap_breakdown") or {}).get("all") or {}).get("count", 0)
         ),
         metric_all_ndcg_at_10=(
             float(all10["ndcg"])
@@ -518,7 +523,10 @@ def run_cartesian_sweep(
     resolved_objective = (
         objective_path
         if objective_path is not None
-        else (sweep_cfg.objective or "overlap.all.retrieval_at_k.10.ndcg")
+        else (
+            sweep_cfg.objective
+            or "overlap_breakdown.all.retrieval_before_ce.retrieval_at_k.10.ndcg"
+        )
     )
     resolved_sweep_id = (
         sweep_id
@@ -530,7 +538,7 @@ def run_cartesian_sweep(
     rp0 = resolve_paths(base)
     validate_e2e_config(base)
     pol = parse_routing_policy(base.e2e.policy)
-    if pol != RoutingPolicyName.GRAPH_ONLY:
+    if pol != RoutingPolicyName.GRAPH_ONLY.value:
         raise ValueError(
             "This sweep requires e2e.policy: graph-only in the base config."
         )

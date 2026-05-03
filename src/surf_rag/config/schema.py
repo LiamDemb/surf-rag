@@ -17,9 +17,13 @@ class PathsSection:
     data_base: str = "data"
     benchmark_base: str | None = None
     router_base: str | None = None
+    # Root for rendered figures when figures.output_dir is unset. When None, defaults
+    # to ~/figures (see resolve_paths); set explicitly to place figures under data/.
+    figures_base: str | None = None
     benchmark_name: str = "benchmark-name"
     benchmark_id: str = "v01"
     router_id: str = "v01"
+    router_architecture_id: str | None = None
     hf_home: str | None = None
     transformers_cache: str | None = None
 
@@ -40,6 +44,7 @@ class ModelSetupSection:
     spacy_model: str = "en_core_web_sm"
     embedding_model: str = "all-MiniLM-L6-v2"
     cross_encoder_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    cross_encoder_device: str | None = None
 
 
 @dataclass
@@ -91,7 +96,14 @@ class RouterTrainSection:
     batch_size: int = 32
     learning_rate: float = 0.001
     device: str = "cpu"
+    architecture: str = "mlp-v1"
+    architecture_kwargs: dict[str, Any] = field(default_factory=dict)
+    excluded_features: list[str] = field(default_factory=list)
     input_mode: str = "both"
+    midpoint_balance_masking: bool = False
+    midpoint_balance_epsilon: float = 1e-6
+    loss: str = "regret"
+    loss_kwargs: dict[str, Any] = field(default_factory=dict)
     input_modes: list[str] = field(
         default_factory=lambda: ["both", "query-features", "embedding"]
     )
@@ -148,6 +160,8 @@ class E2ESection:
             "50-50",
             "learned-soft",
             "learned-hard",
+            "learned-hybrid",
+            "oracle-upper-bound",
         ]
     )
     branch_top_k: int = 20
@@ -158,6 +172,7 @@ class E2ESection:
     router_device: str = "cpu"
     router_input_mode: str = "both"
     router_inference_batch_size: int = 32
+    latency_warmup_questions: int = 0
     limit: int | None = None
     only_question_ids: list[str] = field(default_factory=list)
     dry_run: bool = False
@@ -172,6 +187,36 @@ class SecretsSection:
 
 
 @dataclass
+class FiguresThemeSection:
+    """Matplotlib style preset for ``surf_rag.viz.theme.apply_theme``."""
+
+    name: str = "default"
+    dpi: int = 200
+    font_size: int | None = None
+    overrides: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class FiguresSection:
+    """Optional figure generation (opt-in via ``enabled``).
+
+    When ``output_dir`` is unset, the output directory depends on each plot's
+    ``kind``: router plots use
+    :func:`surf_rag.viz.paths_layout.canonical_router_figure_dir`, and
+    ``benchmark_oracle_ndcg_heatmap`` and ``oracle_argmax_weight_histogram`` use
+    :func:`surf_rag.viz.paths_layout.canonical_benchmark_figure_dir`
+    (``{figures_base}/benchmarks/{name}/{id}/``). Set ``output_dir`` to force a
+    single directory for all plots in the run.
+    """
+
+    enabled: bool = False
+    output_dir: str | None = None
+    theme: FiguresThemeSection = field(default_factory=FiguresThemeSection)
+    image_format: str = "png"
+    plots: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass
 class GraphRetrievalSweepSection:
     """Optional grid-search settings for ``scripts/dev/graph_retrieval_grid_search.py``.
 
@@ -180,7 +225,7 @@ class GraphRetrievalSweepSection:
     """
 
     grid: dict[str, Any] = field(default_factory=dict)
-    objective: str = "overlap.all.retrieval_at_k.10.ndcg"
+    objective: str = "overlap_breakdown.all.retrieval_before_ce.retrieval_at_k.10.ndcg"
     sweep_id: str | None = None
     use_router_overlap_splits: bool = False
 
@@ -208,3 +253,4 @@ class PipelineConfig:
     graph_retrieval_sweep: GraphRetrievalSweepSection = field(
         default_factory=GraphRetrievalSweepSection
     )
+    figures: FiguresSection = field(default_factory=FiguresSection)

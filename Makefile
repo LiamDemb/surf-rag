@@ -3,9 +3,11 @@
 	oracle-prepare oracle-create-router-labels oracle-labels \
 	router-build-dataset router-pipeline \
 	router-train router-eval router-train-ablations router-evaluate-ablations \
+	figures-render \
 	validate-oracle-config validate-router-config validate-router-train \
 	e2e-print-config e2e-prepare e2e-submit e2e-collect e2e-evaluate e2e-run \
 	e2e-run-all-policies e2e-collect-all-policies e2e-evaluate-all-policies e2e-smoke-test-v01 \
+	gen-debug discrepancy-debug-e2e \
 	build-entity-matching-artifacts corpus-ie-run corpus-ie-retry corpus-finalize corpus-ie-retry-and-finalize
 
 # Default experiment recipe (override per run: make build-corpus CONFIG=configs/e2e/.../x.yaml)
@@ -19,7 +21,7 @@ E2E_RUN_ID ?=
 E2E_POLICY ?=
 E2E_SPLIT ?=
 E2E_DEV_SYNC ?=
-E2E_POLICIES ?= dense-only graph-only 50-50 learned-soft learned-hard
+E2E_POLICIES ?= dense-only graph-only 50-50 learned-soft learned-hybrid learned-hard oracle-upper-bound
 ROUTER_INPUT_MODES ?= both query-features embedding
 ENTITY_MATCHING_FORCE ?=
 ALIGN_2WIKI_EXTRA ?=
@@ -51,6 +53,7 @@ help:
 	@echo "  make oracle-labels            — oracle + router labels"
 	@echo "  make router-pipeline         — oracle-labels + router-build-dataset"
 	@echo "  make e2e-submit / e2e-collect / e2e-evaluate   (+ optional E2E_RUN_ID= E2E_POLICY=)"
+	@echo "  make gen-debug          (CONFIG=configs/gen-debug/….yaml)"
 	@echo ""
 	@echo "Full reference: docs/config-driven-workflows.md"
 
@@ -139,6 +142,11 @@ router-train-ablations: validate-router-train
 router-eval: validate-router-train
 	$(PY) -m scripts.router.evaluate_router --config "$(CONFIG)"
 
+# Regenerates figures in-place; pass FIGURES_EXTRA= to omit --force if you need overwrite protection.
+FIGURES_EXTRA ?= --force
+figures-render:
+	$(PY) -m scripts.figures.render_figures --config "$(CONFIG)" $(FIGURES_EXTRA)
+
 router-evaluate-ablations: validate-router-train
 	@for m in $(ROUTER_INPUT_MODES); do \
 		echo "=== router-eval --config $(CONFIG) --input-mode $$m ==="; \
@@ -214,3 +222,10 @@ E2E_SMOKE_RUN_ID ?= smoke-$(shell date +%Y%m%d-%H%M%S)
 e2e-smoke-test-v01:
 	$(PY) -m scripts.e2e_benchmark --config "$(CONFIG)" prepare --dry-run --limit 1 \
 		--run-id "$(E2E_SMOKE_RUN_ID)" --policy dense-only
+
+# Testing cases where retrieval performance increases and QA decreases to understand the LLM bottleneck
+gen-debug:
+	$(PY) scripts/discrepancy_debug_e2e.py --config "$(CONFIG)"
+
+# Back-compat alias
+discrepancy-debug-e2e: gen-debug

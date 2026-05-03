@@ -11,10 +11,12 @@ import pytest
 from surf_rag.evaluation.artifact_paths import default_router_base
 from surf_rag.evaluation.router_dataset_artifacts import (
     RouterDatasetPaths,
+    build_ignored_router_questions_payload,
     build_router_dataset_root,
     build_split_question_ids_dict,
     make_router_dataset_paths_for_cli,
     read_jsonl_dict,
+    write_ignored_router_questions,
     write_router_dataset_manifest,
     write_split_question_ids,
 )
@@ -22,6 +24,8 @@ from surf_rag.evaluation.router_dataset_artifacts import (
 
 def test_default_router_base(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("DATA_BASE", raising=False)
+    monkeypatch.delenv("ROUTER_BASE", raising=False)
     assert default_router_base() == Path("data/router")
 
 
@@ -30,6 +34,7 @@ def test_run_root_layout() -> None:
     assert p.run_root == Path("/base") / "ds1" / "dataset"
     assert p.router_dataset_parquet == p.run_root / "router_dataset.parquet"
     assert p.split_question_ids == p.run_root / "split_question_ids.json"
+    assert p.ignored_router_questions == p.run_root / "ignored_router_questions.json"
 
 
 def test_write_manifest_roundtrip(tmp_path: Path) -> None:
@@ -52,6 +57,7 @@ def test_write_manifest_roundtrip(tmp_path: Path) -> None:
     )
     m = json.loads(paths.manifest.read_text())
     assert m["router_id"] == "d1"
+    assert m["split"]["stratification"] == "dataset_source"
     assert m["oracle"]["run_root"] == "/base/d1/oracle"
     assert m["oracle"]["router_labels"] == "/base/d1/oracle/router_labels.jsonl"
 
@@ -61,6 +67,7 @@ def test_build_split_question_ids_dict_matches_df(tmp_path: Path) -> None:
         {
             "question_id": ["a", "b", "c", "d"],
             "split": ["train", "train", "dev", "test"],
+            "is_valid_for_router_training": [True, False, True, False],
         }
     )
     d = build_split_question_ids_dict(
@@ -71,6 +78,9 @@ def test_build_split_question_ids_dict_matches_df(tmp_path: Path) -> None:
         split_seed=7,
     )
     assert d["counts"] == {"train": 2, "dev": 1, "test": 1}
+    assert d["counts_total"] == {"train": 2, "dev": 1, "test": 1}
+    assert d["counts_router_eligible"] == {"train": 1, "dev": 1, "test": 0}
+    assert d["counts_router_ignored_all_zero"] == {"train": 1, "dev": 0, "test": 1}
     assert set(d["train"]) == {"a", "b"}
     assert d["canonical_question_hash_available"] is False
 
@@ -91,3 +101,49 @@ def test_read_jsonl_dict(tmp_path: Path) -> None:
     d = read_jsonl_dict(p, "question_id")
     assert d["a"]["k"] == 1
     assert d["b"]["k"] == 2
+
+
+def test_build_ignored_router_questions_payload_is_stable() -> None:
+    df = pd.DataFrame(
+        {
+            "question_id": ["z", "a", "m", "n", "k"],
+            "split": ["train", "train", "dev", "test", "test"],
+            "is_valid_for_router_training": [False, True, False, True, False],
+        }
+    )
+    payload = build_ignored_router_questions_payload(df, router_id="r1")
+    assert payload["router_id"] == "r1"
+    assert payload["reason"] == "all_zero_oracle_score"
+    assert payload["num_rows_total"] == 5
+    assert payload["eligible_count_total"] == 2
+    assert payload["ignored_count_total"] == 3
+    assert payload["counts_by_split"]["train"] == {
+        "total": 2,
+        "eligible": 1,
+        "ignored": 1,
+    }
+    assert payload["ignored_question_ids_by_split"]["train"] == ["z"]
+    assert payload["ignored_question_ids_by_split"]["dev"] == ["m"]
+    assert payload["ignored_question_ids_by_split"]["test"] == ["k"]
+    assert payload["ignored_question_ids_all"] == ["k", "m", "z"]
+
+
+def test_write_ignored_router_questions_roundtrip(tmp_path: Path) -> None:
+    payload = {
+        "router_id": "r2",
+        "reason": "all_zero_oracle_score",
+        "ignored_count_total": 1,
+        "eligible_count_total": 2,
+        "counts_by_split": {
+            "train": {"total": 1, "eligible": 0, "ignored": 1},
+            "dev": {"total": 1, "eligible": 1, "ignored": 0},
+            "test": {"total": 1, "eligible": 1, "ignored": 0},
+        },
+        "ignored_question_ids_by_split": {"train": ["q1"], "dev": [], "test": []},
+        "ignored_question_ids_all": ["q1"],
+    }
+    out = tmp_path / "ignored_router_questions.json"
+    write_ignored_router_questions(out, payload)
+    got = json.loads(out.read_text(encoding="utf-8"))
+    assert got["router_id"] == "r2"
+    assert got["ignored_question_ids_all"] == ["q1"]

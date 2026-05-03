@@ -1,8 +1,8 @@
 # SuRF-RAG: Supervised Retrieval Fusion for Mixed-Reasoning QA
 
-## Router training (MLP) and input ablations
+## Router training (architectures + input ablations)
 
-The router is trained on a Parquet dataset built from oracle performance curves. One run id (`ROUTER_ID`) shares a single `dataset/`; trained checkpoints, metrics, and per-split predictions are stored under a **per-input ablation** directory:
+The router is trained on a Parquet dataset built from oracle performance curves. One router dataset id (`ROUTER_ID`) shares one `dataset/`; trained checkpoints, metrics, and per-split predictions are stored under architecture + input-mode folders:
 
 ```text
 $DATA_BASE/router/$ROUTER_ID/
@@ -10,15 +10,18 @@ $DATA_BASE/router/$ROUTER_ID/
   dataset/
     router_dataset.parquet
     manifest.json
-  model/
-    both/                 # default: query embedding + normalized query features
-    query-features/     # V1 query features only
-    embedding/          # query embedding only
-      model.pt
-      manifest.json
-      metrics.json
-      training_history.json
-      predictions_{train,dev,test}.jsonl
+  models/
+    $ROUTER_ARCHITECTURE_ID/
+      both/            # default: query embedding + normalized query features
+      query-features/  # V1 query features only
+      embedding/       # query embedding only
+        model.pt
+        manifest.json
+        metrics.json
+        training_history.json
+        predictions_{train,dev,test}.jsonl
+  model/               # legacy single-model location (read fallback)
+    <input_mode>/
 ```
 
 **Input modes**
@@ -36,17 +39,47 @@ $DATA_BASE/router/$ROUTER_ID/
 
 **CLI** (see `poetry run python -m scripts.router.train_router --help`):
 
-- `--input-mode` or env `ROUTER_INPUT_MODE` selects the output folder and architecture.
+- `--router-architecture-id` is required for training and maps to `models/<id>/...`.
+- `--architecture` selects implementation (`mlp-v1`, `logreg-v1`, `polyreg-v1`, or `tower_v01`).
+- `--architecture-kwargs` accepts a JSON object (validated per architecture).
+- `--input-mode` or env `ROUTER_INPUT_MODE` selects the branch-input ablation.
 
-To compare runs, use `metrics.json` (and optional `predictions_*.jsonl`) under each `model/<input_mode>/` for the same `ROUTER_ID`.
+To compare runs, use `metrics.json` (and optional `predictions_*.jsonl`) under each `models/<router_architecture_id>/<input_mode>/` for the same `ROUTER_ID`.
+
+Router **`metrics.json`** reports **`mean_regret`**, **`normalized_regret`**, and tie-aware weight calibration **`argmax_interval_distance_mae`** / **`argmax_interval_distance_rmse`** (distance from the predicted dense weight to the nearest point in the oracle **argmax interval**: all grid weights tied at the curve maximum). Prediction JSONL rows include **`oracle_curve`**, **`predicted_weight`**, and **`target_oracle_best_score`** (max over the curve); figures derive intervals using **`model.weight_grid`** from the model **`manifest.json`**. The router dataset is stratified by benchmark **`dataset_source`** (see **`manifest.json`** → **`split.stratification`**).
+
+**Config keys**
+
+- `paths.router_architecture_id`: chosen architecture artifact id for downstream learned-router inference.
+- `router.train.architecture`: architecture family (`mlp-v1`, `logreg-v1`, `polyreg-v1`, `tower_v01`).
+- **`router.train.excluded_features`**: optional list of V1 feature names removed before every architecture’s feature branch (`mlp-v1`, `logreg-v1`, `polyreg-v1`, `tower_v01`). Train-level entries override legacy **`architecture_kwargs.excluded_features`** when both are set.
+- `polyreg-v1`: logistic regression on polynomial features up to **`architecture_kwargs.degree`** (default `2`). Optional **`max_expanded_features`** caps the monomial count (large `degree` × wide inputs will error until you lower degree or shrink inputs).
+- `router.train.architecture_kwargs`: per-architecture validated kwargs.
+
+When `paths.router_architecture_id` is omitted in e2e:
+
+- if exactly one child directory exists under `.../models/`, it is auto-selected;
+- if multiple exist, the run fails with a disambiguation error;
+- if no `models/` bundle exists, inference falls back to legacy `model/<input_mode>/`.
 
 ## End-to-end benchmark & evaluation
 
 Benchmark bundles are defined in your pipeline YAML (`paths.benchmark_base`, `benchmark_name`, `benchmark_id`). Routed retrieval, optional cross-encoder reranking, OpenAI Batch generation, and overlap-split metrics are documented in **[docs/dev/end-to-end-system-and-evaluation.md](docs/dev/end-to-end-system-and-evaluation.md)**. Make targets: `e2e-prepare`, `e2e-submit`, `e2e-collect`, `e2e-evaluate`, `e2e-smoke-test-v01` (all use `CONFIG`, default `configs/pipelines/surf-bench-200.yaml`).
 
+`e2e.policy` supports `dense-only`, `graph-only`, `50-50`, `learned-soft`, `learned-hard`, `learned-hybrid`, and `oracle-upper-bound`.
+For `oracle-upper-bound`, retrieval is oracle-soft (per-question best fusion bin from `oracle_scores.jsonl`), is benchmark-scoped under `evaluations/oracle-upper-bound/<run_id>/`, is test-only, and fails fast if router test QIDs are missing in oracle artifacts.
+
 **Config-driven runs:** every stage uses `--config "$(CONFIG)"`. Override with `CONFIG=...` or `make print-resolved-config`. See **[docs/config-driven-workflows.md](docs/config-driven-workflows.md)** and `configs/templates/`.
 
 **LLM QA generation** always uses a forced OpenAI **`format_answer`** tool call (`reasoning` plus short `answer`). Batch collect writes `answer` (for EM/F1), `generation_reasoning`, and optional `generation_parse_error` into `generation/answers.jsonl`.
+
+### Oracle retrieval upper-bound report
+
+You can aggregate retrieval-only oracle upper-bound metrics on the router test split without rerunning retrieval:
+
+- `poetry run python -m scripts.router.report_oracle_upper_bound --config <pipeline.yaml>`
+- Output defaults to `data/router/<router_id>/oracle/reports/oracle_upper_bound_test.json`
+- Metrics include NDCG/Hit/Recall at `@5`, `@10`, and `@20`
 
 ### Model cache and corpus entity artifacts
 

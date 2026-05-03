@@ -6,12 +6,40 @@ Respects ``HF_HOME``, ``TRANSFORMERS_CACHE``, ``HF_HUB_OFFLINE``, etc. via the l
 
 from __future__ import annotations
 
+import logging
 import threading
 from typing import Any, Dict, Tuple
 
 _lock = threading.Lock()
 _sentence_transformers: Dict[Tuple[Any, ...], Any] = {}
 _cross_encoders: Dict[Tuple[Any, ...], Any] = {}
+logger = logging.getLogger(__name__)
+
+
+def _mps_available() -> bool:
+    import torch
+
+    return bool(
+        hasattr(torch.backends, "mps")
+        and torch.backends.mps.is_available()
+        and torch.backends.mps.is_built()
+    )
+
+
+def _resolve_cross_encoder_device(device: str | None) -> str | None:
+    """Normalize cross-encoder device requests with safe MPS fallback."""
+    raw = (device or "").strip()
+    if not raw:
+        return None
+    normalized = raw.lower()
+    if normalized != "mps":
+        return normalized
+    if _mps_available():
+        return "mps"
+    logger.warning(
+        "CROSS_ENCODER_DEVICE=mps requested but MPS is unavailable; falling back to cpu."
+    )
+    return "cpu"
 
 
 def get_sentence_transformer(
@@ -53,7 +81,8 @@ def get_cross_encoder(
     name = (model_name or "").strip()
     if not name:
         raise ValueError("model_name must be non-empty")
-    key = ("ce", name, device, max_length)
+    resolved_device = _resolve_cross_encoder_device(device)
+    key = ("ce", name, resolved_device, max_length)
     with _lock:
         cached = _cross_encoders.get(key)
         if cached is not None:
@@ -61,8 +90,8 @@ def get_cross_encoder(
     from sentence_transformers import CrossEncoder
 
     kwargs: dict[str, Any] = {}
-    if device is not None:
-        kwargs["device"] = device
+    if resolved_device is not None:
+        kwargs["device"] = resolved_device
     if max_length is not None:
         kwargs["max_length"] = max_length
     model = CrossEncoder(name, **kwargs)

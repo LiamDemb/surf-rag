@@ -29,6 +29,10 @@ from surf_rag.evaluation.e2e_runner import (
     e2e_prepare_and_submit,
     make_e2e_run_paths,
 )
+from surf_rag.evaluation.e2e_policies import (
+    ORACLE_UPPER_BOUND_POLICY,
+    parse_routing_policy,
+)
 from surf_rag.evaluation.router_dataset_artifacts import (
     make_router_dataset_paths_for_cli,
 )
@@ -50,7 +54,10 @@ def _add_common(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--policy",
         default=None,
-        help="Routing policy: learned-soft, learned-hard, 50-50, dense-only, graph-only",
+        help=(
+            "Routing policy: learned-soft, learned-hard, learned-hybrid, 50-50, "
+            "dense-only, graph-only, oracle-upper-bound"
+        ),
     )
     p.add_argument("--retrieval-asset-dir", type=Path, default=None)
 
@@ -81,6 +88,20 @@ def cmd_prepare(args: argparse.Namespace) -> int:
         except ValueError as e:
             log.error("%s", e)
             return 2
+    try:
+        policy = parse_routing_policy(args.policy)
+    except ValueError as e:
+        log.error("%s", e)
+        return 2
+    if policy == ORACLE_UPPER_BOUND_POLICY:
+        if not args.router_id or not str(args.router_id).strip():
+            log.error(
+                "oracle-upper-bound requires --router-id (or config paths.router_id)."
+            )
+            return 2
+        if str(args.split).strip().lower() != "test":
+            log.error("oracle-upper-bound is test-only; use --split test.")
+            return 2
     bb = args.benchmark_base or default_benchmark_base()
     return e2e_prepare_and_submit(
         args.benchmark_path.resolve(),
@@ -89,14 +110,16 @@ def cmd_prepare(args: argparse.Namespace) -> int:
         benchmark_id=args.benchmark_id,
         split=args.split,
         run_id=args.run_id,
-        routing_policy=args.policy,
+        routing_policy=policy,
         retrieval_asset_dir=args.retrieval_asset_dir.resolve(),
         router_id=args.router_id,
+        router_architecture_id=getattr(args, "router_architecture_id", None),
         router_base=args.router_base,
         fusion_keep_k=args.fusion_keep_k,
         reranker_kind=args.reranker,
         rerank_top_k=args.rerank_top_k,
         cross_encoder_model=args.cross_encoder_model,
+        cross_encoder_device=args.cross_encoder_device,
         limit=args.limit,
         only_question_ids=set(args.only_question_id) if args.only_question_id else None,
         completion_window=args.completion_window,
@@ -105,6 +128,7 @@ def cmd_prepare(args: argparse.Namespace) -> int:
         router_device=args.router_device,
         router_input_mode=args.router_input_mode,
         router_inference_batch_size=args.router_inference_batch_size,
+        latency_warmup_questions=args.latency_warmup_questions,
         dev_sync=args.dev_sync,
         pipeline_config_for_artifact=cfg,
     )
@@ -120,9 +144,11 @@ def cmd_collect(args: argparse.Namespace) -> int:
         log.error("Missing required E2E fields (use --config or CLI flags).")
         return 2
     bb = args.benchmark_base or default_benchmark_base()
-    from surf_rag.evaluation.e2e_policies import parse_routing_policy
-
-    policy = parse_routing_policy(args.policy)
+    try:
+        policy = parse_routing_policy(args.policy)
+    except ValueError as e:
+        log.error("%s", e)
+        return 2
     paths = make_e2e_run_paths(
         benchmark_base=bb,
         benchmark_name=args.benchmark_name,
@@ -144,9 +170,11 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
         log.error("Missing required E2E fields (use --config or CLI flags).")
         return 2
     bb = args.benchmark_base or default_benchmark_base()
-    from surf_rag.evaluation.e2e_policies import parse_routing_policy
-
-    policy = parse_routing_policy(args.policy)
+    try:
+        policy = parse_routing_policy(args.policy)
+    except ValueError as e:
+        log.error("%s", e)
+        return 2
     paths = make_e2e_run_paths(
         benchmark_base=bb,
         benchmark_name=args.benchmark_name,
@@ -183,9 +211,11 @@ def cmd_print_config(args: argparse.Namespace) -> int:
         log.error("Missing required E2E fields (use --config or CLI flags).")
         return 2
     bb = args.benchmark_base or default_benchmark_base()
-    from surf_rag.evaluation.e2e_policies import parse_routing_policy
-
-    policy = parse_routing_policy(args.policy)
+    try:
+        policy = parse_routing_policy(args.policy)
+    except ValueError as e:
+        log.error("%s", e)
+        return 2
     paths = make_e2e_run_paths(
         benchmark_base=bb,
         benchmark_name=args.benchmark_name,
@@ -218,8 +248,17 @@ def main() -> int:
     )
     _add_common(p_prep)
     p_prep.add_argument("--router-id", default=None)
+    p_prep.add_argument("--router-architecture-id", default=None)
     p_prep.add_argument("--router-base", type=Path, default=None)
-    p_prep.add_argument("--fusion-keep-k", type=int, default=25)
+    p_prep.add_argument(
+        "--fusion-keep-k",
+        type=int,
+        default=25,
+        help=(
+            "Generation-context retrieval depth before LLM prompting; pure retrieval "
+            "metrics are sourced from pre-truncation retrieval artifacts."
+        ),
+    )
     p_prep.add_argument(
         "--reranker",
         default="none",
@@ -227,6 +266,7 @@ def main() -> int:
     )
     p_prep.add_argument("--rerank-top-k", type=int, default=10)
     p_prep.add_argument("--cross-encoder-model", default=None)
+    p_prep.add_argument("--cross-encoder-device", default=None)
     p_prep.add_argument("--limit", type=int, default=None)
     p_prep.add_argument("--only-question-id", action="append", default=[])
     p_prep.add_argument("--completion-window", default="24h")
@@ -244,6 +284,12 @@ def main() -> int:
         type=int,
         default=32,
         help="Mini-batch size for learned-router query embeddings + features.",
+    )
+    p_prep.add_argument(
+        "--latency-warmup-questions",
+        type=int,
+        default=0,
+        help="Warmup retrieval questions excluded from latency reporting.",
     )
     p_prep.set_defaults(func=cmd_prepare)
 

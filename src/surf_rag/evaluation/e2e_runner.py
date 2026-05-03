@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
@@ -24,9 +25,20 @@ from surf_rag.evaluation.e2e_aggregation import (
     aggregate_per_question,
     load_benchmark_index,
 )
+from surf_rag.evaluation.latency_metrics import (
+    LATENCY_PROTOCOL_VERSION,
+    canonicalize_latency_ms,
+)
 from surf_rag.evaluation.e2e_policies import (
+    ORACLE_UPPER_BOUND_POLICY,
     e2e_pipeline_manifest_name,
     parse_routing_policy,
+)
+from surf_rag.evaluation.oracle_artifacts import (
+    OracleRunPaths,
+    build_oracle_run_root,
+    read_jsonl,
+    read_retrieval_cache,
 )
 from surf_rag.evaluation.manifest import update_manifest_artifacts, write_manifest
 from surf_rag.evaluation.retrieval_jsonl import (
@@ -34,6 +46,9 @@ from surf_rag.evaluation.retrieval_jsonl import (
     write_retrieval_line,
 )
 from surf_rag.evaluation.router_overlap import RouterSplitSets
+from surf_rag.evaluation.router_dataset_artifacts import (
+    make_router_dataset_paths_for_cli,
+)
 from surf_rag.evaluation.run_artifacts import (
     RunArtifactPaths,
     make_generation_custom_id,
@@ -47,16 +62,28 @@ from surf_rag.generation.batch_orchestrator import (
 )
 from surf_rag.generation.prompt_renderer import PromptRenderer
 from surf_rag.reranking.reranker import build_reranker
-from surf_rag.retrieval.routed import RoutedFusionPipeline
+from surf_rag.retrieval.fusion import build_fused_retrieval_result
+from surf_rag.retrieval.routed import RoutedFusionPipeline, trim_retrieval_top_k
 from surf_rag.retrieval.types import RetrievalResult
 from surf_rag.router.inference_inputs import (
-    compute_query_tensors_for_router_batch,
+    compute_query_tensors_for_router,
     load_router_inference_context,
 )
 from surf_rag.router.policies import RoutingPolicyName
 from surf_rag.strategies.factory import build_dense_retriever, build_graph_retriever
 
 logger = logging.getLogger(__name__)
+_BASE_METRIC_KS: tuple[int, ...] = (5, 10, 20)
+
+
+class _UnusedRetriever:
+    """Guard retriever to catch unexpected branch execution."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def retrieve(self, query: str, **kwargs: object):  # pragma: no cover - defensive
+        raise RuntimeError(f"{self.name} retriever should not be used for this policy")
 
 
 def _load_benchmark(path: Path, limit: int | None) -> list[dict]:
@@ -72,16 +99,125 @@ def _load_benchmark(path: Path, limit: int | None) -> list[dict]:
     return samples
 
 
+def _load_retrieval_rows(path: Path) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    if not path.is_file():
+        return out
+    with path.open("r", encoding="utf-8") as fp:
+        for line in fp:
+            line = line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
+            qid = str(row.get("question_id", "") or "").strip()
+            if qid:
+                out[qid] = row
+    return out
+
+
+def _load_answers_rows(path: Path) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    if not path.is_file():
+        return out
+    with path.open("r", encoding="utf-8") as fp:
+        for line in fp:
+            line = line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
+            qid = str(row.get("question_id", "") or "").strip()
+            if qid:
+                out[qid] = row
+    return out
+
+
+def _read_router_test_qids(split_question_ids_path: Path) -> set[str]:
+    payload = json.loads(split_question_ids_path.read_text(encoding="utf-8"))
+    return {str(qid).strip() for qid in (payload.get("test") or []) if str(qid).strip()}
+
+
+def _read_oracle_scores_by_qid(path: Path) -> dict[str, dict[str, Any]]:
+    out: dict[str, dict[str, Any]] = {}
+    for row in read_jsonl(path):
+        qid = str(row.get("question_id", "")).strip()
+        if qid:
+            out[qid] = row
+    return out
+
+
+def _validate_oracle_test_alignment(
+    *,
+    benchmark_qids: set[str],
+    test_qids: set[str],
+    scores_by_qid: dict[str, dict[str, Any]],
+    dense_cache: dict[str, RetrievalResult],
+    graph_cache: dict[str, RetrievalResult],
+) -> None:
+    missing_in_benchmark = sorted(qid for qid in test_qids if qid not in benchmark_qids)
+    if missing_in_benchmark:
+        preview = ", ".join(missing_in_benchmark[:10])
+        raise ValueError(
+            "oracle-upper-bound strict check failed: test qids missing from benchmark "
+            f"(showing up to 10): {preview}"
+        )
+    missing_scores = sorted(qid for qid in test_qids if qid not in scores_by_qid)
+    if missing_scores:
+        preview = ", ".join(missing_scores[:10])
+        raise ValueError(
+            "oracle-upper-bound strict check failed: test qids missing in "
+            f"oracle_scores.jsonl (showing up to 10): {preview}"
+        )
+    missing_dense = sorted(qid for qid in test_qids if qid not in dense_cache)
+    if missing_dense:
+        preview = ", ".join(missing_dense[:10])
+        raise ValueError(
+            "oracle-upper-bound strict check failed: test qids missing in "
+            f"retrieval_dense.jsonl (showing up to 10): {preview}"
+        )
+    missing_graph = sorted(qid for qid in test_qids if qid not in graph_cache)
+    if missing_graph:
+        preview = ", ".join(missing_graph[:10])
+        raise ValueError(
+            "oracle-upper-bound strict check failed: test qids missing in "
+            f"retrieval_graph.jsonl (showing up to 10): {preview}"
+        )
+    bad_bins: list[str] = []
+    for qid in sorted(test_qids):
+        row = scores_by_qid[qid]
+        scores = list(row.get("scores") or [])
+        try:
+            idx = int(row.get("best_bin_index"))
+        except Exception:
+            idx = -1
+        if idx < 0 or idx >= len(scores):
+            bad_bins.append(qid)
+            continue
+        w = scores[idx].get("dense_weight")
+        try:
+            fw = float(w)
+        except Exception:
+            bad_bins.append(qid)
+            continue
+        if fw < 0.0 or fw > 1.0:
+            bad_bins.append(qid)
+    if bad_bins:
+        preview = ", ".join(bad_bins[:10])
+        raise ValueError(
+            "oracle-upper-bound strict check failed: invalid best_bin_index or "
+            f"dense_weight in oracle_scores.jsonl (showing up to 10): {preview}"
+        )
+
+
 def make_e2e_run_paths(
     *,
     benchmark_base: Path,
     benchmark_name: str,
     benchmark_id: str,
-    policy: RoutingPolicyName,
+    policy: str,
     run_id: str,
 ) -> RunArtifactPaths:
     run_root = e2e_policy_run_dir(
-        benchmark_base, benchmark_name, benchmark_id, policy.value, run_id
+        benchmark_base, benchmark_name, benchmark_id, policy, run_id
     )
     return RunArtifactPaths(run_root=run_root)
 
@@ -101,35 +237,39 @@ def evaluate_e2e_run(
     )
 
     retrieval_path = run_paths.retrieval_results_jsonl()
+    retrieval_pretrunc_path = run_paths.retrieval_results_pretrunc_jsonl()
     answers_path = run_paths.generation_answers_jsonl()
-    rows_out: list[dict[str, Any]] = []
-    eval_rows = []
+    manifest: dict[str, Any] = {}
+    e2e_meta: dict[str, Any] = {}
+    if run_paths.manifest.is_file():
+        try:
+            manifest = json.loads(run_paths.manifest.read_text(encoding="utf-8"))
+            if isinstance(manifest, dict):
+                e2e_meta = dict(manifest.get("e2e") or {})
+        except Exception:
+            manifest = {}
+            e2e_meta = {}
 
-    retrieval_by_qid: dict[str, dict] = {}
-    if retrieval_path.is_file():
-        with retrieval_path.open("r", encoding="utf-8") as rf:
-            for line in rf:
-                line = line.strip()
-                if not line:
-                    continue
-                rj = json.loads(line)
-                qid = str(rj.get("question_id", "") or "").strip()
-                if qid:
-                    retrieval_by_qid[qid] = rj
+    reranker_kind = str(e2e_meta.get("reranker", "") or "").strip().lower()
+    try:
+        rerank_top_k = int(e2e_meta.get("rerank_top_k", 0) or 0)
+    except Exception:
+        rerank_top_k = 0
 
-    answers_by_qid: dict[str, dict] = {}
-    if answers_path.is_file():
-        with answers_path.open("r", encoding="utf-8") as af:
-            for line in af:
-                line = line.strip()
-                if not line:
-                    continue
-                aj = json.loads(line)
-                qid = str(aj.get("question_id", "") or "").strip()
-                if qid:
-                    answers_by_qid[qid] = aj
-
+    retrieval_by_qid = _load_retrieval_rows(retrieval_path)
+    pretrunc_by_qid = _load_retrieval_rows(retrieval_pretrunc_path)
+    answers_by_qid = _load_answers_rows(answers_path)
     all_qids = sorted(set(bench) | set(retrieval_by_qid) | set(answers_by_qid))
+
+    rows_out: list[dict[str, Any]] = []
+    eval_rows_generation = []
+    eval_rows_pure = []
+    eval_rows_post_ce = []
+    overlap_keys = ("all", "train", "dev", "test", "unseen")
+    pure_available = retrieval_pretrunc_path.is_file()
+    ce_enabled = reranker_kind in ("cross_encoder", "cross-encoder", "ce")
+    ce_ks = [int(k) for k in DEFAULT_NDCG_KS if int(k) <= max(0, rerank_top_k)]
+
     for qid in all_qids:
         sample = bench.get(qid, {})
         gold_sents = list(sample.get("gold_support_sentences") or [])
@@ -139,9 +279,9 @@ def evaluate_e2e_run(
 
         rj = retrieval_by_qid.get(qid)
         if rj:
-            rr = dict_to_retrieval_result(rj)
+            rr_gen = dict_to_retrieval_result(rj)
         else:
-            rr = RetrievalResult(
+            rr_gen = RetrievalResult(
                 query=str(sample.get("question", "") or ""),
                 retriever_name="missing",
                 status="EMPTY",
@@ -149,32 +289,176 @@ def evaluate_e2e_run(
                 latency_ms={},
                 error="no_retrieval_row",
             )
-
-        pe = aggregate_per_question(
+        if "retrieval_stage_total_ms" not in rr_gen.latency_ms:
+            rr_gen.latency_ms = canonicalize_latency_ms(
+                retriever_name=rr_gen.retriever_name,
+                latency_ms=rr_gen.latency_ms,
+                routing_input_ms=float(
+                    rr_gen.latency_ms.get("routing_input_ms", 0.0) or 0.0
+                ),
+            )
+        pe_gen = aggregate_per_question(
             qid,
-            result=rr,
+            result=rr_gen,
             gold_support_sentences=gold_sents,
             dataset_source=str(ds) if ds else None,
             gold_answers=gold_ans,
             prediction=pred,
             ks=DEFAULT_NDCG_KS,
         )
-        eval_rows.append(pe)
-        rows_out.append(
-            {
-                "question_id": qid,
-                "retrieval": {str(s.k): s.to_json() for s in pe.retrieval_suites},
-                "qa": {"em": pe.em, "f1": pe.f1, "prediction": pred},
-            }
-        )
+        eval_rows_generation.append(pe_gen)
 
-    report = aggregate_e2e_report(eval_rows, split_sets=split_sets, ks=DEFAULT_NDCG_KS)
+        q_row: dict[str, Any] = {
+            "question_id": qid,
+            "qa": {"em": pe_gen.em, "f1": pe_gen.f1, "prediction": pred},
+            "latency_ms": dict(rr_gen.latency_ms),
+        }
+
+        if pure_available:
+            rj_pre = pretrunc_by_qid.get(qid)
+            if rj_pre:
+                rr_pre = dict_to_retrieval_result(rj_pre)
+            else:
+                rr_pre = RetrievalResult(
+                    query=str(sample.get("question", "") or ""),
+                    retriever_name="missing",
+                    status="EMPTY",
+                    chunks=[],
+                    latency_ms={},
+                    error="no_pretrunc_retrieval_row",
+                )
+            pe_pre = aggregate_per_question(
+                qid,
+                result=rr_pre,
+                gold_support_sentences=gold_sents,
+                dataset_source=str(ds) if ds else None,
+                gold_answers=gold_ans,
+                prediction=pred,
+                ks=_BASE_METRIC_KS,
+            )
+            eval_rows_pure.append(pe_pre)
+            q_row["retrieval_before_ce"] = {
+                "status": "ok",
+                "reported_ks": list(_BASE_METRIC_KS),
+                "retrieval": {str(s.k): s.to_json() for s in pe_pre.retrieval_suites},
+            }
+        else:
+            q_row["retrieval_before_ce"] = {
+                "status": "unavailable",
+                "reason": "missing retrieval/retrieval_results_pretrunc.jsonl",
+                "reported_ks": list(_BASE_METRIC_KS),
+            }
+
+        if ce_enabled:
+            if ce_ks:
+                pe_ce = aggregate_per_question(
+                    qid,
+                    result=rr_gen,
+                    gold_support_sentences=gold_sents,
+                    dataset_source=str(ds) if ds else None,
+                    gold_answers=gold_ans,
+                    prediction=pred,
+                    ks=ce_ks,
+                )
+                eval_rows_post_ce.append(pe_ce)
+                q_row["retrieval_after_ce"] = {
+                    "status": "ok",
+                    "reported_ks": ce_ks,
+                    "retrieval": {
+                        str(s.k): s.to_json() for s in pe_ce.retrieval_suites
+                    },
+                }
+            else:
+                q_row["retrieval_after_ce"] = {
+                    "status": "unavailable",
+                    "reason": (
+                        f"rerank_top_k={rerank_top_k} is below smallest metric k="
+                        f"{min(_BASE_METRIC_KS)}"
+                    ),
+                    "reported_ks": [],
+                }
+        else:
+            q_row["retrieval_after_ce"] = {
+                "status": "not_applicable",
+                "reason": f"reranker={reranker_kind or 'none'}",
+                "reported_ks": [],
+            }
+
+        rows_out.append(q_row)
+
+    report_generation = aggregate_e2e_report(
+        eval_rows_generation, split_sets=split_sets, ks=DEFAULT_NDCG_KS
+    )
+    report_pure = (
+        aggregate_e2e_report(eval_rows_pure, split_sets=split_sets, ks=_BASE_METRIC_KS)
+        if pure_available
+        else None
+    )
+    report_ce = (
+        aggregate_e2e_report(eval_rows_post_ce, split_sets=split_sets, ks=ce_ks)
+        if (ce_enabled and ce_ks)
+        else None
+    )
+    overlap_breakdown: dict[str, Any] = {}
+    for key in overlap_keys:
+        gen_block = report_generation.get(key, {})
+        out_block: dict[str, Any] = {
+            "count": int(gen_block.get("count", 0)),
+            "latency_ms": dict(gen_block.get("latency_ms") or {}),
+            "qa": dict(gen_block.get("qa") or {}),
+        }
+        if report_pure is not None:
+            pure_block = dict((report_pure.get(key) or {}).get("retrieval_at_k") or {})
+            out_block["retrieval_before_ce"] = {
+                "status": "ok",
+                "reported_ks": list(_BASE_METRIC_KS),
+                "retrieval_at_k": pure_block,
+            }
+        else:
+            out_block["retrieval_before_ce"] = {
+                "status": "unavailable",
+                "reason": "missing retrieval/retrieval_results_pretrunc.jsonl",
+                "reported_ks": list(_BASE_METRIC_KS),
+            }
+        if report_ce is not None:
+            ce_block = dict((report_ce.get(key) or {}).get("retrieval_at_k") or {})
+            out_block["retrieval_after_ce"] = {
+                "status": "ok",
+                "reported_ks": list(ce_ks),
+                "retrieval_at_k": ce_block,
+            }
+        elif ce_enabled and not ce_ks:
+            out_block["retrieval_after_ce"] = {
+                "status": "unavailable",
+                "reason": (
+                    f"rerank_top_k={rerank_top_k} is below smallest metric k="
+                    f"{min(_BASE_METRIC_KS)}"
+                ),
+                "reported_ks": [],
+            }
+        else:
+            out_block["retrieval_after_ce"] = {
+                "status": "not_applicable",
+                "reason": f"reranker={reranker_kind or 'none'}",
+                "reported_ks": [],
+            }
+        overlap_breakdown[str(key)] = out_block
+
+    startup_latency: dict[str, Any] = {}
+    if isinstance(e2e_meta, dict):
+        startup_latency = dict(e2e_meta.get("startup_latency_ms") or {})
     return {
         "run_root": str(run_paths.run_root.resolve()),
         "split_question_ids": (
             str(split_question_ids_path) if split_question_ids_path else None
         ),
-        "overlap": report,
+        "router_training_validity_policy": (
+            "e2e_includes_all_benchmark_questions_"
+            "regardless_of_router_training_validity"
+        ),
+        "latency_protocol_version": LATENCY_PROTOCOL_VERSION,
+        "startup_latency_ms": startup_latency,
+        "overlap_breakdown": overlap_breakdown,
         "per_question": rows_out,
     }
 
@@ -190,11 +474,13 @@ def e2e_prepare_and_submit(
     routing_policy: str | RoutingPolicyName,
     retrieval_asset_dir: Path,
     router_id: Optional[str] = None,
+    router_architecture_id: Optional[str] = None,
     router_base: Optional[Path] = None,
     fusion_keep_k: int = 25,
     reranker_kind: str = "none",
     rerank_top_k: int = 10,
     cross_encoder_model: Optional[str] = None,
+    cross_encoder_device: Optional[str] = None,
     limit: Optional[int] = None,
     only_question_ids: Optional[Set[str]] = None,
     completion_window: str = "24h",
@@ -203,6 +489,7 @@ def e2e_prepare_and_submit(
     router_device: str = "cpu",
     router_input_mode: str = "both",
     router_inference_batch_size: int = 32,
+    latency_warmup_questions: int = 0,
     dev_sync: bool = False,
     pipeline_config_for_artifact: Optional["PipelineConfig"] = None,
     run_paths_override: Optional[RunArtifactPaths] = None,
@@ -213,15 +500,24 @@ def e2e_prepare_and_submit(
     ``evaluations/<policy>/<run_id>/`` (used by graph retrieval grid search).
     """
     policy = (
-        routing_policy
+        routing_policy.value
         if isinstance(routing_policy, RoutingPolicyName)
         else parse_routing_policy(routing_policy)
     )
     pipeline_name = e2e_pipeline_manifest_name(policy)
 
-    if policy in (RoutingPolicyName.LEARNED_SOFT, RoutingPolicyName.LEARNED_HARD):
+    if policy in (
+        RoutingPolicyName.LEARNED_SOFT.value,
+        RoutingPolicyName.LEARNED_HARD.value,
+        RoutingPolicyName.LEARNED_HYBRID.value,
+        ORACLE_UPPER_BOUND_POLICY,
+    ):
         if not router_id or not str(router_id).strip():
-            raise ValueError("router_id is required for learned routing policies")
+            raise ValueError(
+                "router_id is required for learned routing policies and oracle-upper-bound"
+            )
+    if policy == ORACLE_UPPER_BOUND_POLICY and str(split).strip().lower() != "test":
+        raise ValueError("oracle-upper-bound is test-only; use --split test")
 
     paths = (
         run_paths_override
@@ -272,25 +568,62 @@ def e2e_prepare_and_submit(
         include_graph_provenance=include_graph_provenance,
     )
 
-    logger.info("Building dense + graph retrievers from %s", asset_dir)
-    dense_retriever = build_dense_retriever(str(asset_dir))
-    graph_retriever = build_graph_retriever(
-        str(asset_dir),
-        pipeline_config=pipeline_config_for_artifact,
+    startup_t0 = time.perf_counter()
+    startup_components: dict[str, float] = {}
+
+    need_dense = policy in (
+        RoutingPolicyName.DENSE_ONLY.value,
+        RoutingPolicyName.EQUAL_50_50.value,
+        RoutingPolicyName.LEARNED_SOFT.value,
+        RoutingPolicyName.LEARNED_HARD.value,
+        RoutingPolicyName.LEARNED_HYBRID.value,
     )
+    need_graph = policy in (
+        RoutingPolicyName.GRAPH_ONLY.value,
+        RoutingPolicyName.EQUAL_50_50.value,
+        RoutingPolicyName.LEARNED_SOFT.value,
+        RoutingPolicyName.LEARNED_HARD.value,
+        RoutingPolicyName.LEARNED_HYBRID.value,
+    )
+
+    if need_dense:
+        t_dense = time.perf_counter()
+        dense_retriever = build_dense_retriever(str(asset_dir))
+        startup_components["dense_init_ms"] = (time.perf_counter() - t_dense) * 1000.0
+    else:
+        dense_retriever = _UnusedRetriever("Dense")
+
+    if need_graph:
+        t_graph = time.perf_counter()
+        graph_retriever = build_graph_retriever(
+            str(asset_dir),
+            pipeline_config=pipeline_config_for_artifact,
+        )
+        startup_components["graph_init_ms"] = (time.perf_counter() - t_graph) * 1000.0
+    else:
+        graph_retriever = _UnusedRetriever("Graph")
 
     loaded_router = None
     router_ctx = None
     rb = router_base if router_base is not None else default_router_base()
-    if policy in (RoutingPolicyName.LEARNED_SOFT, RoutingPolicyName.LEARNED_HARD):
+    if policy in (
+        RoutingPolicyName.LEARNED_SOFT.value,
+        RoutingPolicyName.LEARNED_HARD.value,
+        RoutingPolicyName.LEARNED_HYBRID.value,
+    ):
+        t_router = time.perf_counter()
         router_ctx = load_router_inference_context(
             str(router_id),
+            router_architecture_id=router_architecture_id,
             input_mode=router_input_mode,
             router_base=rb,
             retrieval_asset_dir=asset_dir,
             device=router_device,
         )
+        startup_components["router_init_ms"] = (time.perf_counter() - t_router) * 1000.0
         loaded_router = router_ctx.router
+
+    startup_total_ms = (time.perf_counter() - startup_t0) * 1000.0
 
     pipeline = RoutedFusionPipeline(
         dense_retriever,
@@ -298,7 +631,19 @@ def e2e_prepare_and_submit(
         fusion_keep_k=fusion_keep_k,
         router=loaded_router,
     )
-    reranker = build_reranker(reranker_kind, cross_encoder_model=cross_encoder_model)
+    resolved_cross_encoder_device = cross_encoder_device
+    if (
+        resolved_cross_encoder_device is None
+        and pipeline_config_for_artifact is not None
+    ):
+        resolved_cross_encoder_device = (
+            pipeline_config_for_artifact.model_setup.cross_encoder_device
+        )
+    reranker = build_reranker(
+        reranker_kind,
+        cross_encoder_model=cross_encoder_model,
+        cross_encoder_device=resolved_cross_encoder_device,
+    )
 
     write_manifest(
         paths,
@@ -314,6 +659,9 @@ def e2e_prepare_and_submit(
             "retrieval_results": str(
                 paths.retrieval_results_jsonl().relative_to(run_root)
             ),
+            "retrieval_results_pretrunc": str(
+                paths.retrieval_results_pretrunc_jsonl().relative_to(run_root)
+            ),
             "batch_input": str(paths.batch_input_jsonl().relative_to(run_root)),
             "batch_state": str(paths.batch_state_json().relative_to(run_root)),
             "generation_answers": str(
@@ -324,13 +672,37 @@ def e2e_prepare_and_submit(
             "e2e": {
                 "schema": "surf-rag/e2e/v1",
                 "benchmark_id": benchmark_id,
-                "routing_policy": policy.value,
+                "routing_policy": policy,
                 "fusion_keep_k": fusion_keep_k,
                 "reranker": reranker_kind,
                 "rerank_top_k": rerank_top_k,
+                "cross_encoder_model": cross_encoder_model,
+                "cross_encoder_device": resolved_cross_encoder_device,
+                "retrieval_metric_base_ks": list(_BASE_METRIC_KS),
                 "router_id": router_id,
+                "router_architecture_id": router_architecture_id,
                 "router_input_mode": router_input_mode,
                 "router_inference_batch_size": router_inference_batch_size,
+                "latency_protocol": {
+                    "version": LATENCY_PROTOCOL_VERSION,
+                    "included_components": [
+                        "routing_input",
+                        "router_predict",
+                        "branch_retrieval",
+                        "fusion",
+                    ],
+                    "excluded_components": [
+                        "startup",
+                        "warmup",
+                        "reranker",
+                        "generation",
+                    ],
+                    "warmup_questions": int(max(0, latency_warmup_questions)),
+                },
+                "startup_latency_ms": {
+                    "startup_total_ms": float(startup_total_ms),
+                    "startup_components": startup_components,
+                },
             },
         },
     )
@@ -345,11 +717,45 @@ def e2e_prepare_and_submit(
             pipeline_config_for_artifact,
             rp,
         )
-        from surf_rag.evaluation.manifest import update_manifest_artifacts
-
         update_manifest_artifacts(paths, {"resolved_config": "resolved_config.yaml"})
 
     records: List[BatchRequestRecord] = []
+    if policy == ORACLE_UPPER_BOUND_POLICY:
+        rb = router_base if router_base is not None else default_router_base()
+        oracle_paths = OracleRunPaths(
+            run_root=build_oracle_run_root(rb, str(router_id).strip())
+        )
+        split_ids_path = make_router_dataset_paths_for_cli(
+            str(router_id).strip(), router_base=rb
+        ).split_question_ids
+        if not split_ids_path.is_file():
+            raise FileNotFoundError(
+                "oracle-upper-bound requires router test split ids at "
+                f"{split_ids_path}"
+            )
+        test_qids = _read_router_test_qids(split_ids_path)
+        if not test_qids:
+            raise ValueError(
+                "oracle-upper-bound strict check failed: router test split is empty"
+            )
+        scores_by_qid = _read_oracle_scores_by_qid(oracle_paths.oracle_scores)
+        dense_cache = read_retrieval_cache(oracle_paths.retrieval_dense)
+        graph_cache = read_retrieval_cache(oracle_paths.retrieval_graph)
+        benchmark_qids = {str(s.get("question_id", "")).strip() for s in samples}
+        _validate_oracle_test_alignment(
+            benchmark_qids=benchmark_qids,
+            test_qids=test_qids,
+            scores_by_qid=scores_by_qid,
+            dense_cache=dense_cache,
+            graph_cache=graph_cache,
+        )
+        samples = [
+            s for s in samples if str(s.get("question_id", "")).strip() in test_qids
+        ]
+        logger.info(
+            "oracle-upper-bound using %d test questions from router split ids.",
+            len(samples),
+        )
     pending = [
         s
         for s in samples
@@ -362,20 +768,27 @@ def e2e_prepare_and_submit(
         else None
     )
 
-    tensor_by_qid: dict[str, tuple] = {}
-    if router_ctx is not None and pending:
-        bs = max(1, int(router_inference_batch_size))
-        for i in range(0, len(pending), bs):
-            chunk = pending[i : i + bs]
-            qs = [str(s.get("question", "") or "").strip() for s in chunk]
-            qe, qf = compute_query_tensors_for_router_batch(
-                qs, router_ctx, st_batch_size=bs
+    warmup_n = int(max(0, latency_warmup_questions))
+    if warmup_n > 0 and pending and policy != ORACLE_UPPER_BOUND_POLICY:
+        warmup_samples = pending[: min(len(pending), warmup_n)]
+        for sample in warmup_samples:
+            question = str(sample.get("question", "") or "").strip()
+            if not question:
+                continue
+            q_emb = feat = None
+            if router_ctx is not None:
+                q_emb, feat = compute_query_tensors_for_router(question, router_ctx)
+            pipeline.run(
+                question,
+                RoutingPolicyName(policy),
+                query_embedding=q_emb,
+                feature_vector=feat,
             )
-            for j, s in enumerate(chunk):
-                qid = str(s.get("question_id", "") or "").strip()
-                tensor_by_qid[qid] = (qe[j : j + 1], qf[j : j + 1])
 
     retrieval_fp = paths.retrieval_results_jsonl().open("a", encoding="utf-8")
+    retrieval_pretrunc_fp = paths.retrieval_results_pretrunc_jsonl().open(
+        "a", encoding="utf-8"
+    )
     skipped = 0
     try:
         for sample in samples:
@@ -387,18 +800,73 @@ def e2e_prepare_and_submit(
                 skipped += 1
                 continue
 
+            routing_input_ms = 0.0
             q_emb = feat = None
             if router_ctx is not None:
-                q_emb, feat = tensor_by_qid[qid]
+                rt0 = time.perf_counter()
+                q_emb, feat = compute_query_tensors_for_router(question, router_ctx)
+                routing_input_ms = (time.perf_counter() - rt0) * 1000.0
 
-            rr = pipeline.run(
-                question,
-                policy,
-                query_embedding=q_emb,
-                feature_vector=feat,
+            if policy == ORACLE_UPPER_BOUND_POLICY:
+                if (
+                    qid not in scores_by_qid
+                    or qid not in dense_cache
+                    or qid not in graph_cache
+                ):
+                    raise ValueError(
+                        "oracle-upper-bound strict check failed during retrieval loop "
+                        f"for question_id={qid}"
+                    )
+                score_row = scores_by_qid[qid]
+                best_idx = int(score_row["best_bin_index"])
+                score_bin = list(score_row.get("scores") or [])[best_idx]
+                dense_weight = float(score_bin["dense_weight"])
+                dense_cached = dense_cache[qid]
+                graph_cached = graph_cache[qid]
+                t_oracle = time.perf_counter()
+                rr_pre = build_fused_retrieval_result(
+                    query=question,
+                    dense=dense_cached,
+                    graph=graph_cached,
+                    dense_weight=dense_weight,
+                    fusion_keep_k=None,
+                    fusion_ms=(time.perf_counter() - t_oracle) * 1000.0,
+                    total_ms=(time.perf_counter() - t_oracle) * 1000.0,
+                )
+                rr = trim_retrieval_top_k(rr_pre, fusion_keep_k)
+                oracle_debug = {
+                    "routing_policy": ORACLE_UPPER_BOUND_POLICY,
+                    "oracle_dense_weight": dense_weight,
+                    "oracle_best_bin_index": best_idx,
+                    "oracle_source_router_id": str(router_id),
+                }
+                rr_pre.debug_info = {
+                    **dict(rr_pre.debug_info or {}),
+                    "routing": oracle_debug,
+                }
+                rr.debug_info = {**dict(rr.debug_info or {}), "routing": oracle_debug}
+            else:
+                routed = pipeline.run_with_pretrunc(
+                    question,
+                    RoutingPolicyName(policy),
+                    query_embedding=q_emb,
+                    feature_vector=feat,
+                )
+                rr_pre = routed.pretrunc_result
+                rr = routed.generation_result
+            rr_pre.latency_ms = canonicalize_latency_ms(
+                retriever_name=rr_pre.retriever_name,
+                latency_ms=rr_pre.latency_ms,
+                routing_input_ms=routing_input_ms,
+            )
+            rr.latency_ms = canonicalize_latency_ms(
+                retriever_name=rr.retriever_name,
+                latency_ms=rr.latency_ms,
+                routing_input_ms=routing_input_ms,
             )
             rr = reranker.rerank(question, rr, top_k=rerank_top_k)
 
+            write_retrieval_line(retrieval_pretrunc_fp, rr_pre, qid)
             write_retrieval_line(retrieval_fp, rr, qid)
 
             custom_id = make_generation_custom_id(
@@ -416,6 +884,7 @@ def e2e_prepare_and_submit(
                 progress.update(1)
     finally:
         retrieval_fp.close()
+        retrieval_pretrunc_fp.close()
         if progress is not None:
             progress.close()
 
