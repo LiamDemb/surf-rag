@@ -7,15 +7,15 @@ import numpy as np
 from surf_rag.router.router_metrics import aggregate_router_metrics
 
 
-def test_perfect_match_metrics() -> None:
+def test_perfect_match_argmax_interval_distance() -> None:
     grid = np.asarray([0.0, 0.5, 1.0], dtype=np.float32)
     curves = np.asarray([[0.0, 1.0, 0.0]], dtype=np.float32)
     pred_w = np.asarray([0.5], dtype=np.float32)
     valid = np.asarray([True], dtype=bool)
     m = aggregate_router_metrics(curves, pred_w, valid, grid)
     assert m["mean_regret"] < 1e-6
-    assert m["hard_preference_accuracy"] == 1.0
-    assert m["expected_weight_mae"] < 1e-5
+    assert m["argmax_interval_distance_mae"] < 1e-5
+    assert m["argmax_interval_distance_rmse"] < 1e-5
 
 
 def test_normalized_regret_uses_oracle_best_score_denominator() -> None:
@@ -55,3 +55,12 @@ def test_num_rows_counts_only_valid_mask_rows() -> None:
     valid = np.asarray([True, False], dtype=bool)
     m = aggregate_router_metrics(curves, pred_w, valid, grid)
     assert m["num_rows"] == 1.0
+
+
+def test_plateau_two_bins_distance_zero_inside() -> None:
+    grid = np.asarray([0.0, 0.5, 1.0], dtype=np.float32)
+    curves = np.asarray([[0.0, 1.0, 1.0]], dtype=np.float32)
+    pred_w = np.asarray([0.7], dtype=np.float32)
+    valid = np.asarray([True], dtype=bool)
+    m = aggregate_router_metrics(curves, pred_w, valid, grid)
+    assert m["argmax_interval_distance_mae"] < 1e-5

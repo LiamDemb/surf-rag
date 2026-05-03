@@ -46,11 +46,14 @@ $DATA_BASE/router/$ROUTER_ID/
 
 To compare runs, use `metrics.json` (and optional `predictions_*.jsonl`) under each `models/<router_architecture_id>/<input_mode>/` for the same `ROUTER_ID`.
 
+Router **`metrics.json`** reports **`mean_regret`**, **`normalized_regret`**, and tie-aware weight calibration **`argmax_interval_distance_mae`** / **`argmax_interval_distance_rmse`** (distance from the predicted dense weight to the nearest point in the oracle **argmax interval**: all grid weights tied at the curve maximum). Prediction JSONL rows include **`oracle_curve`**, **`predicted_weight`**, and **`target_oracle_best_score`** (max over the curve); figures derive intervals using **`model.weight_grid`** from the model **`manifest.json`**. The router dataset is stratified by benchmark **`dataset_source`** (see **`manifest.json`** → **`split.stratification`**).
+
 **Config keys**
 
 - `paths.router_architecture_id`: chosen architecture artifact id for downstream learned-router inference.
 - `router.train.architecture`: architecture family (`mlp-v1`, `logreg-v1`, `polyreg-v1`, `tower_v01`).
-- `polyreg-v1`: logistic regression on polynomial features up to **`architecture_kwargs.degree`** (default `2`). Optional **`excluded_features`**: drop named V1 columns (router feature order) before expanding monomials. Optional **`max_expanded_features`** caps the monomial count (large `degree` × wide inputs will error until you lower degree or shrink inputs).
+- **`router.train.excluded_features`**: optional list of V1 feature names removed before every architecture’s feature branch (`mlp-v1`, `logreg-v1`, `polyreg-v1`, `tower_v01`). Train-level entries override legacy **`architecture_kwargs.excluded_features`** when both are set.
+- `polyreg-v1`: logistic regression on polynomial features up to **`architecture_kwargs.degree`** (default `2`). Optional **`max_expanded_features`** caps the monomial count (large `degree` × wide inputs will error until you lower degree or shrink inputs).
 - `router.train.architecture_kwargs`: per-architecture validated kwargs.
 
 When `paths.router_architecture_id` is omitted in e2e:

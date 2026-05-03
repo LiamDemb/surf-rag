@@ -7,6 +7,7 @@ import json
 import numpy as np
 import pandas as pd
 
+from surf_rag.evaluation.oracle_argmax_intervals import argmax_plateau_bin_indices
 from surf_rag.viz.context import FigureRunContext
 from surf_rag.viz.renderers.benchmark_oracle_ndcg_heatmap import (
     _curve_all_zeros,
@@ -17,18 +18,8 @@ from surf_rag.viz.specs import BaseFigureSpec, OracleArgmaxWeightHistogramSpec
 from surf_rag.viz.theme import PALETTE
 from surf_rag.viz.types import FigureOutput
 
-_COLOR_SINGLE = "#2E7D32"
-_COLOR_TIE = "#FB8C00"
-
-
-def _argmax_bin_indices(
-    curve: np.ndarray,
-    *,
-    rtol: float,
-    atol: float,
-) -> np.ndarray:
-    peak = float(np.max(curve))
-    return np.where(np.isclose(curve, peak, rtol=rtol, atol=atol))[0]
+_COLOR_SINGLE = PALETTE["dark-blue"]
+_COLOR_TIE = PALETTE["light-blue"]
 
 
 def _equal_width_bin_index(w: float, n_bins: int) -> int:
@@ -101,7 +92,7 @@ def render_oracle_argmax_weight_histogram(
             n_skipped_all_zero += 1
             continue
         c = np.asarray(curve, dtype=np.float64)
-        idx = _argmax_bin_indices(c, rtol=spec.rtol, atol=spec.atol)
+        idx = argmax_plateau_bin_indices(c, rtol=spec.rtol, atol=spec.atol)
         if idx.size == 0:
             continue
         n_queries_used += 1

@@ -102,7 +102,7 @@ def decide_routing(
             tie_break=reason,
         )
     if policy == RoutingPolicyName.LEARNED_HYBRID:
-        if clipped < LEARNED_HYBRID_FUSION_MIN:
+        if clipped <= LEARNED_HYBRID_FUSION_MIN:
             return RoutingDecision(
                 policy=policy,
                 dense_weight=clipped,
@@ -112,24 +112,24 @@ def decide_routing(
                 hard_branch="graph",
                 tie_break="weight_lt_0.4",
             )
-        if clipped <= LEARNED_HYBRID_FUSION_MAX:
+        if clipped >= LEARNED_HYBRID_FUSION_MAX:
             return RoutingDecision(
                 policy=policy,
                 dense_weight=clipped,
                 run_dense=True,
-                run_graph=True,
+                run_graph=False,
                 predicted_weight=clipped,
-                hard_branch=None,
-                tie_break="fusion_band_inclusive",
+                hard_branch="dense",
+                tie_break="weight_gt_0.6",
             )
         return RoutingDecision(
             policy=policy,
             dense_weight=clipped,
             run_dense=True,
-            run_graph=False,
+            run_graph=True,
             predicted_weight=clipped,
-            hard_branch="dense",
-            tie_break="weight_gt_0.6",
+            hard_branch=None,
+            tie_break="fusion_band_inclusive",
         )
     raise ValueError(f"unknown policy {policy}")
 

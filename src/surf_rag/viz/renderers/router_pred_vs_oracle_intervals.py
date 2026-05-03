@@ -12,9 +12,9 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
 
 from surf_rag.viz.context import FigureRunContext
-from surf_rag.viz.oracle_intervals import (
+from surf_rag.evaluation.oracle_argmax_intervals import (
+    dense_weight_argmax_intervals,
     mean_interval_midpoint,
-    optimal_dense_weight_intervals,
     prediction_hits_any_interval,
 )
 from surf_rag.viz.specs import BaseFigureSpec, RouterPredVsOracleIntervalsSpec
@@ -72,7 +72,7 @@ def render_router_pred_vs_oracle_intervals(
                 f"manifest weight_grid length {len(weight_grid)} "
                 f"(question_id={row['question_id']!r})"
             )
-        intr = optimal_dense_weight_intervals(
+        intr = dense_weight_argmax_intervals(
             curve,
             weight_grid,
             rtol=spec.rtol,

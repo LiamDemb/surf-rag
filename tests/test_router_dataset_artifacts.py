@@ -57,6 +57,7 @@ def test_write_manifest_roundtrip(tmp_path: Path) -> None:
     )
     m = json.loads(paths.manifest.read_text())
     assert m["router_id"] == "d1"
+    assert m["split"]["stratification"] == "dataset_source"
     assert m["oracle"]["run_root"] == "/base/d1/oracle"
     assert m["oracle"]["router_labels"] == "/base/d1/oracle/router_labels.jsonl"
 

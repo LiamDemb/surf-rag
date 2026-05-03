@@ -44,17 +44,12 @@ def oracle_label_from_curve(
             f"oracle_curve length {len(curve)} != weight_grid length {len(grid)}"
         )
 
-    best_idx = int(np.argmax(np.asarray(curve, dtype=np.float32)))
-    best_score = float(curve[best_idx])
-    best_weight = float(grid[best_idx])
-    std = float(np.std(np.asarray(curve, dtype=np.float32)))
-    if best_weight not in set(grid):
-        raise ValueError("oracle_best_weight must be on the weight grid")
+    arr = np.asarray(curve, dtype=np.float32)
+    best_score = float(np.max(arr))
+    std = float(np.std(arr))
     return {
         "weight_grid": grid,
         "oracle_curve": curve,
-        "oracle_best_index": best_idx,
-        "oracle_best_weight": best_weight,
         "oracle_best_score": best_score,
         "oracle_curve_std": std,
         "dataset_source": str(dataset_source or "").strip(),

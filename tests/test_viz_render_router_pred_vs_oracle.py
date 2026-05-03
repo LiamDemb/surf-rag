@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
-
 import matplotlib
 
 matplotlib.use("Agg")
 
-import numpy as np
 import pytest
 from dataclasses import replace
 
@@ -17,11 +14,17 @@ from surf_rag.config.schema import (
     RouterSection,
     RouterTrainSection,
 )
-from surf_rag.evaluation.router_model_artifacts import make_router_model_paths_for_cli
+from surf_rag.evaluation.router_model_artifacts import (
+    make_router_model_paths_for_cli,
+    write_json,
+)
 from surf_rag.viz.context import FigureRunContext
 from surf_rag.viz.renderers.router_pred_vs_oracle import render_router_pred_vs_oracle
 from surf_rag.viz.specs import RouterPredVsOracleSpec
 from surf_rag.viz.theme import apply_theme
+
+_GRID = [0.0, 0.5, 1.0]
+_CURVE_PEAK_MID = [0.0, 1.0, 0.0]
 
 
 def _write_predictions(path: Path, rows: list[dict]) -> None:
@@ -58,7 +61,10 @@ def _ctx(
         ),
         experiment_id="exp",
     )
-    return FigureRunContext.from_pipeline(cfg, force=force)
+    ctx = FigureRunContext.from_pipeline(cfg, force=force)
+    ctx.model_paths.ensure_dirs()
+    write_json(ctx.model_paths.manifest, {"model": {"weight_grid": _GRID}})
+    return ctx
 
 
 def test_render_writes_png_and_meta(tmp_path: Path) -> None:
@@ -68,8 +74,8 @@ def test_render_writes_png_and_meta(tmp_path: Path) -> None:
     rows = [
         {
             "question_id": f"q{i}",
-            "target_oracle_best_weight": float(i) / 10.0,
-            "predicted_weight": float(i) / 10.0 + 0.05,
+            "oracle_curve": list(_CURVE_PEAK_MID),
+            "predicted_weight": 0.5 + 0.01 * i,
             "is_valid_for_router_training": True,
         }
         for i in range(5)
@@ -87,32 +93,31 @@ def test_render_writes_png_and_meta(tmp_path: Path) -> None:
     meta = json.loads(out.path_meta.read_text(encoding="utf-8"))
     assert meta["n_points"] == 5
     assert meta["predictions_path"] == str(pred.resolve())
-    assert "pearson_r" in meta
+    assert "argmax_interval_distance_mae" in meta
+    assert "fraction_hits_argmax_interval" in meta
 
 
-def test_render_pearson_matches_numpy_manual(tmp_path: Path) -> None:
+def test_render_distance_metrics_near_zero_at_plateau(tmp_path: Path) -> None:
     apply_theme(dpi=100)
     ctx = _ctx(tmp_path)
     pred = ctx.model_paths.predictions("test")
-    x = np.array([0.0, 0.25, 0.5, 0.75, 1.0], dtype=np.float64)
-    y = 0.3 * x + 0.1
     rows = [
         {
             "question_id": f"q{i}",
-            "target_oracle_best_weight": float(x[i]),
-            "predicted_weight": float(y[i]),
+            "oracle_curve": list(_CURVE_PEAK_MID),
+            "predicted_weight": 0.5,
             "is_valid_for_router_training": True,
         }
-        for i in range(len(x))
+        for i in range(5)
     ]
     _write_predictions(pred, rows)
     spec = RouterPredVsOracleSpec(
-        kind="router_pred_vs_oracle", split="test", filename_stem="pearson"
+        kind="router_pred_vs_oracle", split="test", filename_stem="plat"
     )
     out = render_router_pred_vs_oracle(spec, ctx)
     meta = json.loads(out.path_meta.read_text(encoding="utf-8"))
-    expected = float(np.corrcoef(x, y)[0, 1])
-    assert meta["pearson_r"] == pytest.approx(expected, rel=1e-5)
+    assert meta["argmax_interval_distance_mae"] == pytest.approx(0.0, abs=1e-9)
+    assert meta["fraction_hits_argmax_interval"] == pytest.approx(1.0)
 
 
 def test_render_with_filter_invalid_only(tmp_path: Path) -> None:
@@ -122,14 +127,14 @@ def test_render_with_filter_invalid_only(tmp_path: Path) -> None:
     rows = [
         {
             "question_id": "q0",
-            "target_oracle_best_weight": 0.1,
-            "predicted_weight": 0.2,
+            "oracle_curve": list(_CURVE_PEAK_MID),
+            "predicted_weight": 0.5,
             "is_valid_for_router_training": True,
         },
         {
             "question_id": "q1",
-            "target_oracle_best_weight": 0.9,
-            "predicted_weight": 0.8,
+            "oracle_curve": list(_CURVE_PEAK_MID),
+            "predicted_weight": 0.5,
             "is_valid_for_router_training": False,
         },
     ]
@@ -160,7 +165,7 @@ def test_render_raises_empty_after_filter(tmp_path: Path) -> None:
     rows = [
         {
             "question_id": "q1",
-            "target_oracle_best_weight": 0.5,
+            "oracle_curve": list(_CURVE_PEAK_MID),
             "predicted_weight": 0.5,
             "is_valid_for_router_training": False,
         },
@@ -175,7 +180,7 @@ def test_render_raises_empty_after_filter(tmp_path: Path) -> None:
         render_router_pred_vs_oracle(spec, ctx)
 
 
-def test_render_single_row_meta_pearson_none(tmp_path: Path) -> None:
+def test_render_single_row_meta(tmp_path: Path) -> None:
     apply_theme(dpi=100)
     ctx = _ctx(tmp_path)
     pred = ctx.model_paths.predictions("test")
@@ -184,8 +189,8 @@ def test_render_single_row_meta_pearson_none(tmp_path: Path) -> None:
         [
             {
                 "question_id": "q1",
-                "target_oracle_best_weight": 0.4,
-                "predicted_weight": 0.6,
+                "oracle_curve": list(_CURVE_PEAK_MID),
+                "predicted_weight": 0.5,
                 "is_valid_for_router_training": True,
             }
         ],
@@ -196,7 +201,7 @@ def test_render_single_row_meta_pearson_none(tmp_path: Path) -> None:
     out = render_router_pred_vs_oracle(spec, ctx)
     meta = json.loads(out.path_meta.read_text(encoding="utf-8"))
     assert meta["n_points"] == 1
-    assert meta["pearson_r"] is None
+    assert meta["argmax_interval_distance_mae"] == pytest.approx(0.0, abs=1e-9)
 
 
 def test_render_raises_file_exists_without_force(tmp_path: Path) -> None:
@@ -208,7 +213,7 @@ def test_render_raises_file_exists_without_force(tmp_path: Path) -> None:
         [
             {
                 "question_id": "q1",
-                "target_oracle_best_weight": 0.2,
+                "oracle_curve": list(_CURVE_PEAK_MID),
                 "predicted_weight": 0.3,
                 "is_valid_for_router_training": True,
             }

@@ -158,6 +158,7 @@ def write_router_dataset_manifest(
         "feature_set_version": feature_set_version,
         "embedding_model": embedding_model,
         "split": {
+            "stratification": "dataset_source",
             "seed": int(split_seed),
             "train_ratio": float(train_ratio),
             "dev_ratio": float(dev_ratio),

@@ -39,7 +39,6 @@ def _row(qid: str, split: str, *, valid: bool = True) -> dict:
         "query_embedding": [0.1, 0.2, 0.3, 0.4],
         "feature_vector_norm": [0.0] * 14,
         "oracle_curve": c,
-        "oracle_best_weight": 1.0,
         "oracle_best_score": 1.0,
         "oracle_curve_std": 0.3,
         "is_valid_for_router_training": valid,

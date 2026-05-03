@@ -2,8 +2,11 @@
 
 Oracle curves often have tied maxima across neighboring weight bins. We summarize
 each row by the midpoint in *weight space* of the contiguous plateau around the
-first ``argmax`` (same tie-break as ``oracle_label_from_curve``), using an
-additive score tolerance ``epsilon`` on the oracle metric (e.g. NDCG).
+first index at maximum score (``np.argmax`` tie-break: leftmost tied bin), using an
+additive score tolerance ``epsilon`` on the oracle metric (e.g. NDCG). This is
+independent of router Parquet columns and is **not** the same object as the global
+**argmax-interval** geometry used for metrics (which considers all bins tied at the
+maximum within rtol/atol).
 
 Five equal-width buckets on ``[0, 1]`` are ``[0, 0.2)``, …, ``[0.8, 1.0]``
 (last interval closed on the right). Undersampling picks ``min_g n_g`` rows

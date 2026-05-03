@@ -411,14 +411,11 @@ def export_split_predictions(
         pred_w = model.predict_weight(x_e, x_f).cpu().numpy()
     for i in range(len(qids)):
         curve = y[i]
-        best_idx = int(np.argmax(curve)) if len(curve) else 0
-        best_weight = float(weight_grid[best_idx]) if len(weight_grid) else 0.0
         best_score = float(np.max(curve)) if len(curve) else 0.0
         rows.append(
             {
                 "question_id": qids[i],
                 "oracle_curve": curve.tolist(),
-                "target_oracle_best_weight": best_weight,
                 "target_oracle_best_score": best_score,
                 "predicted_weight": float(pred_w[i]),
                 "is_valid_for_router_training": bool(valid[i] > 0.0),

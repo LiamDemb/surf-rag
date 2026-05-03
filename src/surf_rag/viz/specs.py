@@ -87,7 +87,7 @@ class BaseFigureSpec:
 
 @dataclass(frozen=True)
 class RouterPredVsOracleSpec(BaseFigureSpec):
-    """Scatter: x = oracle best grid weight, y = predicted dense weight."""
+    """Scatter: x = predicted dense weight, y = distance to oracle argmax interval."""
 
     split: SplitName
     filter_invalid_only: bool = False

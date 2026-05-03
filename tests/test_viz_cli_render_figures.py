@@ -10,7 +10,10 @@ matplotlib.use("Agg")
 import pytest
 import yaml
 
-from surf_rag.evaluation.router_model_artifacts import make_router_model_paths_for_cli
+from surf_rag.evaluation.router_model_artifacts import (
+    make_router_model_paths_for_cli,
+    write_json,
+)
 
 
 def _write_minimal_config_yaml(path: Path, tmp_path: Path) -> None:
@@ -22,11 +25,12 @@ def _write_minimal_config_yaml(path: Path, tmp_path: Path) -> None:
         router_architecture_id="t",
     )
     mp.run_root.mkdir(parents=True, exist_ok=True)
+    write_json(mp.manifest, {"model": {"weight_grid": [0.0, 0.5, 1.0]}})
     pred = mp.predictions("test")
     rows = [
         {
             "question_id": "q1",
-            "target_oracle_best_weight": 0.2,
+            "oracle_curve": [0.0, 1.0, 0.0],
             "predicted_weight": 0.3,
             "is_valid_for_router_training": True,
         }

@@ -12,6 +12,8 @@ PALETTE: Final[dict[str, str]] = {
     "grid": "#B0B0B0",
     "text": "#1A1A1A",
     "face": "#FFFFFF",
+    "light-blue": "#C6C4FC",
+    "dark-blue": "#0F008A",
 }
 
 

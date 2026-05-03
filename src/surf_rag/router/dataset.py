@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -24,14 +24,8 @@ from surf_rag.router.query_features import (
 from surf_rag.router.splits import (
     assign_splits_stratified,
     split_summary,
-    stratum_key,
-    _quantiles,
+    stratum_key_dataset_source,
 )
-
-
-def _std_quantiles(label_rows: Sequence[Mapping[str, Any]]) -> Tuple[float, float]:
-    stds = [float(r["oracle_curve_std"]) for r in label_rows if "oracle_curve_std" in r]
-    return _quantiles(stds)
 
 
 def build_router_dataframe(
@@ -57,8 +51,6 @@ def build_router_dataframe(
     if not by_q:
         raise ValueError("No label rows with question_id")
 
-    q1, q2 = _std_quantiles(list(by_q.values()))
-
     aligned_bench: List[Mapping[str, Any]] = []
     aligned_labels: List[Mapping[str, Any]] = []
     for row in benchmark_rows:
@@ -71,8 +63,15 @@ def build_router_dataframe(
     if not aligned_bench:
         raise ValueError("No benchmark rows matched label question_ids")
 
+    bench_split_rows = [
+        {
+            "question_id": str(b.get("question_id", "")).strip(),
+            "dataset_source": str(b.get("dataset_source") or ""),
+        }
+        for b in aligned_bench
+    ]
     qid_to_split = assign_splits_stratified(
-        aligned_labels,
+        bench_split_rows,
         train_ratio=train_ratio,
         dev_ratio=dev_ratio,
         test_ratio=test_ratio,
@@ -109,9 +108,8 @@ def build_router_dataframe(
         raw = raw_feature_rows[i]
         norm = transform_row(raw, normalizer)
         prefixed = prefix_raw_norm(raw, norm)
-        aw = float(lab.get("oracle_best_weight", 0.0))
         std = float(lab.get("oracle_curve_std", 0.0))
-        stratum = stratum_key(aw, std, q1, q2)
+        stratum = stratum_key_dataset_source(str(b.get("dataset_source") or ""))
         sp = qid_to_split.get(qid, "train")
         curve = [float(x) for x in (lab.get("oracle_curve") or [])]
         if len(curve) != len(weight_grid):
@@ -128,10 +126,8 @@ def build_router_dataframe(
             "split_seed": int(split_seed),
             "weight_grid": weight_grid,
             "oracle_curve": curve,
-            "oracle_best_weight": aw,
             "oracle_best_score": best_score,
             "oracle_curve_std": std,
-            "oracle_best_index": int(lab.get("oracle_best_index", 0)),
             "is_valid_for_router_training": bool(best_score > 0.0),
             "router_id": router_id,
             "oracle_run_id": router_id,
