@@ -36,6 +36,7 @@ def _write_minimal_config_yaml(path: Path, tmp_path: Path) -> None:
         "schema_version": "surf-rag/pipeline/v1",
         "paths": {
             "data_base": str(tmp_path),
+            "figures_base": str(tmp_path / "figures"),
             "router_base": str(rb),
             "benchmark_base": str(tmp_path / "bench"),
             "benchmark_name": "b",

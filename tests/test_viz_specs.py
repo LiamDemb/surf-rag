@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from surf_rag.viz.specs import (
+    BenchmarkOracleHeatmapSpec,
     RouterPredVsOracleIntervalsSpec,
     RouterPredVsOracleSpec,
     figure_spec_from_mapping,
@@ -57,3 +58,98 @@ def test_figure_spec_from_mapping_intervals_dispatch() -> None:
 def test_figure_spec_unknown_kind() -> None:
     with pytest.raises(ValueError, match="Unknown figure kind"):
         figure_spec_from_mapping({"kind": "not-a-real-plot"})
+
+
+def test_benchmark_heatmap_from_mapping_defaults() -> None:
+    s = BenchmarkOracleHeatmapSpec.from_mapping(
+        {"kind": "benchmark_oracle_ndcg_heatmap"}
+    )
+    assert s.split == "all"
+    assert s.exclude_all_zero_queries is True
+    assert s.colormap == "RdYlGn"
+    assert s.color_norm == "log"
+    assert s.color_power_gamma == 2.0
+    assert s.interior_peak_only is False
+    assert s.exclude_all_one_queries is False
+    assert s.mid_dense_band_strict_best is False
+    assert s.show_plot_subtitle is True
+
+
+def test_benchmark_heatmap_show_plot_subtitle_from_yaml() -> None:
+    s = BenchmarkOracleHeatmapSpec.from_mapping(
+        {
+            "kind": "benchmark_oracle_ndcg_heatmap",
+            "show_plot_subtitle": False,
+        }
+    )
+    assert s.show_plot_subtitle is False
+
+
+def test_benchmark_heatmap_mid_dense_band_strict_best_from_yaml() -> None:
+    s = BenchmarkOracleHeatmapSpec.from_mapping(
+        {
+            "kind": "benchmark_oracle_ndcg_heatmap",
+            "mid_dense_band_strict_best": True,
+        }
+    )
+    assert s.mid_dense_band_strict_best is True
+
+
+def test_benchmark_heatmap_exclude_all_one_queries_from_yaml() -> None:
+    s = BenchmarkOracleHeatmapSpec.from_mapping(
+        {
+            "kind": "benchmark_oracle_ndcg_heatmap",
+            "exclude_all_one_queries": True,
+        }
+    )
+    assert s.exclude_all_one_queries is True
+
+
+def test_benchmark_heatmap_color_norm_linear() -> None:
+    s = BenchmarkOracleHeatmapSpec.from_mapping(
+        {"kind": "benchmark_oracle_ndcg_heatmap", "color_norm": "linear"}
+    )
+    assert s.color_norm == "linear"
+
+
+def test_benchmark_heatmap_interior_peak_only_from_yaml() -> None:
+    s = BenchmarkOracleHeatmapSpec.from_mapping(
+        {
+            "kind": "benchmark_oracle_ndcg_heatmap",
+            "interior_peak_only": True,
+        }
+    )
+    assert s.interior_peak_only is True
+
+
+def test_benchmark_heatmap_color_norm_power() -> None:
+    s = BenchmarkOracleHeatmapSpec.from_mapping(
+        {
+            "kind": "benchmark_oracle_ndcg_heatmap",
+            "color_norm": "power",
+            "color_power_gamma": 3.5,
+        }
+    )
+    assert s.color_norm == "power"
+    assert s.color_power_gamma == 3.5
+
+
+def test_benchmark_heatmap_color_power_gamma_invalid() -> None:
+    with pytest.raises(ValueError, match="color_power_gamma must be positive"):
+        BenchmarkOracleHeatmapSpec(
+            kind="benchmark_oracle_ndcg_heatmap",
+            split="all",
+            color_power_gamma=0.0,
+        )
+
+
+def test_benchmark_heatmap_colormap_from_yaml() -> None:
+    s = BenchmarkOracleHeatmapSpec.from_mapping(
+        {"kind": "benchmark_oracle_ndcg_heatmap", "colormap": "Blues"}
+    )
+    assert s.colormap == "Blues"
+
+
+def test_figure_spec_benchmark_dispatch() -> None:
+    spec = figure_spec_from_mapping({"kind": "benchmark_oracle_ndcg_heatmap"})
+    assert isinstance(spec, BenchmarkOracleHeatmapSpec)

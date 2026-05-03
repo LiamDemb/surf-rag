@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from dataclasses import replace
 
 from surf_rag.config.loader import (
     config_to_resolved_dict,
@@ -15,7 +16,7 @@ from surf_rag.config.loader import (
     resolve_paths,
     validate_e2e_config,
 )
-from surf_rag.config.schema import PipelineConfig
+from surf_rag.config.schema import PathsSection, PipelineConfig
 from surf_rag.config.env import apply_pipeline_env_from_config
 
 
@@ -40,7 +41,8 @@ def test_yaml_unquoted_ids_coerce_to_str_for_paths_and_env() -> None:
     assert os.environ["ROUTER_ARCHITECTURE_ID"] == "7"
 
 
-def test_load_example_pipeline(tmp_path: Path) -> None:
+def test_load_example_pipeline(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
     root = Path(__file__).resolve().parents[1]
     cfg_path = root / "configs" / "development" / "graph-rag-tuning.yaml"
     cfg = load_pipeline_config(cfg_path)
@@ -56,7 +58,16 @@ def test_load_example_pipeline(tmp_path: Path) -> None:
     assert "resolved_paths" in d
     assert d["resolved_paths"]["benchmark_path"] == str(rp.benchmark_path)
     assert d["resolved_paths"]["figures_base"] == str(rp.figures_base)
-    assert rp.figures_base == rp.data_base / "figures"
+    assert rp.figures_base == (tmp_path / "figures").resolve()
+
+
+def test_figures_base_filesystem_root_raises() -> None:
+    cfg = replace(
+        PipelineConfig(),
+        paths=replace(PathsSection(), figures_base="/"),
+    )
+    with pytest.raises(ValueError, match="cannot be '/'"):
+        resolve_paths(cfg)
 
 
 def test_pipeline_config_from_dict_empty() -> None:

@@ -68,6 +68,7 @@ def test_render_figures_from_config_runs_two_plots(tmp_path: Path) -> None:
             router_base=str(rb),
             router_architecture_id="arch1",
             data_base=str(tmp_path),
+            figures_base=str(tmp_path / "figures"),
         ),
         router=replace(
             RouterSection(),

@@ -17,7 +17,8 @@ class PathsSection:
     data_base: str = "data"
     benchmark_base: str | None = None
     router_base: str | None = None
-    # Root for rendered figures when figures.output_dir is unset (resolved in loader).
+    # Root for rendered figures when figures.output_dir is unset. When None, defaults
+    # to ~/figures (see resolve_paths); set explicitly to place figures under data/.
     figures_base: str | None = None
     benchmark_name: str = "benchmark-name"
     benchmark_id: str = "v01"
@@ -196,10 +197,13 @@ class FiguresThemeSection:
 class FiguresSection:
     """Optional figure generation (opt-in via ``enabled``).
 
-    When ``output_dir`` is unset, figures are written under
-    ``paths.figures_base`` / ``router`` / … / ``benchmark`` / … (see
-    ``surf_rag.viz.paths_layout.canonical_router_figure_dir``). Set ``output_dir``
-    to override that layout with an absolute or CWD-relative directory.
+    When ``output_dir`` is unset, the output directory depends on each plot's
+    ``kind``: router plots use
+    :func:`surf_rag.viz.paths_layout.canonical_router_figure_dir`, and
+    ``benchmark_oracle_ndcg_heatmap`` uses
+    :func:`surf_rag.viz.paths_layout.canonical_benchmark_figure_dir`
+    (``{figures_base}/benchmarks/{name}/{id}/``). Set ``output_dir`` to force a
+    single directory for all plots in the run.
     """
 
     enabled: bool = False

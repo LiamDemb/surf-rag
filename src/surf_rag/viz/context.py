@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from surf_rag.config.loader import resolve_paths
+from surf_rag.config.loader import ResolvedPaths, resolve_paths
 from surf_rag.config.schema import PipelineConfig
 from surf_rag.evaluation.router_model_artifacts import (
     RouterModelPaths,
@@ -28,15 +28,22 @@ class FigureRunContext:
     experiment_id: str | None
     image_format: str
     force: bool
+    resolved_paths: ResolvedPaths
+    router_dataset_parquet: Path
 
     @staticmethod
     def from_pipeline(
         cfg: PipelineConfig,
         *,
         output_dir_override: Path | str | None = None,
+        resolved_output_dir: Path | None = None,
         force: bool = False,
     ) -> FigureRunContext:
-        """Build context from pipeline config (paths + router.train.input_mode)."""
+        """Build context from pipeline config (paths + router.train.input_mode).
+
+        Pass ``resolved_output_dir`` when the caller already chose the output directory
+        (e.g. per-figure-kind layout from :func:`resolve_figure_output_dir`).
+        """
         rp = resolve_paths(cfg)
         fig = cfg.figures
         rt = cfg.router.train
@@ -56,7 +63,9 @@ class FigureRunContext:
             input_mode=input_mode,
             router_architecture_id=arch_id,
         )
-        if output_dir_override is not None:
+        if resolved_output_dir is not None:
+            out = Path(resolved_output_dir).expanduser().resolve()
+        elif output_dir_override is not None:
             out = Path(output_dir_override).expanduser().resolve()
         elif fig.output_dir and str(fig.output_dir).strip():
             out = Path(str(fig.output_dir).strip()).expanduser().resolve()
@@ -76,6 +85,7 @@ class FigureRunContext:
             raise ValueError(
                 f"figures.image_format must be png or pdf, got {img_fmt!r}"
             )
+        ds_parquet = (rp.router_dataset_dir / "router_dataset.parquet").resolve()
         return FigureRunContext(
             router_id=rid,
             router_architecture_id=arch_id,
@@ -88,4 +98,6 @@ class FigureRunContext:
             ),
             image_format=img_fmt,
             force=force,
+            resolved_paths=rp,
+            router_dataset_parquet=ds_parquet,
         )

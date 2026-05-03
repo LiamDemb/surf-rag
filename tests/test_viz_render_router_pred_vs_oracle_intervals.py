@@ -9,7 +9,14 @@ matplotlib.use("Agg")
 
 import numpy as np
 import pytest
+from dataclasses import replace
 
+from surf_rag.config.schema import (
+    PathsSection,
+    PipelineConfig,
+    RouterSection,
+    RouterTrainSection,
+)
 from surf_rag.evaluation.router_model_artifacts import (
     make_router_model_paths_for_cli,
     write_json,
@@ -42,24 +49,29 @@ def _write_predictions(path: Path, rows: list[dict]) -> None:
 
 def _ctx(tmp_path: Path, *, force: bool = True) -> FigureRunContext:
     rb = tmp_path / "router"
-    mp = make_router_model_paths_for_cli(
+    make_router_model_paths_for_cli(
         "rid",
         router_base=rb,
         input_mode="both",
         router_architecture_id="tower",
     )
-    out = tmp_path / "fig_out"
-    return FigureRunContext(
-        router_id="rid",
-        router_architecture_id="tower",
-        input_mode="both",
-        router_base=rb,
-        model_paths=mp,
-        output_dir=out,
+    cfg = replace(
+        PipelineConfig(),
+        paths=replace(
+            PathsSection(),
+            data_base=str(tmp_path),
+            router_base=str(rb),
+            router_id="rid",
+            router_architecture_id="tower",
+            figures_base=str(tmp_path / "figures"),
+        ),
+        router=replace(
+            RouterSection(),
+            train=replace(RouterTrainSection(), input_mode="both"),
+        ),
         experiment_id="exp",
-        image_format="png",
-        force=force,
     )
+    return FigureRunContext.from_pipeline(cfg, force=force)
 
 
 def test_interval_render_writes_meta_accuracy(tmp_path: Path) -> None:

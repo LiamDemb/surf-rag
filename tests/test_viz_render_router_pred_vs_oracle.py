@@ -9,7 +9,14 @@ matplotlib.use("Agg")
 
 import numpy as np
 import pytest
+from dataclasses import replace
 
+from surf_rag.config.schema import (
+    PathsSection,
+    PipelineConfig,
+    RouterSection,
+    RouterTrainSection,
+)
 from surf_rag.evaluation.router_model_artifacts import make_router_model_paths_for_cli
 from surf_rag.viz.context import FigureRunContext
 from surf_rag.viz.renderers.router_pred_vs_oracle import render_router_pred_vs_oracle
@@ -29,24 +36,29 @@ def _ctx(
     tmp_path: Path, *, arch: str | None = "tower", force: bool = True
 ) -> FigureRunContext:
     rb = tmp_path / "router"
-    mp = make_router_model_paths_for_cli(
+    make_router_model_paths_for_cli(
         "rid",
         router_base=rb,
         input_mode="both",
         router_architecture_id=arch,
     )
-    out = tmp_path / "fig_out"
-    return FigureRunContext(
-        router_id="rid",
-        router_architecture_id=arch,
-        input_mode="both",
-        router_base=rb,
-        model_paths=mp,
-        output_dir=out,
+    cfg = replace(
+        PipelineConfig(),
+        paths=replace(
+            PathsSection(),
+            data_base=str(tmp_path),
+            router_base=str(rb),
+            router_id="rid",
+            router_architecture_id=arch,
+            figures_base=str(tmp_path / "figures"),
+        ),
+        router=replace(
+            RouterSection(),
+            train=replace(RouterTrainSection(), input_mode="both"),
+        ),
         experiment_id="exp",
-        image_format="png",
-        force=force,
     )
+    return FigureRunContext.from_pipeline(cfg, force=force)
 
 
 def test_render_writes_png_and_meta(tmp_path: Path) -> None:

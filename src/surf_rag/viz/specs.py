@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from typing import Any, Literal, Mapping
 
 SplitName = Literal["train", "dev", "test"]
+HeatmapSplitName = Literal["all", "train", "dev", "test"]
+HeatmapColorNorm = Literal["linear", "log", "power"]
 
 _ROUTER_PRED_VS_ORACLE_ALLOWED = frozenset(
     {
@@ -35,7 +37,27 @@ _ROUTER_PRED_VS_ORACLE_INTERVALS_ALLOWED = frozenset(
     }
 )
 
-_KNOWN_KINDS_HINT = "router_pred_vs_oracle, router_pred_vs_oracle_intervals"
+_BENCHMARK_ORACLE_HEATMAP_ALLOWED = frozenset(
+    {
+        "kind",
+        "split",
+        "exclude_all_zero_queries",
+        "rtol",
+        "atol",
+        "filename_stem",
+        "fig_width",
+        "fig_height",
+        "colormap",
+        "color_norm",
+        "color_power_gamma",
+        "interior_peak_only",
+        "exclude_all_one_queries",
+        "mid_dense_band_strict_best",
+        "show_plot_subtitle",
+    }
+)
+
+_KNOWN_KINDS_HINT = "router_pred_vs_oracle, router_pred_vs_oracle_intervals, benchmark_oracle_ndcg_heatmap"
 
 
 @dataclass(frozen=True)
@@ -153,6 +175,109 @@ class RouterPredVsOracleIntervalsSpec(BaseFigureSpec):
         )
 
 
+@dataclass(frozen=True)
+class BenchmarkOracleHeatmapSpec(BaseFigureSpec):
+    """Heatmap: x = queries, y = dense weight, color = oracle curve score.
+
+    Queries are ordered by a **score-weighted centroid** on the weight grid:
+    ``sum(score_i * w_i) / sum(score_i)`` (nonnegative scores), so columns flow
+    from “mass on low dense weight” to “mass on high dense weight.”
+
+    **color_norm**: ``log`` — logarithmic scale (compresses high scores on [0,1]);
+    ``linear`` — uniform 0..max; ``power`` — :class:`~matplotlib.colors.PowerNorm`
+    with ``color_power_gamma`` (default 2); **γ > 1** spreads differences among
+    **high** scores and compresses the low end (inverse of log for typical NDCG).
+
+    **interior_peak_only**: if true, keep only queries whose oracle **maximum**
+    is attained at some dense weight that is not (within ``rtol``/``atol``) 0.0 or
+    1.0 — i.e. the best score is not achieved solely at the endpoints of the
+    weight grid (ties count: if any maximizing grid point is interior, the query
+    stays).
+
+    **exclude_all_one_queries**: if true, drop queries whose oracle curve is
+    (within ``rtol``/``atol``) **1.0 at every weight bin** — uniform perfect scores.
+
+    **mid_dense_band_strict_best**: if true, keep only queries where the maximum
+    oracle score on **w ∈ [0.2, 0.8]** is **strictly greater** than the maximum on
+    **w < 0.2** and strictly greater than the maximum on **w > 0.8** (tail bands
+    use no grid points → treated as −∞ so the mid band wins if non-empty).
+
+    **show_plot_subtitle**: if false, omit the small benchmark / filter summary
+    text in the upper-left of the figure (defaults to true).
+    """
+
+    split: HeatmapSplitName
+    exclude_all_zero_queries: bool = True
+    exclude_all_one_queries: bool = False
+    interior_peak_only: bool = False
+    mid_dense_band_strict_best: bool = False
+    rtol: float = 1e-5
+    atol: float = 1e-8
+    filename_stem: str = "benchmark_oracle_ndcg_heatmap"
+    fig_width: float = 10.0
+    fig_height: float = 4.5
+    colormap: str = "RdYlGn"
+    color_norm: HeatmapColorNorm = "log"
+    color_power_gamma: float = 2.0
+    show_plot_subtitle: bool = True
+
+    def __post_init__(self) -> None:
+        if self.kind != "benchmark_oracle_ndcg_heatmap":
+            raise ValueError(f"unexpected kind {self.kind!r}")
+        if self.rtol < 0 or self.atol < 0:
+            raise ValueError("rtol/atol must be non-negative")
+        if self.fig_width <= 0 or self.fig_height <= 0:
+            raise ValueError("fig_width and fig_height must be positive")
+        if not str(self.colormap).strip():
+            raise ValueError("colormap must be non-empty")
+        if self.color_norm not in ("linear", "log", "power"):
+            raise ValueError(
+                f"color_norm must be linear, log, or power, got {self.color_norm!r}"
+            )
+        if self.color_power_gamma <= 0:
+            raise ValueError("color_power_gamma must be positive")
+
+    @staticmethod
+    def from_mapping(m: Mapping[str, Any]) -> BenchmarkOracleHeatmapSpec:
+        extra = frozenset(m.keys()) - _BENCHMARK_ORACLE_HEATMAP_ALLOWED
+        if extra:
+            raise ValueError(
+                f"Unknown keys for benchmark_oracle_ndcg_heatmap plot: {sorted(extra)}"
+            )
+        split = m.get("split", "all")
+        if split not in ("all", "train", "dev", "test"):
+            raise ValueError(f"split must be all|train|dev|test, got {split!r}")
+        cmap_raw = m.get("colormap", "RdYlGn")
+        cmap_s = str(cmap_raw).strip() if cmap_raw is not None else "RdYlGn"
+        if not cmap_s:
+            cmap_s = "RdYlGn"
+        cn_raw = m.get("color_norm", "log")
+        cn_s = str(cn_raw).strip().lower() if cn_raw is not None else "log"
+        if not cn_s:
+            cn_s = "log"
+        if cn_s not in ("linear", "log", "power"):
+            raise ValueError(
+                f"color_norm must be linear, log, or power, got {cn_raw!r}"
+            )
+        return BenchmarkOracleHeatmapSpec(
+            kind="benchmark_oracle_ndcg_heatmap",
+            split=split,  # type: ignore[arg-type]
+            exclude_all_zero_queries=bool(m.get("exclude_all_zero_queries", True)),
+            exclude_all_one_queries=bool(m.get("exclude_all_one_queries", False)),
+            rtol=float(m.get("rtol", 1e-5)),
+            atol=float(m.get("atol", 1e-8)),
+            filename_stem=str(m.get("filename_stem", "benchmark_oracle_ndcg_heatmap")),
+            fig_width=float(m.get("fig_width", 10.0)),
+            fig_height=float(m.get("fig_height", 4.5)),
+            colormap=cmap_s,
+            color_norm=cn_s,  # type: ignore[arg-type]
+            color_power_gamma=float(m.get("color_power_gamma", 2.0)),
+            interior_peak_only=bool(m.get("interior_peak_only", False)),
+            mid_dense_band_strict_best=bool(m.get("mid_dense_band_strict_best", False)),
+            show_plot_subtitle=bool(m.get("show_plot_subtitle", True)),
+        )
+
+
 def figure_spec_from_mapping(plot: Mapping[str, Any]) -> BaseFigureSpec:
     """Dispatch on ``kind`` for one entry under ``figures.plots``."""
     kind = plot.get("kind")
@@ -163,4 +288,6 @@ def figure_spec_from_mapping(plot: Mapping[str, Any]) -> BaseFigureSpec:
         return RouterPredVsOracleSpec.from_mapping(plot)
     if key == "router_pred_vs_oracle_intervals":
         return RouterPredVsOracleIntervalsSpec.from_mapping(plot)
+    if key == "benchmark_oracle_ndcg_heatmap":
+        return BenchmarkOracleHeatmapSpec.from_mapping(plot)
     raise ValueError(f"Unknown figure kind {key!r}. Known kinds: {_KNOWN_KINDS_HINT}")
