@@ -18,6 +18,7 @@ from surf_rag.config.merge import (
     merge_ingest_args,
 )
 from surf_rag.config.schema import PipelineConfig
+from surf_rag.router.training import RouterTrainConfig, merged_architecture_kwargs
 
 
 def _cfg() -> PipelineConfig:
@@ -206,6 +207,7 @@ def test_merge_router_train_includes_architecture_fields() -> None:
     assert args.architecture_kwargs == {"hidden_dim": 64}
     assert args.loss == "regret"
     assert args.loss_kwargs == {}
+    assert args.excluded_features == ()
 
 
 def test_merge_router_train_includes_loss_fields() -> None:
@@ -244,6 +246,7 @@ def test_merge_router_train_includes_loss_fields() -> None:
     merge_router_train_args(args, cfg, argv=["prog", "--config", "x.yaml"])
     assert args.loss == "hinge_squared_regret"
     assert args.loss_kwargs == {"epsilon": 0.02}
+    assert args.excluded_features == ()
 
 
 def test_merge_router_train_midpoint_balance_fields() -> None:
@@ -282,3 +285,59 @@ def test_merge_router_train_midpoint_balance_fields() -> None:
     merge_router_train_args(args, cfg, argv=["prog", "--config", "x.yaml"])
     assert args.midpoint_balance_masking is True
     assert args.midpoint_balance_epsilon == pytest.approx(0.001)
+    assert args.excluded_features == ()
+
+
+def test_merge_router_train_excluded_features_from_yaml() -> None:
+    from surf_rag.config.merge import merge_router_train_args
+
+    cfg = pipeline_config_from_dict(
+        {
+            "paths": {
+                "benchmark_name": "bn",
+                "benchmark_id": "bid",
+                "router_id": "rid",
+                "router_architecture_id": "mlp-v1-default",
+            },
+            "router": {
+                "train": {
+                    "excluded_features": [
+                        "quoted_span_count",
+                        "content_token_len",
+                    ],
+                }
+            },
+        }
+    )
+    args = Namespace(
+        router_id=None,
+        router_base=None,
+        router_architecture_id=None,
+        epochs=None,
+        batch_size=None,
+        learning_rate=None,
+        device=None,
+        architecture=None,
+        architecture_kwargs=None,
+        input_mode=None,
+        loss=None,
+        loss_kwargs=None,
+    )
+    merge_router_train_args(args, cfg, argv=["prog", "--config", "x.yaml"])
+    assert args.excluded_features == ("content_token_len", "quoted_span_count")
+
+
+def test_merged_architecture_kwargs_prefers_train_excluded_over_arch_kwargs() -> None:
+    cfg = RouterTrainConfig(
+        parquet_path=Path("/tmp/does-not-need-to-exist.parquet"),
+        router_id="r",
+        output_dir=Path("/tmp/o"),
+        excluded_features=("content_token_len",),
+        architecture_kwargs={
+            "degree": 2,
+            "excluded_features": ["quoted_span_count"],
+        },
+    )
+    got = merged_architecture_kwargs(cfg)
+    assert got["degree"] == 2
+    assert got["excluded_features"] == ["content_token_len"]

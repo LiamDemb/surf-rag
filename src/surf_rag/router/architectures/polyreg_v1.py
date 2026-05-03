@@ -10,60 +10,18 @@ from typing import Any
 import torch
 import torch.nn as nn
 
+from surf_rag.router.excluded_features import (
+    active_feature_column_indices,
+    normalize_excluded_features,
+    validate_exclusions_for_input_mode,
+)
 from surf_rag.router.model import parse_router_input_mode
-from surf_rag.router.query_features import V1_FEATURE_NAMES
 
 _ALLOWED_KW = frozenset({"degree", "max_expanded_features", "excluded_features"})
 
 _DEFAULT_DEGREE = 2
 _MAX_DEGREE = 12
 _DEFAULT_MAX_EXPANDED = 150_000
-
-
-def _normalize_excluded_features(raw: object) -> tuple[str, ...]:
-    if raw is None:
-        return ()
-    if isinstance(raw, (str, bytes)):
-        raise ValueError(
-            "polyreg-v1 excluded_features must be a list of V1 feature name strings"
-        )
-    if not isinstance(raw, (list, tuple)):
-        raise ValueError(
-            "polyreg-v1 excluded_features must be a list of V1 feature name strings"
-        )
-    out: list[str] = []
-    for item in raw:
-        if not isinstance(item, str) or not item.strip():
-            raise ValueError(
-                "polyreg-v1 excluded_features entries must be non-empty strings"
-            )
-        out.append(str(item).strip())
-    names = tuple(sorted(set(out)))
-    for n in names:
-        if n not in V1_FEATURE_NAMES:
-            raise ValueError(
-                f"polyreg-v1 excluded_features unknown name {n!r}; "
-                f"allowed: {list(V1_FEATURE_NAMES)}"
-            )
-    return names
-
-
-def _active_feature_column_indices(
-    feature_dim: int, excluded: frozenset[str]
-) -> tuple[int, ...]:
-    fd = int(feature_dim)
-    if fd > len(V1_FEATURE_NAMES):
-        raise ValueError(
-            f"feature_dim={feature_dim} exceeds V1 feature catalog ({len(V1_FEATURE_NAMES)})"
-        )
-    for name in excluded:
-        idx = V1_FEATURE_NAMES.index(name)
-        if idx >= fd:
-            raise ValueError(
-                f"polyreg-v1 cannot exclude {name!r}: not among the first {feature_dim} "
-                "router feature columns for this dataset"
-            )
-    return tuple(i for i in range(fd) if V1_FEATURE_NAMES[i] not in excluded)
 
 
 def expanded_monomial_count(n_inputs: int, degree: int) -> int:
@@ -103,7 +61,7 @@ class RouterPolyRegConfig:
 
     @classmethod
     def from_json(cls, d: dict[str, Any]) -> RouterPolyRegConfig:
-        ex_t = _normalize_excluded_features(d.get("excluded_features"))
+        ex_t = normalize_excluded_features(d.get("excluded_features"))
         return cls(
             embedding_dim=int(d.get("embedding_dim", 384)),
             feature_dim=int(d.get("feature_dim", 14)),
@@ -128,21 +86,20 @@ class RouterPolyReg(nn.Module):
             in_dim = emb_d
             feat_idx: tuple[int, ...] = ()
         elif mode == "query-features":
-            feat_idx = _active_feature_column_indices(feat_d, excluded)
+            feat_idx = active_feature_column_indices(feat_d, excluded)
             if not feat_idx:
                 raise ValueError(
                     "polyreg-v1 query-features mode needs at least one non-excluded feature"
                 )
             in_dim = len(feat_idx)
         else:
-            feat_idx = _active_feature_column_indices(feat_d, excluded)
+            feat_idx = active_feature_column_indices(feat_d, excluded)
             in_dim = emb_d + len(feat_idx)
 
         if in_dim <= 0:
             raise ValueError("polyreg-v1 requires a positive input dimension")
 
         self._mode = mode
-        self._emb_dim = emb_d
         if feat_idx:
             idx_t = torch.tensor(feat_idx, dtype=torch.long)
             self.register_buffer("_feat_gather_idx", idx_t)
@@ -211,7 +168,7 @@ def validate_kwargs(raw: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(
             f"polyreg-v1 degree must be between 1 and {_MAX_DEGREE}, got {deg_i}"
         )
-    excluded = _normalize_excluded_features(raw.get("excluded_features"))
+    excluded = normalize_excluded_features(raw.get("excluded_features"))
     return {
         "degree": deg_i,
         "max_expanded_features": int(cap),
@@ -229,11 +186,10 @@ def _effective_input_dim_for_poly(
     if mode == "embedding":
         return int(embedding_dim)
     if mode == "query-features":
-        n_kept = len(_active_feature_column_indices(feature_dim, excluded))
-        return n_kept
-    emb_d = int(embedding_dim)
-    n_kept = len(_active_feature_column_indices(feature_dim, excluded))
-    return emb_d + n_kept
+        return len(active_feature_column_indices(feature_dim, excluded))
+    return int(embedding_dim) + len(
+        active_feature_column_indices(feature_dim, excluded)
+    )
 
 
 def build_model_config(
@@ -248,12 +204,13 @@ def build_model_config(
     mode = parse_router_input_mode(input_mode)
 
     if excluded_fs:
-        for name in excluded_fs:
-            idx = V1_FEATURE_NAMES.index(name)
-            if idx >= int(feature_dim):
-                raise ValueError(
-                    f"polyreg-v1 cannot exclude {name!r}: index {idx} >= feature_dim={feature_dim}"
-                )
+        active_feature_column_indices(feature_dim, excluded_fs)
+    validate_exclusions_for_input_mode(
+        mode,
+        feature_dim,
+        excluded_fs,
+        query_features_need_one=True,
+    )
 
     n_in = _effective_input_dim_for_poly(
         embedding_dim, feature_dim, input_mode, excluded_fs

@@ -19,10 +19,17 @@ def test_mlp_v1_validates_dropout_range() -> None:
         arch.validate_kwargs({"dropout": 1.2})
 
 
-def test_logreg_v1_requires_empty_kwargs() -> None:
+def test_logreg_v1_rejects_unknown_kwargs() -> None:
     arch = get_architecture("logreg-v1")
     with pytest.raises(ValueError, match="does not accept architecture kwargs"):
         arch.validate_kwargs({"hidden_dim": 8})
+
+
+def test_logreg_v1_accepts_excluded_features_only() -> None:
+    arch = get_architecture("logreg-v1")
+    assert arch.validate_kwargs({"excluded_features": ["content_token_len"]}) == {
+        "excluded_features": ("content_token_len",)
+    }
 
 
 def test_mlp_v1_normalizes_defaults() -> None:
@@ -33,6 +40,7 @@ def test_mlp_v1_normalizes_defaults() -> None:
         "feat_proj_dim": 16,
         "hidden_dim": 32,
         "dropout": 0.1,
+        "excluded_features": (),
     }
 
 
@@ -95,7 +103,7 @@ def test_polyreg_v1_rejects_unknown_kw() -> None:
 
 def test_polyreg_v1_excluded_raises_when_none_left_for_query_features() -> None:
     arch = get_architecture("polyreg-v1")
-    with pytest.raises(ValueError, match="positive effective input"):
+    with pytest.raises(ValueError, match="query-features mode requires"):
         arch.build_model_config(
             4,
             14,

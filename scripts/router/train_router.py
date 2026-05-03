@@ -29,6 +29,7 @@ from surf_rag.router.model import parse_router_input_mode
 from surf_rag.router.training import (
     RouterTrainConfig,
     export_split_predictions,
+    merged_architecture_kwargs,
     save_checkpoint,
     train_router,
     _weight_grid_from_df,
@@ -95,6 +96,11 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=None,
         help="Additive score tolerance for plateau ties (default 1e-6).",
+    )
+    p.add_argument(
+        "--excluded-features",
+        default=None,
+        help="JSON list of V1 router feature names to drop (overrides config when set).",
     )
     p.add_argument("--log-level", default="INFO")
     return p.parse_args()
@@ -202,6 +208,7 @@ def main() -> int:
         else os.getenv("ROUTER_MIDPOINT_BALANCE_EPSILON", "1e-6")
     )
 
+    excluded_features = tuple(getattr(args, "excluded_features", ()) or ())
     cfg = RouterTrainConfig(
         parquet_path=parquet_path,
         router_id=args.router_id,
@@ -220,9 +227,11 @@ def main() -> int:
         loss_kwargs=loss_kwargs,
         midpoint_balance_masking=midpoint_balance_masking,
         midpoint_balance_epsilon=midpoint_balance_epsilon,
+        excluded_features=excluded_features,
     )
 
     result = train_router(cfg)
+    merged_kw = merged_architecture_kwargs(cfg)
     df = pd.read_parquet(parquet_path)
     wg = _weight_grid_from_df(df)
     mcfg = result.model.config
@@ -232,7 +241,7 @@ def main() -> int:
         result.model,
         mcfg,
         architecture=architecture,
-        architecture_kwargs=architecture_kwargs,
+        architecture_kwargs=merged_kw,
     )
 
     write_json(
@@ -241,7 +250,7 @@ def main() -> int:
             "router_id": args.router_id,
             "router_architecture_id": args.router_architecture_id,
             "architecture": architecture,
-            "architecture_kwargs": architecture_kwargs,
+            "architecture_kwargs": merged_kw,
             "input_mode": input_mode,
             "loss": result.loss_requested,
             "loss_kwargs": dict(result.loss_kwargs),
@@ -272,7 +281,7 @@ def main() -> int:
         router_architecture_id=args.router_architecture_id,
         input_mode=input_mode,
         architecture_name=architecture,
-        architecture_kwargs=architecture_kwargs,
+        architecture_kwargs=merged_kw,
         dataset_manifest_path=str(ds_paths.manifest.resolve()),
         model_config=mcfg.to_json(),
         training_config={

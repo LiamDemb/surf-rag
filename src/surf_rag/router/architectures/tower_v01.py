@@ -7,13 +7,19 @@ from typing import Any
 
 import torch
 import torch.nn as nn
+
+from surf_rag.router.excluded_features import (
+    active_feature_column_indices,
+    normalize_excluded_features,
+    validate_exclusions_for_input_mode,
+)
 from surf_rag.router.model import parse_router_input_mode
 
 _DEFAULT_EMBED_DIMS: tuple[int, int, int] = (128, 64, 32)
 
 
 def validate_kwargs(raw: dict[str, Any]) -> dict[str, Any]:
-    allowed = {"feat_hidden", "dropout", "embed_dims"}
+    allowed = {"feat_hidden", "dropout", "embed_dims", "excluded_features"}
     unknown = sorted(set(raw.keys()) - allowed)
     if unknown:
         raise ValueError(
@@ -43,6 +49,7 @@ def validate_kwargs(raw: dict[str, Any]) -> dict[str, Any]:
         out["embed_dims"] = tuple(dims)
     elif "embed_dims" in out:
         del out["embed_dims"]
+    excluded = normalize_excluded_features(out.get("excluded_features"))
     return {
         "feat_hidden": int(out.get("feat_hidden", 32)),
         "dropout": float(out.get("dropout", 0.0)),
@@ -51,6 +58,7 @@ def validate_kwargs(raw: dict[str, Any]) -> dict[str, Any]:
             if "embed_dims" in out and out["embed_dims"] is not None
             else _DEFAULT_EMBED_DIMS
         ),
+        "excluded_features": excluded,
     }
 
 
@@ -62,6 +70,7 @@ class RouterTowerV01Config:
     feat_hidden: int = 32
     dropout: float = 0.0
     embed_dims: tuple[int, int, int] = _DEFAULT_EMBED_DIMS
+    excluded_features: tuple[str, ...] = ()
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -71,6 +80,7 @@ class RouterTowerV01Config:
             "feat_hidden": int(self.feat_hidden),
             "dropout": float(self.dropout),
             "embed_dims": list(self.embed_dims),
+            "excluded_features": list(self.excluded_features),
         }
 
     @classmethod
@@ -87,6 +97,7 @@ class RouterTowerV01Config:
             feat_hidden=int(d.get("feat_hidden", 32)),
             dropout=float(d.get("dropout", 0.0)),
             embed_dims=embed_dims,
+            excluded_features=normalize_excluded_features(d.get("excluded_features")),
         )
 
 
@@ -103,6 +114,7 @@ class RouterTowerV01(nn.Module):
         fd = int(config.feature_dim)
         fh = int(config.feat_hidden)
         drop = float(config.dropout)
+        excluded = frozenset(config.excluded_features)
 
         self.embed_ln: nn.Module | None = None
         self.embed_layers: nn.Module | None = None
@@ -129,20 +141,42 @@ class RouterTowerV01(nn.Module):
             self.embed_layers = None
 
         if mode in ("both", "query-features"):
-            self.feat_layers = nn.Sequential(
-                nn.Linear(fd, fh),
-                nn.ReLU(),
-                nn.Dropout(drop),
-                nn.Linear(fh, fd),
-                nn.ReLU(),
-            )
+            feat_idx = active_feature_column_indices(fd, excluded)
+            if mode == "query-features" and not feat_idx:
+                raise ValueError(
+                    "tower_v01 query-features mode needs at least one non-excluded feature"
+                )
+            if feat_idx:
+                nk = len(feat_idx)
+                self.register_buffer(
+                    "_feat_gather_idx", torch.tensor(feat_idx, dtype=torch.long)
+                )
+                self.feat_layers = nn.Sequential(
+                    nn.Linear(nk, fh),
+                    nn.ReLU(),
+                    nn.Dropout(drop),
+                    nn.Linear(fh, fd),
+                    nn.ReLU(),
+                )
+            else:
+                self.register_buffer(
+                    "_feat_gather_idx", torch.empty(0, dtype=torch.long)
+                )
+                self.feat_layers = None
         else:
+            self.register_buffer("_feat_gather_idx", torch.empty(0, dtype=torch.long))
             self.feat_layers = None
 
         if mode == "both":
-            self.head = nn.Linear(2 * fd, 1)
+            fusion_in = 2 * fd if self.feat_layers is not None else fd
+            self.head = nn.Linear(fusion_in, 1)
         else:
             self.head = nn.Linear(fd, 1)
+
+    def _select_features(self, feature_vector: torch.Tensor) -> torch.Tensor:
+        if self._feat_gather_idx.numel() == 0:
+            return feature_vector[..., :0]
+        return feature_vector.index_select(-1, self._feat_gather_idx)
 
     def forward(
         self, query_embedding: torch.Tensor, feature_vector: torch.Tensor
@@ -150,18 +184,22 @@ class RouterTowerV01(nn.Module):
         mode = parse_router_input_mode(self.config.input_mode)
         if mode == "both":
             assert self.embed_ln is not None and self.embed_layers is not None
-            assert self.feat_layers is not None
             z = self.embed_ln(query_embedding)
             e = self.embed_layers(z)
-            f = self.feat_layers(feature_vector)
-            h = torch.cat([e, f], dim=-1)
+            if self.feat_layers is not None:
+                xf = self._select_features(feature_vector)
+                fvec = self.feat_layers(xf)
+                h = torch.cat([e, fvec], dim=-1)
+            else:
+                h = e
         elif mode == "embedding":
             assert self.embed_ln is not None and self.embed_layers is not None
             z = self.embed_ln(query_embedding)
             h = self.embed_layers(z)
         else:
             assert self.feat_layers is not None
-            h = self.feat_layers(feature_vector)
+            xf = self._select_features(feature_vector)
+            h = self.feat_layers(xf)
         return self.head(h)
 
     def predict_weight(
@@ -178,13 +216,24 @@ def build_model_config(
     kwargs: dict[str, Any],
 ) -> RouterTowerV01Config:
     k = validate_kwargs(kwargs)
+    mode = parse_router_input_mode(input_mode)
+    excl = frozenset(k["excluded_features"])
+    if excl:
+        active_feature_column_indices(feature_dim, excl)
+    validate_exclusions_for_input_mode(
+        mode,
+        feature_dim,
+        excl,
+        query_features_need_one=True,
+    )
     return RouterTowerV01Config(
         embedding_dim=int(embedding_dim),
         feature_dim=int(feature_dim),
-        input_mode=parse_router_input_mode(input_mode),
+        input_mode=mode,
         feat_hidden=int(k["feat_hidden"]),
         dropout=float(k["dropout"]),
         embed_dims=tuple(int(x) for x in k["embed_dims"]),
+        excluded_features=tuple(k["excluded_features"]),
     )
 
 

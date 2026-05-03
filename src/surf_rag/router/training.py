@@ -15,6 +15,7 @@ from torch.utils.data import DataLoader, TensorDataset, WeightedRandomSampler
 
 from surf_rag.evaluation.oracle_artifacts import DEFAULT_DENSE_WEIGHT_GRID
 from surf_rag.router.architectures.registry import get_architecture
+from surf_rag.router.excluded_features import merged_architecture_kwargs_with_exclusions
 from surf_rag.router.model import parse_router_input_mode
 from surf_rag.router.losses import resolve_router_training_loss
 from surf_rag.router.midpoint_balance import build_train_midpoint_balance_indices
@@ -46,6 +47,15 @@ class RouterTrainConfig:
     midpoint_balance_epsilon: float = 1e-6
     loss: str = "regret"
     loss_kwargs: dict[str, Any] | None = None
+    excluded_features: tuple[str, ...] = ()
+
+
+def merged_architecture_kwargs(cfg: RouterTrainConfig) -> Dict[str, Any]:
+    """Merge ``router.train.excluded_features`` into kwargs passed to architectures."""
+    return merged_architecture_kwargs_with_exclusions(
+        cfg.architecture_kwargs,
+        cfg.excluded_features,
+    )
 
 
 def _seq_floats(val: object) -> List[float]:
@@ -128,7 +138,7 @@ def build_model_config_from_df(df: pd.DataFrame, cfg: RouterTrainConfig) -> Any:
         emb_dim,
         feat_dim,
         parse_router_input_mode(cfg.input_mode),
-        dict(cfg.architecture_kwargs or {}),
+        merged_architecture_kwargs(cfg),
     )
 
 

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from argparse import Namespace
 from pathlib import Path
 
 from surf_rag.config.argv import argv_provides
+from surf_rag.router.excluded_features import normalize_excluded_features
 from surf_rag.config.loader import (
     PipelineConfig,
     load_pipeline_config,
@@ -254,6 +256,16 @@ def merge_router_train_args(
         args.midpoint_balance_masking = rt.midpoint_balance_masking
     if not argv_provides(argv, "--midpoint-balance-epsilon"):
         args.midpoint_balance_epsilon = rt.midpoint_balance_epsilon
+    if argv_provides(argv, "--excluded-features"):
+        raw_ef = getattr(args, "excluded_features", None)
+        if raw_ef is None or (isinstance(raw_ef, str) and not str(raw_ef).strip()):
+            args.excluded_features = ()
+        elif isinstance(raw_ef, str):
+            args.excluded_features = normalize_excluded_features(json.loads(raw_ef))
+        else:
+            args.excluded_features = normalize_excluded_features(raw_ef)
+    else:
+        args.excluded_features = normalize_excluded_features(rt.excluded_features or [])
 
 
 def merge_router_evaluate_args(

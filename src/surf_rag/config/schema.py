@@ -97,6 +97,7 @@ class RouterTrainSection:
     device: str = "cpu"
     architecture: str = "mlp-v1"
     architecture_kwargs: dict[str, Any] = field(default_factory=dict)
+    excluded_features: list[str] = field(default_factory=list)
     input_mode: str = "both"
     midpoint_balance_masking: bool = False
     midpoint_balance_epsilon: float = 1e-6
