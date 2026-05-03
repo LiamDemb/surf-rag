@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from surf_rag.core.model_cache import (
+    _resolve_cross_encoder_device,
     clear_model_caches,
     get_cross_encoder,
     get_sentence_transformer,
@@ -34,3 +35,13 @@ def test_cross_encoder_reuses_instance(mock_ce: MagicMock) -> None:
     b = get_cross_encoder("dummy-ce")
     assert a is b
     assert mock_ce.call_count == 1
+
+
+@patch("surf_rag.core.model_cache._mps_available", return_value=False)
+def test_cross_encoder_mps_request_falls_back_to_cpu(_: MagicMock) -> None:
+    assert _resolve_cross_encoder_device("mps") == "cpu"
+
+
+@patch("surf_rag.core.model_cache._mps_available", return_value=True)
+def test_cross_encoder_mps_request_uses_mps(_: MagicMock) -> None:
+    assert _resolve_cross_encoder_device("mps") == "mps"

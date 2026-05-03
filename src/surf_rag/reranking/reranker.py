@@ -54,8 +54,13 @@ class NoOpReranker:
 class CrossEncoderReranker:
     """SentenceTransformers cross-encoder scores query-passage pairs."""
 
-    def __init__(self, model_name: str = DEFAULT_CROSS_ENCODER_MODEL) -> None:
-        self._model = get_cross_encoder(model_name)
+    def __init__(
+        self,
+        model_name: str = DEFAULT_CROSS_ENCODER_MODEL,
+        *,
+        device: str | None = None,
+    ) -> None:
+        self._model = get_cross_encoder(model_name, device=device)
         self._model_name = model_name
 
     @property
@@ -109,10 +114,14 @@ def build_reranker(
     kind: str,
     *,
     cross_encoder_model: str | None = None,
+    cross_encoder_device: str | None = None,
 ) -> Reranker:
     k = (kind or "cross_encoder").strip().lower()
     if k in ("none", "noop", "no-op"):
         return NoOpReranker()
     if k in ("cross_encoder", "cross-encoder", "ce"):
-        return CrossEncoderReranker(cross_encoder_model or DEFAULT_CROSS_ENCODER_MODEL)
+        return CrossEncoderReranker(
+            cross_encoder_model or DEFAULT_CROSS_ENCODER_MODEL,
+            device=cross_encoder_device,
+        )
     raise ValueError(f"unknown reranker kind {kind!r}")

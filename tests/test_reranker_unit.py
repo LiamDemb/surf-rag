@@ -43,6 +43,13 @@ def test_cross_encoder_rerank_order(mock_get_ce: MagicMock) -> None:
     assert "rerank_score" in (out.chunks[0].metadata or {})
 
 
+@patch("surf_rag.reranking.reranker.get_cross_encoder")
+def test_cross_encoder_device_passed_to_model_cache(mock_get_ce: MagicMock) -> None:
+    mock_get_ce.return_value = MagicMock()
+    _ = CrossEncoderReranker(model_name="dummy-model", device="mps")
+    mock_get_ce.assert_called_once_with("dummy-model", device="mps")
+
+
 def test_build_reranker_none_alias() -> None:
     r = build_reranker("noop")
     assert isinstance(r, NoOpReranker)

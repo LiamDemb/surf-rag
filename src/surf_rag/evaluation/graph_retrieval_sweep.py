@@ -410,7 +410,11 @@ def run_retrieval_only_trial(
         fusion_keep_k=e.fusion_keep_k,
         router=None,
     )
-    reranker = build_reranker(e.reranker, cross_encoder_model=e.cross_encoder_model)
+    reranker = build_reranker(
+        e.reranker,
+        cross_encoder_model=e.cross_encoder_model,
+        cross_encoder_device=cfg.model_setup.cross_encoder_device,
+    )
 
     retrieval_path = run_paths.retrieval_results_jsonl()
     with retrieval_path.open("w", encoding="utf-8") as retrieval_fp:

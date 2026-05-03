@@ -334,6 +334,11 @@ def merge_e2e_prepare_args(
         args.rerank_top_k = e.rerank_top_k
     if not argv_provides(argv, "--cross-encoder-model") and e.cross_encoder_model:
         args.cross_encoder_model = e.cross_encoder_model
+    if (
+        not argv_provides(argv, "--cross-encoder-device")
+        and cfg.model_setup.cross_encoder_device
+    ):
+        args.cross_encoder_device = cfg.model_setup.cross_encoder_device
     if e.limit is not None and not argv_provides(argv, "--limit"):
         args.limit = e.limit
     if not argv_provides(argv, "--completion-window") and e.completion_window:

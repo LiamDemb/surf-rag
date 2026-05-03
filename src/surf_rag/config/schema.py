@@ -44,6 +44,7 @@ class ModelSetupSection:
     spacy_model: str = "en_core_web_sm"
     embedding_model: str = "all-MiniLM-L6-v2"
     cross_encoder_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    cross_encoder_device: str | None = None
 
 
 @dataclass

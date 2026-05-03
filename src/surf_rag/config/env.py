@@ -83,6 +83,7 @@ def apply_pipeline_env_from_config(config: object) -> None:
     os.environ["EMBEDDING_MODEL"] = _env_s(m.embedding_model)
     os.environ["MODEL_NAME"] = _env_s(m.embedding_model)
     os.environ["CROSS_ENCODER_MODEL"] = _env_s(m.cross_encoder_model)
+    os.environ["CROSS_ENCODER_DEVICE"] = _env_s(m.cross_encoder_device)
     os.environ["SPACY_MODEL"] = _env_s(m.spacy_model)
     os.environ["DATA_BASE"] = _env_s(cfg.paths.data_base)
     if cfg.paths.benchmark_base:

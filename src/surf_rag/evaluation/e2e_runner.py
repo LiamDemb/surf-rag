@@ -480,6 +480,7 @@ def e2e_prepare_and_submit(
     reranker_kind: str = "none",
     rerank_top_k: int = 10,
     cross_encoder_model: Optional[str] = None,
+    cross_encoder_device: Optional[str] = None,
     limit: Optional[int] = None,
     only_question_ids: Optional[Set[str]] = None,
     completion_window: str = "24h",
@@ -630,7 +631,19 @@ def e2e_prepare_and_submit(
         fusion_keep_k=fusion_keep_k,
         router=loaded_router,
     )
-    reranker = build_reranker(reranker_kind, cross_encoder_model=cross_encoder_model)
+    resolved_cross_encoder_device = cross_encoder_device
+    if (
+        resolved_cross_encoder_device is None
+        and pipeline_config_for_artifact is not None
+    ):
+        resolved_cross_encoder_device = (
+            pipeline_config_for_artifact.model_setup.cross_encoder_device
+        )
+    reranker = build_reranker(
+        reranker_kind,
+        cross_encoder_model=cross_encoder_model,
+        cross_encoder_device=resolved_cross_encoder_device,
+    )
 
     write_manifest(
         paths,
@@ -663,6 +676,8 @@ def e2e_prepare_and_submit(
                 "fusion_keep_k": fusion_keep_k,
                 "reranker": reranker_kind,
                 "rerank_top_k": rerank_top_k,
+                "cross_encoder_model": cross_encoder_model,
+                "cross_encoder_device": resolved_cross_encoder_device,
                 "retrieval_metric_base_ks": list(_BASE_METRIC_KS),
                 "router_id": router_id,
                 "router_architecture_id": router_architecture_id,

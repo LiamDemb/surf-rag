@@ -119,6 +119,7 @@ def cmd_prepare(args: argparse.Namespace) -> int:
         reranker_kind=args.reranker,
         rerank_top_k=args.rerank_top_k,
         cross_encoder_model=args.cross_encoder_model,
+        cross_encoder_device=args.cross_encoder_device,
         limit=args.limit,
         only_question_ids=set(args.only_question_id) if args.only_question_id else None,
         completion_window=args.completion_window,
@@ -265,6 +266,7 @@ def main() -> int:
     )
     p_prep.add_argument("--rerank-top-k", type=int, default=10)
     p_prep.add_argument("--cross-encoder-model", default=None)
+    p_prep.add_argument("--cross-encoder-device", default=None)
     p_prep.add_argument("--limit", type=int, default=None)
     p_prep.add_argument("--only-question-id", action="append", default=[])
     p_prep.add_argument("--completion-window", default="24h")
