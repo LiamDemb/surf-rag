@@ -123,11 +123,15 @@ def test_validate_e2e_learned_requires_router_id() -> None:
         validate_e2e_config(cfg)
 
 
-def test_validate_e2e_learned_hybrid_requires_router_id() -> None:
+def test_validate_e2e_hybrid_requires_router_id() -> None:
     cfg = pipeline_config_from_dict(
         {
             "paths": {"router_id": ""},
-            "e2e": {"policy": "learned-hybrid"},
+            "e2e": {
+                "policy": "hybrid",
+                "router_task_type": "classification",
+                "router_fallback_regressor_id": "r1",
+            },
         }
     )
     with pytest.raises(ValueError, match="router_id"):

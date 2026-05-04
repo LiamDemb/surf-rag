@@ -75,7 +75,7 @@ def test_polyreg_v1_defaults() -> None:
 
 def test_polyreg_v1_degree_and_linear_width() -> None:
     arch = get_architecture("polyreg-v1")
-    cfg = arch.build_model_config(4, 14, "query-features", {"degree": 2})
+    cfg = arch.build_model_config(4, 14, "query-features", "regression", {"degree": 2})
     assert cfg.degree == 2
     model = arch.build_model(cfg)
     n_phi = expanded_monomial_count(14, 2)
@@ -92,7 +92,7 @@ def test_polyreg_v1_rejects_degree_too_large() -> None:
 def test_polyreg_v1_rejects_huge_expansion() -> None:
     arch = get_architecture("polyreg-v1")
     with pytest.raises(ValueError, match="max_expanded"):
-        arch.build_model_config(384, 14, "both", {"degree": 3})
+        arch.build_model_config(384, 14, "both", "regression", {"degree": 3})
 
 
 def test_polyreg_v1_rejects_unknown_kw() -> None:
@@ -108,6 +108,7 @@ def test_polyreg_v1_excluded_raises_when_none_left_for_query_features() -> None:
             4,
             14,
             "query-features",
+            "regression",
             {"degree": 1, "excluded_features": list(V1_FEATURE_NAMES)},
         )
 
@@ -118,6 +119,7 @@ def test_polyreg_v1_excluded_reduces_polynomial_width() -> None:
         4,
         14,
         "query-features",
+        "regression",
         {"degree": 2, "excluded_features": ["content_token_len"]},
     )
     assert cfg.excluded_features == ("content_token_len",)

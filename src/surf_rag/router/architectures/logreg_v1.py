@@ -13,7 +13,11 @@ from surf_rag.router.excluded_features import (
     normalize_excluded_features,
     validate_exclusions_for_input_mode,
 )
-from surf_rag.router.model import parse_router_input_mode
+from surf_rag.router.model import (
+    ROUTER_TASK_REGRESSION,
+    parse_router_input_mode,
+    parse_router_task_type,
+)
 
 
 @dataclass(frozen=True)
@@ -22,6 +26,7 @@ class RouterLogRegConfig:
     feature_dim: int = 14
     input_mode: str = "both"
     excluded_features: tuple[str, ...] = ()
+    task_type: str = ROUTER_TASK_REGRESSION
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -29,6 +34,7 @@ class RouterLogRegConfig:
             "feature_dim": int(self.feature_dim),
             "input_mode": str(self.input_mode),
             "excluded_features": list(self.excluded_features),
+            "task_type": str(self.task_type),
         }
 
     @classmethod
@@ -38,6 +44,9 @@ class RouterLogRegConfig:
             feature_dim=int(d.get("feature_dim", 14)),
             input_mode=parse_router_input_mode(str(d.get("input_mode", "both"))),
             excluded_features=normalize_excluded_features(d.get("excluded_features")),
+            task_type=parse_router_task_type(
+                str(d.get("task_type", ROUTER_TASK_REGRESSION))
+            ),
         )
 
 
@@ -74,7 +83,14 @@ class RouterLogReg(nn.Module):
         else:
             self.register_buffer("_feat_gather_idx", torch.empty(0, dtype=torch.long))
 
-        self.head = nn.Linear(in_dim, 1)
+        self.head = nn.Linear(
+            in_dim,
+            (
+                2
+                if parse_router_task_type(config.task_type) != ROUTER_TASK_REGRESSION
+                else 1
+            ),
+        )
 
     def _select_features(self, feature_vector: torch.Tensor) -> torch.Tensor:
         if self._feat_gather_idx.numel() == 0:
@@ -97,8 +113,23 @@ class RouterLogReg(nn.Module):
     def predict_weight(
         self, query_embedding: torch.Tensor, feature_vector: torch.Tensor
     ) -> torch.Tensor:
+        if parse_router_task_type(self.config.task_type) != ROUTER_TASK_REGRESSION:
+            raise ValueError(
+                "predict_weight requires regression task_type, got "
+                f"{self.config.task_type!r}"
+            )
         logits = self(query_embedding, feature_vector).squeeze(-1)
         return torch.sigmoid(logits)
+
+    def predict_class_logits(
+        self, query_embedding: torch.Tensor, feature_vector: torch.Tensor
+    ) -> torch.Tensor:
+        if parse_router_task_type(self.config.task_type) == ROUTER_TASK_REGRESSION:
+            raise ValueError(
+                "predict_class_logits requires classification task_type, got "
+                f"{self.config.task_type!r}"
+            )
+        return self(query_embedding, feature_vector)
 
 
 def validate_kwargs(raw: dict[str, Any]) -> dict[str, Any]:
@@ -116,6 +147,7 @@ def build_model_config(
     embedding_dim: int,
     feature_dim: int,
     input_mode: str,
+    task_type: str,
     kwargs: dict[str, Any],
 ) -> RouterLogRegConfig:
     opt = validate_kwargs(kwargs)
@@ -134,6 +166,7 @@ def build_model_config(
         feature_dim=int(feature_dim),
         input_mode=mode,
         excluded_features=tuple(opt["excluded_features"]),
+        task_type=parse_router_task_type(task_type or ROUTER_TASK_REGRESSION),
     )
 
 

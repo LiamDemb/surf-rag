@@ -15,7 +15,11 @@ from surf_rag.router.excluded_features import (
     normalize_excluded_features,
     validate_exclusions_for_input_mode,
 )
-from surf_rag.router.model import parse_router_input_mode
+from surf_rag.router.model import (
+    ROUTER_TASK_REGRESSION,
+    parse_router_input_mode,
+    parse_router_task_type,
+)
 
 _ALLOWED_KW = frozenset({"degree", "max_expanded_features", "excluded_features"})
 
@@ -49,6 +53,7 @@ class RouterPolyRegConfig:
     input_mode: str = "both"
     degree: int = _DEFAULT_DEGREE
     excluded_features: tuple[str, ...] = ()
+    task_type: str = ROUTER_TASK_REGRESSION
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -57,6 +62,7 @@ class RouterPolyRegConfig:
             "input_mode": str(self.input_mode),
             "degree": int(self.degree),
             "excluded_features": list(self.excluded_features),
+            "task_type": str(self.task_type),
         }
 
     @classmethod
@@ -68,6 +74,9 @@ class RouterPolyRegConfig:
             input_mode=parse_router_input_mode(str(d.get("input_mode", "both"))),
             degree=int(d.get("degree", _DEFAULT_DEGREE)),
             excluded_features=ex_t,
+            task_type=parse_router_task_type(
+                str(d.get("task_type", ROUTER_TASK_REGRESSION))
+            ),
         )
 
 
@@ -110,7 +119,14 @@ class RouterPolyReg(nn.Module):
         deg = max(1, int(config.degree))
         self._term_indices = _monomial_index_tuples(in_dim, deg)
         expanded = len(self._term_indices)
-        self.head = nn.Linear(expanded, 1)
+        self.head = nn.Linear(
+            expanded,
+            (
+                2
+                if parse_router_task_type(config.task_type) != ROUTER_TASK_REGRESSION
+                else 1
+            ),
+        )
 
     def _select_features(self, feature_vector: torch.Tensor) -> torch.Tensor:
         if self._feat_gather_idx.numel() == 0:
@@ -145,8 +161,23 @@ class RouterPolyReg(nn.Module):
     def predict_weight(
         self, query_embedding: torch.Tensor, feature_vector: torch.Tensor
     ) -> torch.Tensor:
+        if parse_router_task_type(self.config.task_type) != ROUTER_TASK_REGRESSION:
+            raise ValueError(
+                "predict_weight requires regression task_type, got "
+                f"{self.config.task_type!r}"
+            )
         logits = self(query_embedding, feature_vector).squeeze(-1)
         return torch.sigmoid(logits)
+
+    def predict_class_logits(
+        self, query_embedding: torch.Tensor, feature_vector: torch.Tensor
+    ) -> torch.Tensor:
+        if parse_router_task_type(self.config.task_type) == ROUTER_TASK_REGRESSION:
+            raise ValueError(
+                "predict_class_logits requires classification task_type, got "
+                f"{self.config.task_type!r}"
+            )
+        return self(query_embedding, feature_vector)
 
 
 def validate_kwargs(raw: dict[str, Any]) -> dict[str, Any]:
@@ -196,6 +227,7 @@ def build_model_config(
     embedding_dim: int,
     feature_dim: int,
     input_mode: str,
+    task_type: str,
     kwargs: dict[str, Any],
 ) -> RouterPolyRegConfig:
     opt = validate_kwargs(kwargs)
@@ -232,6 +264,7 @@ def build_model_config(
         input_mode=mode,
         degree=deg,
         excluded_features=excluded_tuple,
+        task_type=parse_router_task_type(task_type or ROUTER_TASK_REGRESSION),
     )
 
 

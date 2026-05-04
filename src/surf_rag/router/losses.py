@@ -1,4 +1,4 @@
-"""Training loss registry for scalar router models."""
+"""Training loss registry for regression and classification router models."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from surf_rag.router.regret import interpolate_curve_torch, regret_loss
 logger = logging.getLogger(__name__)
 
 RouterLossFn = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+RouterClassLossFn = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
 
 
 def hinge_squared_regret_loss(
@@ -112,4 +113,38 @@ def resolve_router_training_loss(
     else:
         fallback = False
     fn = _LOSS_FACTORIES[key](kwargs)
+    return fn, key, fallback
+
+
+def resolve_router_classification_loss(
+    loss_requested: str | None,
+    loss_kwargs: Dict[str, Any] | None,
+) -> Tuple[RouterClassLossFn, str, bool]:
+    """Return classification loss (currently cross-entropy only)."""
+    raw = (loss_requested or "cross_entropy").strip()
+    key = raw.lower().replace("-", "_")
+    kwargs = dict(loss_kwargs or {})
+    if key not in {"cross_entropy", "ce"}:
+        logger.warning(
+            "Unknown classification loss %r; falling back to cross_entropy.", raw
+        )
+        key = "cross_entropy"
+        fallback = True
+    else:
+        fallback = False
+    weight = kwargs.get("class_weight")
+    weight_t = None
+    if isinstance(weight, (list, tuple)):
+        weight_t = torch.tensor([float(x) for x in weight], dtype=torch.float32)
+    ce = torch.nn.CrossEntropyLoss(weight=weight_t)
+
+    def fn(logits: torch.Tensor, target_ids: torch.Tensor) -> torch.Tensor:
+        if (
+            weight_t is not None
+            and ce.weight is not None
+            and ce.weight.device != logits.device
+        ):
+            ce.weight = ce.weight.to(logits.device)
+        return ce(logits, target_ids.long())
+
     return fn, key, fallback

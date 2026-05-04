@@ -3,6 +3,7 @@
 	oracle-prepare oracle-create-router-labels oracle-labels \
 	router-build-dataset router-pipeline \
 	router-train router-eval router-train-ablations router-evaluate-ablations \
+	router-calibrate-threshold \
 	figures-render \
 	validate-oracle-config validate-router-config validate-router-train \
 	e2e-print-config e2e-prepare e2e-submit e2e-collect e2e-evaluate e2e-run \
@@ -24,8 +25,9 @@ E2E_RUN_ID ?=
 E2E_POLICY ?=
 E2E_SPLIT ?=
 E2E_DEV_SYNC ?=
-E2E_POLICIES ?= dense-only graph-only 50-50 learned-soft learned-hybrid learned-hard oracle-upper-bound
+E2E_POLICIES ?= dense-only graph-only 50-50 learned-soft hard-routing hybrid oracle-upper-bound
 ROUTER_INPUT_MODES ?= both query-features embedding
+ROUTER_TASK_TYPE ?=
 ENTITY_MATCHING_FORCE ?=
 ALIGN_2WIKI_EXTRA ?=
 PIPELINE_RUN_ID ?=
@@ -136,7 +138,8 @@ router-build-dataset: validate-router-config
 router-pipeline: oracle-labels router-build-dataset
 
 router-train: validate-router-train
-	$(PY) -m scripts.router.train_router --config "$(CONFIG)"
+	$(PY) -m scripts.router.train_router --config "$(CONFIG)" \
+		$(if $(ROUTER_TASK_TYPE),--router-task-type "$(ROUTER_TASK_TYPE)",)
 
 router-train-ablations: validate-router-train
 	@for m in $(ROUTER_INPUT_MODES); do \
@@ -145,7 +148,8 @@ router-train-ablations: validate-router-train
 	done
 
 router-eval: validate-router-train
-	$(PY) -m scripts.router.evaluate_router --config "$(CONFIG)"
+	$(PY) -m scripts.router.evaluate_router --config "$(CONFIG)" \
+		$(if $(ROUTER_TASK_TYPE),--router-task-type "$(ROUTER_TASK_TYPE)",)
 
 # Regenerates figures in-place; pass FIGURES_EXTRA= to omit --force if you need overwrite protection.
 FIGURES_EXTRA ?= --force
@@ -158,23 +162,33 @@ router-evaluate-ablations: validate-router-train
 		$(PY) -m scripts.router.evaluate_router --config "$(CONFIG)" --input-mode "$$m" || exit 1; \
 	done
 
+router-calibrate-threshold:
+	$(PY) -m scripts.router.calibrate_confidence_threshold \
+		--router-id "$${ROUTER_ID:?set ROUTER_ID}" \
+		--regressor-router-id "$${REGRESSOR_ROUTER_ID:?set REGRESSOR_ROUTER_ID}" \
+		$(if $(ROUTER_ARCHITECTURE_ID),--classifier-architecture-id "$(ROUTER_ARCHITECTURE_ID)",) \
+		$(if $(REGRESSOR_ROUTER_ARCHITECTURE_ID),--regressor-architecture-id "$(REGRESSOR_ROUTER_ARCHITECTURE_ID)",)
+
 e2e-print-config:
 	$(PY) -m scripts.e2e_benchmark --config "$(CONFIG)" print-config \
 		$(if $(E2E_RUN_ID),--run-id "$(E2E_RUN_ID)",) \
 		$(if $(E2E_POLICY),--policy "$(E2E_POLICY)",) \
-		$(if $(E2E_SPLIT),--split "$(E2E_SPLIT)",)
+		$(if $(E2E_SPLIT),--split "$(E2E_SPLIT)",) \
+		$(if $(ROUTER_TASK_TYPE),--router-task-type "$(ROUTER_TASK_TYPE)",)
 
 e2e-prepare:
 	$(PY) -m scripts.e2e_benchmark --config "$(CONFIG)" prepare --dry-run \
 		$(if $(E2E_RUN_ID),--run-id "$(E2E_RUN_ID)",) \
 		$(if $(E2E_POLICY),--policy "$(E2E_POLICY)",) \
-		$(if $(E2E_SPLIT),--split "$(E2E_SPLIT)",)
+		$(if $(E2E_SPLIT),--split "$(E2E_SPLIT)",) \
+		$(if $(ROUTER_TASK_TYPE),--router-task-type "$(ROUTER_TASK_TYPE)",)
 
 e2e-submit:
 	$(PY) -m scripts.e2e_benchmark --config "$(CONFIG)" prepare \
 		$(if $(E2E_RUN_ID),--run-id "$(E2E_RUN_ID)",) \
 		$(if $(E2E_POLICY),--policy "$(E2E_POLICY)",) \
 		$(if $(E2E_SPLIT),--split "$(E2E_SPLIT)",) \
+		$(if $(ROUTER_TASK_TYPE),--router-task-type "$(ROUTER_TASK_TYPE)",) \
 		$(if $(E2E_DEV_SYNC),--dev-sync,)
 
 e2e-collect:

@@ -117,6 +117,10 @@ def build_router_dataframe(
                 f"Oracle curve length {len(curve)} != weight grid {len(weight_grid)}"
             )
         best_score = float(lab.get("oracle_best_score", 0.0))
+        class_name = str(lab.get("oracle_binary_class", "dense")).strip().lower()
+        if class_name not in {"dense", "graph"}:
+            class_name = "dense"
+        class_id = int(lab.get("oracle_binary_class_id", 1))
         rec: Dict[str, Any] = {
             "question_id": qid,
             "question": b.get("question", ""),
@@ -129,6 +133,16 @@ def build_router_dataframe(
             "oracle_best_score": best_score,
             "oracle_curve_std": std,
             "is_valid_for_router_training": bool(best_score > 0.0),
+            "oracle_binary_class": class_name,
+            "oracle_binary_class_id": class_id,
+            "oracle_binary_best_score": float(lab.get("oracle_binary_best_score", 0.0)),
+            "oracle_binary_scores": dict(lab.get("oracle_binary_scores") or {}),
+            "oracle_binary_class_to_weight": dict(
+                lab.get("oracle_binary_class_to_weight") or {"dense": 1.0, "graph": 0.0}
+            ),
+            "is_valid_for_router_training_classification": bool(
+                lab.get("is_valid_for_router_training_classification", best_score > 0.0)
+            ),
             "router_id": router_id,
             "oracle_run_id": router_id,
             "feature_set_version": FEATURE_SET_VERSION,

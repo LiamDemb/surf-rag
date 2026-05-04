@@ -155,6 +155,22 @@ def write_router_dataset_manifest(
             "router_labels": router_labels_path,
             "labeling_strategy": "oracle-curve-v1",
         },
+        "supervision": {
+            "targets": {
+                "regression": {
+                    "target": "oracle_curve",
+                    "validity_flag": "is_valid_for_router_training",
+                },
+                "classification": {
+                    "target": "oracle_binary_class_id",
+                    "validity_flag": "is_valid_for_router_training_classification",
+                    "class_names": ["graph", "dense"],
+                    "class_to_weight_map": {"graph": 0.0, "dense": 1.0},
+                    "tie_break_order": ["dense", "graph"],
+                    "target_version": "binary_v1",
+                },
+            }
+        },
         "feature_set_version": feature_set_version,
         "embedding_model": embedding_model,
         "split": {

@@ -40,8 +40,6 @@ def test_scalar_predict_and_policy_smoke() -> None:
     soft = decide_routing(
         RoutingPolicyName.LEARNED_SOFT, predicted_weight=float(pred_w[0])
     )
-    hard = decide_routing(
-        RoutingPolicyName.LEARNED_HARD, predicted_weight=float(pred_w[0])
-    )
+    hard = decide_routing(RoutingPolicyName.HARD_ROUTING, predicted_class_id=1)
     assert soft.run_dense and soft.run_graph
-    assert hard.hard_branch in ("dense", "graph")
+    assert hard.hard_branch == "dense"

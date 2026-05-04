@@ -55,7 +55,7 @@ def _add_common(p: argparse.ArgumentParser) -> None:
         "--policy",
         default=None,
         help=(
-            "Routing policy: learned-soft, learned-hard, learned-hybrid, 50-50, "
+            "Routing policy: learned-soft, hard-routing, hybrid, 50-50, "
             "dense-only, graph-only, oracle-upper-bound"
         ),
     )
@@ -127,6 +127,10 @@ def cmd_prepare(args: argparse.Namespace) -> int:
         dry_run=args.dry_run,
         router_device=args.router_device,
         router_input_mode=args.router_input_mode,
+        router_task_type=args.router_task_type,
+        router_confidence_threshold=args.router_confidence_threshold,
+        router_fallback_regressor_id=args.router_fallback_regressor_id,
+        router_fallback_architecture_id=args.router_fallback_architecture_id,
         router_inference_batch_size=args.router_inference_batch_size,
         latency_warmup_questions=args.latency_warmup_questions,
         dev_sync=args.dev_sync,
@@ -282,6 +286,10 @@ def main() -> int:
     )
     p_prep.add_argument("--router-device", default="cpu")
     p_prep.add_argument("--router-input-mode", default="both")
+    p_prep.add_argument("--router-task-type", default="regression")
+    p_prep.add_argument("--router-confidence-threshold", type=float, default=0.7)
+    p_prep.add_argument("--router-fallback-regressor-id", default=None)
+    p_prep.add_argument("--router-fallback-architecture-id", default=None)
     p_prep.add_argument(
         "--router-inference-batch-size",
         type=int,

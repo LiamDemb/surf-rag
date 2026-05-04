@@ -25,6 +25,25 @@ ALLOWED_ROUTER_INPUT_MODES: Tuple[str, ...] = (
     ROUTER_INPUT_MODE_EMBEDDING,
 )
 
+ROUTER_TASK_REGRESSION: str = "regression"
+ROUTER_TASK_CLASSIFICATION: str = "classification"
+
+
+def parse_router_task_type(value: str) -> str:
+    s = (value or "").strip().lower().replace("_", "-")
+    aliases = {
+        "regression": ROUTER_TASK_REGRESSION,
+        "reg": ROUTER_TASK_REGRESSION,
+        "classification": ROUTER_TASK_CLASSIFICATION,
+        "class": ROUTER_TASK_CLASSIFICATION,
+        "cls": ROUTER_TASK_CLASSIFICATION,
+    }
+    if s not in aliases:
+        raise ValueError(
+            f"task_type must be one of {list(aliases.keys())!r}, got {value!r}"
+        )
+    return aliases[s]
+
 
 def parse_router_input_mode(value: str) -> str:
     s = (value or "").strip().lower().replace("_", "-")
@@ -64,6 +83,7 @@ class RouterMLPConfig:
     hidden_dim: int = 32
     dropout: float = 0.1
     excluded_features: Tuple[str, ...] = ()
+    task_type: str = ROUTER_TASK_REGRESSION
 
     def to_json(self) -> Dict[str, Any]:
         return {
@@ -75,6 +95,7 @@ class RouterMLPConfig:
             "hidden_dim": self.hidden_dim,
             "dropout": self.dropout,
             "excluded_features": list(self.excluded_features),
+            "task_type": self.task_type,
         }
 
     @classmethod
@@ -97,6 +118,9 @@ class RouterMLPConfig:
             hidden_dim=int(d.get("hidden_dim", 32)),
             dropout=float(d.get("dropout", 0.1)),
             excluded_features=excl,
+            task_type=parse_router_task_type(
+                str(d.get("task_type", ROUTER_TASK_REGRESSION))
+            ),
         )
 
 
@@ -150,11 +174,16 @@ class RouterMLP(nn.Module):
         else:
             in_h = d.embed_proj_dim
 
+        head_out = (
+            2
+            if parse_router_task_type(d.task_type) == ROUTER_TASK_CLASSIFICATION
+            else 1
+        )
         self.head = nn.Sequential(
             nn.Linear(in_h, d.hidden_dim),
             nn.GELU(),
             nn.Dropout(d.dropout),
-            nn.Linear(d.hidden_dim, 1),
+            nn.Linear(d.hidden_dim, head_out),
         )
 
     def _select_features(self, feature_vector: torch.Tensor) -> torch.Tensor:
@@ -194,8 +223,25 @@ class RouterMLP(nn.Module):
         query_embedding: torch.Tensor,
         feature_vector: torch.Tensor,
     ) -> torch.Tensor:
+        if parse_router_task_type(self.config.task_type) != ROUTER_TASK_REGRESSION:
+            raise ValueError(
+                "predict_weight requires regression task_type, got "
+                f"{self.config.task_type!r}"
+            )
         logits = self(query_embedding, feature_vector).squeeze(-1)
         return torch.sigmoid(logits)
+
+    def predict_class_logits(
+        self,
+        query_embedding: torch.Tensor,
+        feature_vector: torch.Tensor,
+    ) -> torch.Tensor:
+        if parse_router_task_type(self.config.task_type) != ROUTER_TASK_CLASSIFICATION:
+            raise ValueError(
+                "predict_class_logits requires classification task_type, got "
+                f"{self.config.task_type!r}"
+            )
+        return self(query_embedding, feature_vector)
 
 
 def stack_weight_grid(

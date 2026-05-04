@@ -254,6 +254,8 @@ def merge_router_train_args(
         args.loss = rt.loss
     if not argv_provides(argv, "--loss-kwargs"):
         args.loss_kwargs = dict(rt.loss_kwargs)
+    if not argv_provides(argv, "--router-task-type"):
+        args.router_task_type = rt.task_type
     if not argv_provides(argv, "--midpoint-balance-masking") and not argv_provides(
         argv, "--no-midpoint-balance-masking"
     ):
@@ -359,6 +361,14 @@ def merge_e2e_prepare_args(
         args.router_device = e.router_device
     if not argv_provides(argv, "--router-input-mode"):
         args.router_input_mode = e.router_input_mode
+    if not argv_provides(argv, "--router-task-type"):
+        args.router_task_type = e.router_task_type
+    if not argv_provides(argv, "--router-confidence-threshold"):
+        args.router_confidence_threshold = e.router_confidence_threshold
+    if not argv_provides(argv, "--router-fallback-regressor-id"):
+        args.router_fallback_regressor_id = e.router_fallback_regressor_id
+    if not argv_provides(argv, "--router-fallback-architecture-id"):
+        args.router_fallback_architecture_id = e.router_fallback_architecture_id
     if not argv_provides(argv, "--router-inference-batch-size"):
         args.router_inference_batch_size = e.router_inference_batch_size
     if not argv_provides(argv, "--latency-warmup-questions"):

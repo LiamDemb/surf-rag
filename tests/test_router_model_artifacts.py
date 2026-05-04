@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from surf_rag.evaluation.router_model_artifacts import (
+    ROUTER_TASK_REGRESSION,
     RouterModelPaths,
     build_router_model_root,
     make_router_model_paths_for_cli,
@@ -21,7 +22,7 @@ def test_model_root() -> None:
     )
     assert build_router_model_root(
         Path("data/router"), "v01", "both", "mlp-v1-default"
-    ) == Path("data/router/v01/models/mlp-v1-default/both")
+    ) == Path("data/router/v01/models/mlp-v1-default/regression/both")
     assert build_router_model_root(
         Path("data/router"), "v01", "query-features"
     ) == Path("data/router/v01/model/query-features")
@@ -35,8 +36,10 @@ def test_paths() -> None:
     p2 = make_router_model_paths_for_cli(
         "r1", router_base=Path("/b"), router_architecture_id="logreg-v1-baseline"
     )
-    assert p2.run_root == Path("/b/r1/models/logreg-v1-baseline/both")
-    assert p2.checkpoint == Path("/b/r1/models/logreg-v1-baseline/both/model.pt")
+    assert p2.run_root == Path("/b/r1/models/logreg-v1-baseline/regression/both")
+    assert p2.checkpoint == Path(
+        "/b/r1/models/logreg-v1-baseline/regression/both/model.pt"
+    )
 
 
 def test_manifest_roundtrip(tmp_path: Path) -> None:
@@ -57,7 +60,8 @@ def test_manifest_roundtrip(tmp_path: Path) -> None:
         weight_grid=[0.0, 0.5, 1.0],
     )
     m = read_router_model_manifest(paths)
-    assert m["model_id"] == "m1:mlp-v1-default:both"
+    assert m["model_id"] == "m1:mlp-v1-default:regression:both"
+    assert m["task_type"] == ROUTER_TASK_REGRESSION
     assert m["router_architecture_id"] == "mlp-v1-default"
     assert m["model"]["input_mode"] == "both"
     assert m["model"]["architecture_name"] == "mlp-v1"

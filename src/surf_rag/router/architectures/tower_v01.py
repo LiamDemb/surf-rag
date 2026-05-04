@@ -13,7 +13,11 @@ from surf_rag.router.excluded_features import (
     normalize_excluded_features,
     validate_exclusions_for_input_mode,
 )
-from surf_rag.router.model import parse_router_input_mode
+from surf_rag.router.model import (
+    ROUTER_TASK_REGRESSION,
+    parse_router_input_mode,
+    parse_router_task_type,
+)
 
 _DEFAULT_EMBED_DIMS: tuple[int, int, int] = (128, 64, 32)
 
@@ -71,6 +75,7 @@ class RouterTowerV01Config:
     dropout: float = 0.0
     embed_dims: tuple[int, int, int] = _DEFAULT_EMBED_DIMS
     excluded_features: tuple[str, ...] = ()
+    task_type: str = ROUTER_TASK_REGRESSION
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -81,6 +86,7 @@ class RouterTowerV01Config:
             "dropout": float(self.dropout),
             "embed_dims": list(self.embed_dims),
             "excluded_features": list(self.excluded_features),
+            "task_type": str(self.task_type),
         }
 
     @classmethod
@@ -98,6 +104,9 @@ class RouterTowerV01Config:
             dropout=float(d.get("dropout", 0.0)),
             embed_dims=embed_dims,
             excluded_features=normalize_excluded_features(d.get("excluded_features")),
+            task_type=parse_router_task_type(
+                str(d.get("task_type", ROUTER_TASK_REGRESSION))
+            ),
         )
 
 
@@ -169,9 +178,25 @@ class RouterTowerV01(nn.Module):
 
         if mode == "both":
             fusion_in = 2 * fd if self.feat_layers is not None else fd
-            self.head = nn.Linear(fusion_in, 1)
+            self.head = nn.Linear(
+                fusion_in,
+                (
+                    2
+                    if parse_router_task_type(config.task_type)
+                    != ROUTER_TASK_REGRESSION
+                    else 1
+                ),
+            )
         else:
-            self.head = nn.Linear(fd, 1)
+            self.head = nn.Linear(
+                fd,
+                (
+                    2
+                    if parse_router_task_type(config.task_type)
+                    != ROUTER_TASK_REGRESSION
+                    else 1
+                ),
+            )
 
     def _select_features(self, feature_vector: torch.Tensor) -> torch.Tensor:
         if self._feat_gather_idx.numel() == 0:
@@ -205,14 +230,30 @@ class RouterTowerV01(nn.Module):
     def predict_weight(
         self, query_embedding: torch.Tensor, feature_vector: torch.Tensor
     ) -> torch.Tensor:
+        if parse_router_task_type(self.config.task_type) != ROUTER_TASK_REGRESSION:
+            raise ValueError(
+                "predict_weight requires regression task_type, got "
+                f"{self.config.task_type!r}"
+            )
         logits = self(query_embedding, feature_vector).squeeze(-1)
         return torch.sigmoid(logits)
+
+    def predict_class_logits(
+        self, query_embedding: torch.Tensor, feature_vector: torch.Tensor
+    ) -> torch.Tensor:
+        if parse_router_task_type(self.config.task_type) == ROUTER_TASK_REGRESSION:
+            raise ValueError(
+                "predict_class_logits requires classification task_type, got "
+                f"{self.config.task_type!r}"
+            )
+        return self(query_embedding, feature_vector)
 
 
 def build_model_config(
     embedding_dim: int,
     feature_dim: int,
     input_mode: str,
+    task_type: str,
     kwargs: dict[str, Any],
 ) -> RouterTowerV01Config:
     k = validate_kwargs(kwargs)
@@ -234,6 +275,7 @@ def build_model_config(
         dropout=float(k["dropout"]),
         embed_dims=tuple(int(x) for x in k["embed_dims"]),
         excluded_features=tuple(k["excluded_features"]),
+        task_type=parse_router_task_type(task_type or ROUTER_TASK_REGRESSION),
     )
 
 

@@ -154,3 +154,49 @@ def test_materialize_router_labels_prefers_oracle_objective_value(
     assert n == 1
     rec = json.loads(out.read_text(encoding="utf-8").strip())
     assert rec["oracle_curve"] == pytest.approx([0.2, 0.7])
+
+
+def test_materialize_router_labels_binary_tie_break_dense_on_equal(
+    tmp_path: Path,
+) -> None:
+    rows = [
+        {
+            "question_id": "q1",
+            "dataset_source": "nq",
+            "weight_grid": [0.0, 0.5, 1.0],
+            "scores": [
+                {"dense_weight": 0.0, "oracle_objective_value": 0.9},
+                {"dense_weight": 0.5, "oracle_objective_value": 0.9},
+                {"dense_weight": 1.0, "oracle_objective_value": 0.9},
+            ],
+        }
+    ]
+    out = tmp_path / "labels" / "router_labels.jsonl"
+    n = materialize_router_labels(rows, output_path=out)
+    assert n == 1
+    rec = json.loads(out.read_text(encoding="utf-8").strip())
+    assert rec["oracle_binary_class"] == "dense"
+    assert rec["oracle_binary_class_id"] == 1
+
+
+def test_materialize_router_labels_binary_prefers_dense_over_graph(
+    tmp_path: Path,
+) -> None:
+    rows = [
+        {
+            "question_id": "q1",
+            "dataset_source": "nq",
+            "weight_grid": [0.0, 0.5, 1.0],
+            "scores": [
+                {"dense_weight": 0.0, "oracle_objective_value": 0.8},
+                {"dense_weight": 0.5, "oracle_objective_value": 0.3},
+                {"dense_weight": 1.0, "oracle_objective_value": 0.8},
+            ],
+        }
+    ]
+    out = tmp_path / "labels" / "router_labels.jsonl"
+    n = materialize_router_labels(rows, output_path=out)
+    assert n == 1
+    rec = json.loads(out.read_text(encoding="utf-8").strip())
+    assert rec["oracle_binary_class"] == "dense"
+    assert rec["oracle_binary_class_id"] == 1

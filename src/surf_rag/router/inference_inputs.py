@@ -16,10 +16,15 @@ from surf_rag.evaluation.router_dataset_artifacts import (
     read_router_dataset_manifest,
 )
 from surf_rag.evaluation.router_model_artifacts import make_router_model_paths_for_cli
+from surf_rag.evaluation.router_model_artifacts import (
+    ROUTER_TASK_REGRESSION,
+    parse_router_task_type,
+)
 from surf_rag.router.feature_normalization import FeatureNormalizerV1, transform_row
 from surf_rag.router.inference import (
     LoadedRouter,
     load_router_checkpoint,
+    predict_class_id_batch,
     predict_batch,
 )
 from surf_rag.router.model import parse_router_input_mode
@@ -78,10 +83,12 @@ def load_router_inference_context(
     router_base: Optional[Path] = None,
     retrieval_asset_dir: Optional[Path] = None,
     device: str = "cpu",
+    router_task_type: str = ROUTER_TASK_REGRESSION,
 ) -> RouterInferenceContext:
     """Load checkpoint, train z-score stats, and corpus-linked feature context."""
     rb = router_base if router_base is not None else default_router_base()
     mode = parse_router_input_mode(input_mode)
+    task_type = parse_router_task_type(router_task_type)
     ds_paths = RouterDatasetPaths(run_root=build_router_dataset_root(rb, router_id))
     stats_path = ds_paths.feature_stats
     if not stats_path.is_file():
@@ -125,23 +132,56 @@ def load_router_inference_context(
                 f"{candidates}"
             )
 
-    mp = make_router_model_paths_for_cli(
-        router_id,
-        router_base=rb,
-        input_mode=mode,
-        router_architecture_id=resolved_architecture_id,
-    )
-    if not mp.checkpoint.is_file() and resolved_architecture_id is not None:
-        raise FileNotFoundError(f"Missing router checkpoint: {mp.checkpoint}")
-    if not mp.checkpoint.is_file():
-        # Backward compatibility: legacy single-model location
-        mp = make_router_model_paths_for_cli(
+    candidate_paths = []
+    if resolved_architecture_id is not None:
+        candidate_paths.append(
+            make_router_model_paths_for_cli(
+                router_id,
+                router_base=rb,
+                input_mode=mode,
+                router_architecture_id=resolved_architecture_id,
+                router_task_type=task_type,
+            )
+        )
+        # Back-compat: architecture-scoped path without task segment
+        candidate_paths.append(
+            make_router_model_paths_for_cli(
+                router_id,
+                router_base=rb,
+                input_mode=mode,
+                router_architecture_id=resolved_architecture_id,
+            )
+        )
+    # Backward compatibility: legacy model locations
+    candidate_paths.append(
+        make_router_model_paths_for_cli(
             router_id, router_base=rb, input_mode=mode, router_architecture_id=None
         )
-    if not mp.checkpoint.is_file():
-        raise FileNotFoundError(f"Missing router checkpoint: {mp.checkpoint}")
+    )
+    candidate_paths.append(
+        make_router_model_paths_for_cli(
+            router_id,
+            router_base=rb,
+            input_mode="both",
+            router_architecture_id=None,
+        )
+    )
+
+    selected_mp = None
+    for mp in candidate_paths:
+        if mp.checkpoint.is_file():
+            selected_mp = mp
+            break
+    if selected_mp is None:
+        raise FileNotFoundError(
+            "Missing router checkpoint. Tried: "
+            + ", ".join(str(p.checkpoint) for p in candidate_paths)
+        )
     router = load_router_checkpoint(
-        mp.checkpoint, device=device, manifest_path=mp.manifest
+        selected_mp.checkpoint,
+        device=device,
+        manifest_path=selected_mp.manifest,
+        router_task_type=task_type,
     )
     return RouterInferenceContext(
         router=router,
@@ -212,3 +252,12 @@ def predict_router_weight(
     """Predicted dense weight(s) for one query."""
     qe, qf = compute_query_tensors_for_router(query, ictx)
     return predict_batch(ictx.router, qe, qf)
+
+
+def predict_router_class_id(
+    query: str,
+    ictx: RouterInferenceContext,
+) -> np.ndarray:
+    """Predicted class id(s) for one query."""
+    qe, qf = compute_query_tensors_for_router(query, ictx)
+    return predict_class_id_batch(ictx.router, qe, qf)

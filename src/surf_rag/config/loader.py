@@ -345,8 +345,21 @@ def config_to_resolved_dict(cfg: PipelineConfig, rp: ResolvedPaths) -> dict[str,
 
 def validate_e2e_config(cfg: PipelineConfig) -> None:
     pol = (cfg.e2e.policy or "").strip().lower().replace("_", "-")
-    if pol in ("learned-soft", "learned-hard", "learned-hybrid", "oracle-upper-bound"):
+    if pol in ("learned-soft", "hard-routing", "hybrid", "oracle-upper-bound"):
         if not str(cfg.paths.router_id).strip():
             raise ValueError(
-                "e2e policy learned-* and oracle-upper-bound require paths.router_id"
+                "e2e learned/hybrid policies and oracle-upper-bound require paths.router_id"
             )
+    if pol == "learned-soft" and cfg.e2e.router_task_type != "regression":
+        raise ValueError(
+            "e2e policy learned-soft requires e2e.router_task_type=regression"
+        )
+    if (
+        pol in ("hard-routing", "hybrid")
+        and cfg.e2e.router_task_type != "classification"
+    ):
+        raise ValueError(
+            f"e2e policy {pol} requires e2e.router_task_type=classification"
+        )
+    if pol == "hybrid" and not str(cfg.e2e.router_fallback_regressor_id or "").strip():
+        raise ValueError("e2e policy hybrid requires e2e.router_fallback_regressor_id")

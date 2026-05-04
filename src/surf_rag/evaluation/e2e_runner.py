@@ -79,6 +79,7 @@ from surf_rag.router.inference_inputs import (
     compute_query_tensors_for_router,
     load_router_inference_context,
 )
+from surf_rag.router.model import ROUTER_TASK_REGRESSION, parse_router_task_type
 from surf_rag.router.policies import RoutingPolicyName
 from surf_rag.strategies.factory import build_dense_retriever, build_graph_retriever
 
@@ -578,6 +579,10 @@ def e2e_prepare_and_submit(
     dry_run: bool = False,
     router_device: str = "cpu",
     router_input_mode: str = "both",
+    router_task_type: str = ROUTER_TASK_REGRESSION,
+    router_confidence_threshold: float = 0.7,
+    router_fallback_regressor_id: Optional[str] = None,
+    router_fallback_architecture_id: Optional[str] = None,
     router_inference_batch_size: int = 32,
     latency_warmup_questions: int = 0,
     dev_sync: bool = False,
@@ -594,18 +599,36 @@ def e2e_prepare_and_submit(
         if isinstance(routing_policy, RoutingPolicyName)
         else parse_routing_policy(routing_policy)
     )
+    task_type = parse_router_task_type(router_task_type)
     pipeline_name = e2e_pipeline_manifest_name(policy)
 
     if policy in (
         RoutingPolicyName.LEARNED_SOFT.value,
-        RoutingPolicyName.LEARNED_HARD.value,
-        RoutingPolicyName.LEARNED_HYBRID.value,
+        RoutingPolicyName.HARD_ROUTING.value,
+        RoutingPolicyName.HYBRID.value,
         ORACLE_UPPER_BOUND_POLICY,
+    ) and (not router_id or not str(router_id).strip()):
+        raise ValueError(
+            "router_id is required for learned routing policies and oracle-upper-bound"
+        )
+    if policy == RoutingPolicyName.LEARNED_SOFT.value and task_type != "regression":
+        raise ValueError("Policy 'learned-soft' requires router_task_type=regression.")
+    if (
+        policy
+        in (
+            RoutingPolicyName.HARD_ROUTING.value,
+            RoutingPolicyName.HYBRID.value,
+        )
+        and task_type != "classification"
     ):
-        if not router_id or not str(router_id).strip():
-            raise ValueError(
-                "router_id is required for learned routing policies and oracle-upper-bound"
-            )
+        raise ValueError(f"Policy {policy!r} requires router_task_type=classification.")
+    if policy == RoutingPolicyName.HYBRID.value and (
+        not router_fallback_regressor_id
+        or not str(router_fallback_regressor_id).strip()
+    ):
+        raise ValueError(
+            "Policy 'hybrid' requires router_fallback_regressor_id for low-confidence fallback."
+        )
     if policy == ORACLE_UPPER_BOUND_POLICY and str(split).strip().lower() != "test":
         raise ValueError("oracle-upper-bound is test-only; use --split test")
 
@@ -665,15 +688,15 @@ def e2e_prepare_and_submit(
         RoutingPolicyName.DENSE_ONLY.value,
         RoutingPolicyName.EQUAL_50_50.value,
         RoutingPolicyName.LEARNED_SOFT.value,
-        RoutingPolicyName.LEARNED_HARD.value,
-        RoutingPolicyName.LEARNED_HYBRID.value,
+        RoutingPolicyName.HARD_ROUTING.value,
+        RoutingPolicyName.HYBRID.value,
     )
     need_graph = policy in (
         RoutingPolicyName.GRAPH_ONLY.value,
         RoutingPolicyName.EQUAL_50_50.value,
         RoutingPolicyName.LEARNED_SOFT.value,
-        RoutingPolicyName.LEARNED_HARD.value,
-        RoutingPolicyName.LEARNED_HYBRID.value,
+        RoutingPolicyName.HARD_ROUTING.value,
+        RoutingPolicyName.HYBRID.value,
     )
 
     if need_dense:
@@ -694,12 +717,13 @@ def e2e_prepare_and_submit(
         graph_retriever = _UnusedRetriever("Graph")
 
     loaded_router = None
+    fallback_router = None
     router_ctx = None
     rb = router_base if router_base is not None else default_router_base()
     if policy in (
         RoutingPolicyName.LEARNED_SOFT.value,
-        RoutingPolicyName.LEARNED_HARD.value,
-        RoutingPolicyName.LEARNED_HYBRID.value,
+        RoutingPolicyName.HARD_ROUTING.value,
+        RoutingPolicyName.HYBRID.value,
     ):
         t_router = time.perf_counter()
         router_ctx = load_router_inference_context(
@@ -709,9 +733,25 @@ def e2e_prepare_and_submit(
             router_base=rb,
             retrieval_asset_dir=asset_dir,
             device=router_device,
+            router_task_type=task_type,
         )
         startup_components["router_init_ms"] = (time.perf_counter() - t_router) * 1000.0
         loaded_router = router_ctx.router
+        if policy == RoutingPolicyName.HYBRID.value:
+            t_router_fb = time.perf_counter()
+            fb_ctx = load_router_inference_context(
+                str(router_fallback_regressor_id),
+                router_architecture_id=router_fallback_architecture_id,
+                input_mode=router_input_mode,
+                router_base=rb,
+                retrieval_asset_dir=asset_dir,
+                device=router_device,
+                router_task_type=ROUTER_TASK_REGRESSION,
+            )
+            startup_components["router_fallback_init_ms"] = (
+                time.perf_counter() - t_router_fb
+            ) * 1000.0
+            fallback_router = fb_ctx.router
 
     startup_total_ms = (time.perf_counter() - startup_t0) * 1000.0
 
@@ -720,6 +760,8 @@ def e2e_prepare_and_submit(
         graph_retriever,
         fusion_keep_k=fusion_keep_k,
         router=loaded_router,
+        fallback_router=fallback_router,
+        router_confidence_threshold=float(router_confidence_threshold),
     )
     resolved_cross_encoder_device = cross_encoder_device
     if (
@@ -772,6 +814,7 @@ def e2e_prepare_and_submit(
                 "router_id": router_id,
                 "router_architecture_id": router_architecture_id,
                 "router_input_mode": router_input_mode,
+                "router_task_type": task_type,
                 "router_inference_batch_size": router_inference_batch_size,
                 "latency_protocol": {
                     "version": LATENCY_PROTOCOL_VERSION,

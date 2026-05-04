@@ -26,6 +26,7 @@ from surf_rag.evaluation.router_model_artifacts import (
     write_predictions_jsonl,
 )
 from surf_rag.router.model import parse_router_input_mode
+from surf_rag.router.model import ROUTER_TASK_REGRESSION, parse_router_task_type
 from surf_rag.router.training import (
     RouterTrainConfig,
     export_split_predictions,
@@ -72,6 +73,11 @@ def parse_args() -> argparse.Namespace:
         "--input-mode",
         default=None,
         help="both | query-features | embedding (default: ROUTER_INPUT_MODE or both)",
+    )
+    p.add_argument(
+        "--router-task-type",
+        default=None,
+        help="regression | classification (default: config/env or regression)",
     )
     p.add_argument(
         "--router-loss",
@@ -150,6 +156,9 @@ def main() -> int:
         router_base=args.router_base,
         input_mode=input_mode,
         router_architecture_id=args.router_architecture_id,
+        router_task_type=parse_router_task_type(
+            str(args.router_task_type or ROUTER_TASK_REGRESSION)
+        ),
     )
     out_paths.ensure_dirs()
 
@@ -209,6 +218,9 @@ def main() -> int:
     )
 
     excluded_features = tuple(getattr(args, "excluded_features", ()) or ())
+    task_type = parse_router_task_type(
+        str(args.router_task_type or os.getenv("ROUTER_TASK_TYPE", "regression"))
+    )
     cfg = RouterTrainConfig(
         parquet_path=parquet_path,
         router_id=args.router_id,
@@ -228,6 +240,7 @@ def main() -> int:
         midpoint_balance_masking=midpoint_balance_masking,
         midpoint_balance_epsilon=midpoint_balance_epsilon,
         excluded_features=excluded_features,
+        task_type=task_type,
     )
 
     result = train_router(cfg)
@@ -252,6 +265,7 @@ def main() -> int:
             "architecture": architecture,
             "architecture_kwargs": merged_kw,
             "input_mode": input_mode,
+            "task_type": task_type,
             "loss": result.loss_requested,
             "loss_kwargs": dict(result.loss_kwargs),
             "loss_effective": result.loss_effective,
@@ -280,6 +294,7 @@ def main() -> int:
         router_id=args.router_id,
         router_architecture_id=args.router_architecture_id,
         input_mode=input_mode,
+        task_type=task_type,
         architecture_name=architecture,
         architecture_kwargs=merged_kw,
         dataset_manifest_path=str(ds_paths.manifest.resolve()),
@@ -310,9 +325,19 @@ def main() -> int:
         source_files={
             "router_dataset": str(parquet_path.resolve()),
         },
+        target_spec={
+            "name": (
+                "oracle_curve"
+                if task_type == ROUTER_TASK_REGRESSION
+                else "oracle_binary_class_id"
+            )
+        },
+        class_to_weight_map={"graph": 0.0, "dense": 1.0},
     )
     for split in ("train", "dev", "test"):
-        rows = export_split_predictions(result.model, df, split, cfg.device, wg)
+        rows = export_split_predictions(
+            result.model, df, split, cfg.device, wg, task_type=task_type
+        )
         if rows:
             write_predictions_jsonl(out_paths.predictions(split), rows)
 

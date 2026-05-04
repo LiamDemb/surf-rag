@@ -106,8 +106,12 @@ class RouterTrainSection:
     midpoint_balance_epsilon: float = 1e-6
     loss: str = "regret"
     loss_kwargs: dict[str, Any] = field(default_factory=dict)
+    task_type: str = "regression"
     input_modes: list[str] = field(
         default_factory=lambda: ["both", "query-features", "embedding"]
+    )
+    task_types: list[str] = field(
+        default_factory=lambda: ["regression", "classification"]
     )
 
 
@@ -161,8 +165,8 @@ class E2ESection:
             "graph-only",
             "50-50",
             "learned-soft",
-            "learned-hard",
-            "learned-hybrid",
+            "hard-routing",
+            "hybrid",
             "oracle-upper-bound",
         ]
     )
@@ -173,6 +177,10 @@ class E2ESection:
     cross_encoder_model: str | None = None
     router_device: str = "cpu"
     router_input_mode: str = "both"
+    router_task_type: str = "regression"
+    router_confidence_threshold: float = 0.7
+    router_fallback_regressor_id: str | None = None
+    router_fallback_architecture_id: str | None = None
     router_inference_batch_size: int = 32
     latency_warmup_questions: int = 0
     limit: int | None = None

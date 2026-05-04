@@ -166,14 +166,21 @@ def _router_and_counting_pipeline() -> (
     return pl, d, g
 
 
-@patch("surf_rag.router.inference.predict_batch", return_value=np.asarray([0.25]))
-def test_learned_hybrid_graph_only_branch(_mock_pb: object) -> None:
+@patch(
+    "surf_rag.router.inference.predict_class_probs_batch",
+    return_value=np.asarray([[0.9, 0.1]]),
+)
+@patch("surf_rag.router.inference.predict_class_id_batch", return_value=np.asarray([0]))
+def test_hybrid_high_confidence_graph_only_branch(
+    _mock_cid: object, _mock_prob: object
+) -> None:
     pl, d, g = _router_and_counting_pipeline()
+    pl.router_confidence_threshold = 0.7
     emb = np.ones(4, dtype=np.float32)
     feat = np.zeros(2, dtype=np.float32)
     pl.run(
         "q",
-        RoutingPolicyName.LEARNED_HYBRID,
+        RoutingPolicyName.HYBRID,
         query_embedding=emb,
         feature_vector=feat,
     )
@@ -181,13 +188,22 @@ def test_learned_hybrid_graph_only_branch(_mock_pb: object) -> None:
 
 
 @patch("surf_rag.router.inference.predict_batch", return_value=np.asarray([0.5]))
-def test_learned_hybrid_fusion_both_branches(_mock_pb: object) -> None:
+@patch(
+    "surf_rag.router.inference.predict_class_probs_batch",
+    return_value=np.asarray([[0.52, 0.48]]),
+)
+@patch("surf_rag.router.inference.predict_class_id_batch", return_value=np.asarray([0]))
+def test_hybrid_low_confidence_fallback_fusion(
+    _mock_cid: object, _mock_prob: object, _mock_pb: object
+) -> None:
     pl, d, g = _router_and_counting_pipeline()
+    pl.fallback_router = pl.router
+    pl.router_confidence_threshold = 0.7
     emb = np.ones(4, dtype=np.float32)
     feat = np.zeros(2, dtype=np.float32)
     out = pl.run(
         "q",
-        RoutingPolicyName.LEARNED_HYBRID,
+        RoutingPolicyName.HYBRID,
         query_embedding=emb,
         feature_vector=feat,
     )
@@ -196,14 +212,21 @@ def test_learned_hybrid_fusion_both_branches(_mock_pb: object) -> None:
     assert "graph_retrieval" in out.latency_ms
 
 
-@patch("surf_rag.router.inference.predict_batch", return_value=np.asarray([0.75]))
-def test_learned_hybrid_dense_only_branch(_mock_pb: object) -> None:
+@patch(
+    "surf_rag.router.inference.predict_class_probs_batch",
+    return_value=np.asarray([[0.1, 0.9]]),
+)
+@patch("surf_rag.router.inference.predict_class_id_batch", return_value=np.asarray([1]))
+def test_hybrid_high_confidence_dense_only_branch(
+    _mock_cid: object, _mock_prob: object
+) -> None:
     pl, d, g = _router_and_counting_pipeline()
+    pl.router_confidence_threshold = 0.7
     emb = np.ones(4, dtype=np.float32)
     feat = np.zeros(2, dtype=np.float32)
     pl.run(
         "q",
-        RoutingPolicyName.LEARNED_HYBRID,
+        RoutingPolicyName.HYBRID,
         query_embedding=emb,
         feature_vector=feat,
     )

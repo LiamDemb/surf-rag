@@ -28,6 +28,7 @@ from surf_rag.evaluation.router_model_artifacts import (
 )
 from surf_rag.router.inference import load_router_checkpoint
 from surf_rag.router.model import parse_router_input_mode
+from surf_rag.router.model import ROUTER_TASK_REGRESSION, parse_router_task_type
 from surf_rag.router.training import (
     _eval_splits,
     _weight_grid_from_df,
@@ -51,6 +52,11 @@ def parse_args() -> argparse.Namespace:
         "--input-mode",
         default=None,
         help="both | query-features | embedding (default: ROUTER_INPUT_MODE or both)",
+    )
+    p.add_argument(
+        "--router-task-type",
+        default=None,
+        help="regression | classification (default: config/env or regression)",
     )
     p.add_argument("--log-level", default="INFO")
     return p.parse_args()
@@ -82,6 +88,9 @@ def main() -> int:
         router_base=args.router_base,
         input_mode=input_mode,
         router_architecture_id=args.router_architecture_id,
+        router_task_type=parse_router_task_type(
+            str(args.router_task_type or ROUTER_TASK_REGRESSION)
+        ),
     )
     if not ds_paths.router_dataset_parquet.is_file():
         log.error("Missing %s", ds_paths.router_dataset_parquet)
@@ -91,15 +100,23 @@ def main() -> int:
         return 1
 
     device = args.device or os.getenv("ROUTER_TRAIN_DEVICE", "cpu")
+    task_type = parse_router_task_type(
+        str(args.router_task_type or os.getenv("ROUTER_TASK_TYPE", "regression"))
+    )
     loaded = load_router_checkpoint(
-        m_paths.checkpoint, device=device, manifest_path=m_paths.manifest
+        m_paths.checkpoint,
+        device=device,
+        manifest_path=m_paths.manifest,
+        router_task_type=task_type,
     )
     model = loaded.model
     mcfg = loaded.config
 
     df = pd.read_parquet(ds_paths.router_dataset_parquet)
     wg = _weight_grid_from_df(df)
-    metrics = _eval_splits(model, df, wg, device, mcfg, loaded.architecture)
+    metrics = _eval_splits(
+        model, df, wg, device, mcfg, loaded.architecture, task_type=task_type
+    )
 
     # Do not clobber training-only keys (loss, midpoint_balance_masking report,
     # best_epoch, …). ``router-eval`` is often run after ``router-train`` and must
@@ -118,13 +135,16 @@ def main() -> int:
         "router_architecture_id": args.router_architecture_id,
         "architecture": loaded.architecture,
         "input_mode": input_mode,
+        "task_type": task_type,
         "splits": metrics,
         "router_quality_filtering": dict(metrics.get("router_quality_filtering") or {}),
     }
     write_json(m_paths.metrics, {**existing, **payload})
 
     for split in ("train", "dev", "test"):
-        rows = export_split_predictions(model, df, split, device, wg)
+        rows = export_split_predictions(
+            model, df, split, device, wg, task_type=task_type
+        )
         if rows:
             write_predictions_jsonl(m_paths.predictions(split), rows)
     log.info("Wrote %s", m_paths.metrics)

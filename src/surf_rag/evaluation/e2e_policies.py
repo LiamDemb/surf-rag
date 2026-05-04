@@ -14,8 +14,8 @@ def parse_routing_policy(name: str) -> str:
         return ORACLE_UPPER_BOUND_POLICY
     aliases = {
         "learnedsoft": RoutingPolicyName.LEARNED_SOFT,
-        "learnedhard": RoutingPolicyName.LEARNED_HARD,
-        "learnedhybrid": RoutingPolicyName.LEARNED_HYBRID,
+        "hardrouting": RoutingPolicyName.HARD_ROUTING,
+        "hybridrouting": RoutingPolicyName.HYBRID,
         "5050": RoutingPolicyName.EQUAL_50_50,
         "50-50": RoutingPolicyName.EQUAL_50_50,
         "equal": RoutingPolicyName.EQUAL_50_50,
