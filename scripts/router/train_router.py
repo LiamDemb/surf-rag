@@ -27,7 +27,11 @@ from surf_rag.evaluation.router_model_artifacts import (
 )
 from surf_rag.router.embedding_config import parse_embedding_provider
 from surf_rag.router.embedding_lock import infer_embedding_provider_from_model
-from surf_rag.router.model import ROUTER_TASK_REGRESSION, parse_router_task_type
+from surf_rag.router.model import (
+    ROUTER_TASK_REGRESSION,
+    parse_router_input_mode,
+    parse_router_task_type,
+)
 from surf_rag.router.training import (
     RouterTrainConfig,
     export_split_predictions,

@@ -129,6 +129,7 @@ def test_mlp_v2_rejects_unknown_kwargs() -> None:
     with pytest.raises(ValueError, match="unknown architecture kwargs"):
         arch.validate_kwargs({"bogus": 1})
 
+
 def test_mlp_v2_rejects_excluded_features() -> None:
     arch = get_architecture("mlp-v2")
     with pytest.raises(ValueError, match="does not support excluded_features"):
