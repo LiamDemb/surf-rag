@@ -1,12 +1,16 @@
 .PHONY: help print-resolved-config print-paths print-oracle-config print-router-config \
 	install install-hooks setup-models lock test ingest fetch-wikipedia-articles build-corpus align-2wiki-support align-2wiki-support-full filter-benchmark pipeline \
 	oracle-prepare oracle-create-router-labels oracle-labels \
-	router-build-dataset router-pipeline \
+	router-build-dataset router-build-query-embedding-cache router-pipeline \
 	router-train router-eval router-train-ablations router-evaluate-ablations \
+	router-calibrate-threshold \
 	figures-render \
 	validate-oracle-config validate-router-config validate-router-train \
 	e2e-print-config e2e-prepare e2e-submit e2e-collect e2e-evaluate e2e-run \
 	e2e-run-all-policies e2e-collect-all-policies e2e-evaluate-all-policies e2e-smoke-test-v01 \
+	answerability-submit answerability-collect answerability-balance \
+	llm-judge-submit llm-judge-collect llm-judge-merge \
+	llm-judge-submit-all-policies llm-judge-collect-all-policies llm-judge-merge-all-policies \
 	gen-debug discrepancy-debug-e2e \
 	build-entity-matching-artifacts corpus-ie-run corpus-ie-retry corpus-finalize corpus-ie-retry-and-finalize
 
@@ -21,8 +25,9 @@ E2E_RUN_ID ?=
 E2E_POLICY ?=
 E2E_SPLIT ?=
 E2E_DEV_SYNC ?=
-E2E_POLICIES ?= dense-only graph-only 50-50 learned-soft learned-hybrid learned-hard oracle-upper-bound
+E2E_POLICIES ?= dense-only graph-only 50-50 learned-soft hard-routing hybrid oracle-upper-bound
 ROUTER_INPUT_MODES ?= both query-features embedding
+ROUTER_TASK_TYPE ?=
 ENTITY_MATCHING_FORCE ?=
 ALIGN_2WIKI_EXTRA ?=
 PIPELINE_RUN_ID ?=
@@ -52,7 +57,10 @@ help:
 	@echo "  make pipeline                — ingest → fetch → align → build-corpus"
 	@echo "  make oracle-labels            — oracle + router labels"
 	@echo "  make router-pipeline         — oracle-labels + router-build-dataset"
+	@echo "  make router-build-query-embedding-cache — benchmark query-embedding JSONL cache (oracle labels not required; runs validate-oracle-config)"
 	@echo "  make e2e-submit / e2e-collect / e2e-evaluate   (+ optional E2E_RUN_ID= E2E_POLICY=)"
+	@echo "  make answerability-submit / answerability-collect / answerability-balance (CONFIG=configs/audit/....yaml)"
+	@echo "  make llm-judge-submit / collect / merge (optional E2E_RUN_ID= E2E_POLICY=; else from CONFIG)"
 	@echo "  make gen-debug          (CONFIG=configs/gen-debug/….yaml)"
 	@echo ""
 	@echo "Full reference: docs/config-driven-workflows.md"
@@ -128,10 +136,14 @@ oracle-labels: oracle-prepare oracle-create-router-labels
 router-build-dataset: validate-router-config
 	$(PY) -m scripts.router.build_router_dataset --config "$(CONFIG)"
 
+router-build-query-embedding-cache: validate-oracle-config
+	$(PY) -m scripts.router.build_query_embedding_cache --config "$(CONFIG)"
+
 router-pipeline: oracle-labels router-build-dataset
 
 router-train: validate-router-train
-	$(PY) -m scripts.router.train_router --config "$(CONFIG)"
+	$(PY) -m scripts.router.train_router --config "$(CONFIG)" \
+		$(if $(ROUTER_TASK_TYPE),--router-task-type "$(ROUTER_TASK_TYPE)",)
 
 router-train-ablations: validate-router-train
 	@for m in $(ROUTER_INPUT_MODES); do \
@@ -139,8 +151,9 @@ router-train-ablations: validate-router-train
 		$(PY) -m scripts.router.train_router --config "$(CONFIG)" --input-mode "$$m" || exit 1; \
 	done
 
-router-eval: validate-router-train
-	$(PY) -m scripts.router.evaluate_router --config "$(CONFIG)"
+router-evaluate: validate-router-train
+	$(PY) -m scripts.router.evaluate_router --config "$(CONFIG)" \
+		$(if $(ROUTER_TASK_TYPE),--router-task-type "$(ROUTER_TASK_TYPE)",)
 
 # Regenerates figures in-place; pass FIGURES_EXTRA= to omit --force if you need overwrite protection.
 FIGURES_EXTRA ?= --force
@@ -153,23 +166,33 @@ router-evaluate-ablations: validate-router-train
 		$(PY) -m scripts.router.evaluate_router --config "$(CONFIG)" --input-mode "$$m" || exit 1; \
 	done
 
+router-calibrate-threshold:
+	$(PY) -m scripts.router.calibrate_confidence_threshold \
+		--router-id "$${ROUTER_ID:?set ROUTER_ID}" \
+		--regressor-router-id "$${REGRESSOR_ROUTER_ID:?set REGRESSOR_ROUTER_ID}" \
+		$(if $(ROUTER_ARCHITECTURE_ID),--classifier-architecture-id "$(ROUTER_ARCHITECTURE_ID)",) \
+		$(if $(REGRESSOR_ROUTER_ARCHITECTURE_ID),--regressor-architecture-id "$(REGRESSOR_ROUTER_ARCHITECTURE_ID)",)
+
 e2e-print-config:
 	$(PY) -m scripts.e2e_benchmark --config "$(CONFIG)" print-config \
 		$(if $(E2E_RUN_ID),--run-id "$(E2E_RUN_ID)",) \
 		$(if $(E2E_POLICY),--policy "$(E2E_POLICY)",) \
-		$(if $(E2E_SPLIT),--split "$(E2E_SPLIT)",)
+		$(if $(E2E_SPLIT),--split "$(E2E_SPLIT)",) \
+		$(if $(ROUTER_TASK_TYPE),--router-task-type "$(ROUTER_TASK_TYPE)",)
 
 e2e-prepare:
 	$(PY) -m scripts.e2e_benchmark --config "$(CONFIG)" prepare --dry-run \
 		$(if $(E2E_RUN_ID),--run-id "$(E2E_RUN_ID)",) \
 		$(if $(E2E_POLICY),--policy "$(E2E_POLICY)",) \
-		$(if $(E2E_SPLIT),--split "$(E2E_SPLIT)",)
+		$(if $(E2E_SPLIT),--split "$(E2E_SPLIT)",) \
+		$(if $(ROUTER_TASK_TYPE),--router-task-type "$(ROUTER_TASK_TYPE)",)
 
 e2e-submit:
 	$(PY) -m scripts.e2e_benchmark --config "$(CONFIG)" prepare \
 		$(if $(E2E_RUN_ID),--run-id "$(E2E_RUN_ID)",) \
 		$(if $(E2E_POLICY),--policy "$(E2E_POLICY)",) \
 		$(if $(E2E_SPLIT),--split "$(E2E_SPLIT)",) \
+		$(if $(ROUTER_TASK_TYPE),--router-task-type "$(ROUTER_TASK_TYPE)",) \
 		$(if $(E2E_DEV_SYNC),--dev-sync,)
 
 e2e-collect:
@@ -186,35 +209,71 @@ e2e-evaluate:
 
 e2e-run:
 	@echo "1) make e2e-submit   (or e2e-prepare for local dry-run)"
-	@echo "   All policies: make e2e-run-all-policies  (E2E_RUN_ID prefix; CONFIG=$(CONFIG))"
+	@echo "   All policies: make e2e-run-all-policies  (optional E2E_RUN_ID=…; else e2e.run_id from CONFIG)"
 	@echo "2) Wait for OpenAI batch(es) to complete."
 	@echo "3) make e2e-collect && make e2e-evaluate"
 
 e2e-run-all-policies:
 	@for pol in $(E2E_POLICIES); do \
-		base="$(E2E_RUN_ID)"; \
-		[ -n "$$base" ] || base=e2e; \
-		rid="$(E2E_RUN_ID)"; \
-		echo "=== E2E policy=$$pol run=$$rid ==="; \
-		$(MAKE) e2e-submit E2E_POLICY=$$pol E2E_RUN_ID="$$rid" CONFIG="$(CONFIG)" || exit 1; \
+		echo "=== E2E policy=$$pol$(if $(E2E_RUN_ID), run=$(E2E_RUN_ID),) ==="; \
+		$(MAKE) e2e-submit E2E_POLICY=$$pol CONFIG="$(CONFIG)" $(if $(E2E_RUN_ID),E2E_RUN_ID="$(E2E_RUN_ID)",) || exit 1; \
 	done
 
 e2e-collect-all-policies:
 	@for pol in $(E2E_POLICIES); do \
-		base="$(E2E_RUN_ID)"; \
-		[ -n "$$base" ] || base=e2e; \
-		rid="$(E2E_RUN_ID)"; \
-		echo "=== E2E collect policy=$$pol run=$$rid ==="; \
-		$(MAKE) e2e-collect E2E_POLICY=$$pol E2E_RUN_ID="$$rid" CONFIG="$(CONFIG)" || exit 1; \
+		echo "=== E2E collect policy=$$pol$(if $(E2E_RUN_ID), run=$(E2E_RUN_ID),) ==="; \
+		$(MAKE) e2e-collect E2E_POLICY=$$pol CONFIG="$(CONFIG)" $(if $(E2E_RUN_ID),E2E_RUN_ID="$(E2E_RUN_ID)",) || exit 1; \
 	done
 
 e2e-evaluate-all-policies:
 	@for pol in $(E2E_POLICIES); do \
-		base="$(E2E_RUN_ID)"; \
-		[ -n "$$base" ] || base=e2e; \
-		rid="$(E2E_RUN_ID)"; \
-		echo "=== E2E evaluate policy=$$pol run=$$rid ==="; \
-		$(MAKE) e2e-evaluate E2E_POLICY=$$pol E2E_RUN_ID="$$rid" CONFIG="$(CONFIG)" || exit 1; \
+		echo "=== E2E evaluate policy=$$pol$(if $(E2E_RUN_ID), run=$(E2E_RUN_ID),) ==="; \
+		$(MAKE) e2e-evaluate E2E_POLICY=$$pol CONFIG="$(CONFIG)" $(if $(E2E_RUN_ID),E2E_RUN_ID="$(E2E_RUN_ID)",) || exit 1; \
+	done
+
+answerability-submit:
+	$(PY) -m scripts.audit.benchmark_answerability --config "$(CONFIG)" submit
+
+answerability-collect:
+	$(PY) -m scripts.audit.benchmark_answerability --config "$(CONFIG)" collect
+
+answerability-balance:
+	$(PY) -m scripts.audit.benchmark_answerability --config "$(CONFIG)" balance
+
+llm-judge-submit:
+	$(PY) -m scripts.evaluation.llm_judge --config "$(CONFIG)" \
+		$(if $(E2E_RUN_ID),--run-id "$(E2E_RUN_ID)",) \
+		$(if $(E2E_POLICY),--policy "$(E2E_POLICY)",) \
+		submit
+
+llm-judge-collect:
+	$(PY) -m scripts.evaluation.llm_judge --config "$(CONFIG)" \
+		$(if $(E2E_RUN_ID),--run-id "$(E2E_RUN_ID)",) \
+		$(if $(E2E_POLICY),--policy "$(E2E_POLICY)",) \
+		collect
+
+llm-judge-merge:
+	$(PY) -m scripts.evaluation.llm_judge --config "$(CONFIG)" \
+		$(if $(E2E_RUN_ID),--run-id "$(E2E_RUN_ID)",) \
+		$(if $(E2E_POLICY),--policy "$(E2E_POLICY)",) \
+		merge
+
+llm-judge-submit-all-policies:
+	@for pol in $(E2E_POLICIES); do \
+		echo "=== llm-judge submit policy=$$pol$(if $(E2E_RUN_ID), run=$(E2E_RUN_ID),) ==="; \
+		$(MAKE) llm-judge-submit E2E_POLICY=$$pol CONFIG="$(CONFIG)" $(if $(E2E_RUN_ID),E2E_RUN_ID="$(E2E_RUN_ID)",) || exit 1; \
+	done
+
+llm-judge-collect-all-policies:
+	@for pol in $(E2E_POLICIES); do \
+		echo "=== llm-judge collect policy=$$pol$(if $(E2E_RUN_ID), run=$(E2E_RUN_ID),) ==="; \
+		$(MAKE) llm-judge-collect E2E_POLICY=$$pol CONFIG="$(CONFIG)" $(if $(E2E_RUN_ID),E2E_RUN_ID="$(E2E_RUN_ID)",) || exit 1; \
+	done
+
+llm-judge-merge-all-policies:
+	@for pol in $(E2E_POLICIES); do \
+		echo "=== llm-judge merge policy=$$pol$(if $(E2E_RUN_ID), run=$(E2E_RUN_ID),) ==="; \
+		$(MAKE) llm-judge-merge E2E_POLICY=$$pol CONFIG="$(CONFIG)" $(if $(E2E_RUN_ID),E2E_RUN_ID="$(E2E_RUN_ID)",) || exit 1; \
 	done
 
 # Smoke: one question, dense-only, dry-run; override E2E_RUN_ID or rely on a smoke-oriented CONFIG

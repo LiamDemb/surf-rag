@@ -9,7 +9,13 @@ from surf_rag.router.excluded_features import (
     normalize_excluded_features,
     validate_exclusions_for_input_mode,
 )
-from surf_rag.router.model import RouterMLP, RouterMLPConfig, parse_router_input_mode
+from surf_rag.router.model import (
+    ROUTER_TASK_REGRESSION,
+    RouterMLP,
+    RouterMLPConfig,
+    parse_router_input_mode,
+    parse_router_task_type,
+)
 
 
 def validate_kwargs(raw: dict[str, Any]) -> dict[str, Any]:
@@ -50,6 +56,7 @@ def build_model_config(
     embedding_dim: int,
     feature_dim: int,
     input_mode: str,
+    task_type: str,
     kwargs: dict[str, Any],
 ) -> RouterMLPConfig:
     k = validate_kwargs(kwargs)
@@ -72,6 +79,7 @@ def build_model_config(
         hidden_dim=int(k["hidden_dim"]),
         dropout=float(k["dropout"]),
         excluded_features=tuple(k["excluded_features"]),
+        task_type=parse_router_task_type(task_type or ROUTER_TASK_REGRESSION),
     )
 
 

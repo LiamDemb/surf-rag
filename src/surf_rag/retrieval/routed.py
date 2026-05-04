@@ -66,6 +66,8 @@ class RoutedFusionPipeline:
     graph_retriever: BranchRetriever
     fusion_keep_k: int = 25
     router: Optional["LoadedRouter"] = None
+    fallback_router: Optional["LoadedRouter"] = None
+    router_confidence_threshold: float = 0.7
 
     def run(
         self,
@@ -102,15 +104,22 @@ class RoutedFusionPipeline:
         **retriever_kwargs: Any,
     ) -> RoutedRunOutput:
         """Execute routing and return pre-truncation + generation retrieval."""
-        from surf_rag.router.inference import predict_batch
+        from surf_rag.router.inference import (
+            predict_batch,
+            predict_class_id_batch,
+            predict_class_probs_batch,
+        )
 
         t0 = time.perf_counter()
         pred_weight: Optional[float] = None
+        fallback_weight: Optional[float] = None
+        pred_class_id: Optional[int] = None
+        pred_class_probs: Optional[tuple[float, float]] = None
         routing_predict_ms = 0.0
         if policy in (
             RoutingPolicyName.LEARNED_SOFT,
-            RoutingPolicyName.LEARNED_HARD,
-            RoutingPolicyName.LEARNED_HYBRID,
+            RoutingPolicyName.HARD_ROUTING,
+            RoutingPolicyName.HYBRID,
         ):
             if self.router is None:
                 raise ValueError("learned policies require a loaded router")
@@ -119,11 +128,40 @@ class RoutedFusionPipeline:
                     "learned policies require query_embedding and feature_vector"
                 )
             p0 = time.perf_counter()
-            pred = predict_batch(self.router, query_embedding, feature_vector)
+            if policy in (RoutingPolicyName.HARD_ROUTING, RoutingPolicyName.HYBRID):
+                pred = predict_class_id_batch(
+                    self.router, query_embedding, feature_vector
+                )
+                pred_class_id = int(pred.reshape(-1)[0])
+                probs = predict_class_probs_batch(
+                    self.router, query_embedding, feature_vector
+                )
+                row = probs.reshape(-1, 2)[0]
+                pred_class_probs = (float(row[0]), float(row[1]))
+                if policy == RoutingPolicyName.HYBRID and max(pred_class_probs) < float(
+                    self.router_confidence_threshold
+                ):
+                    if self.fallback_router is None:
+                        raise ValueError(
+                            "hybrid policy requires fallback_router for low-confidence cases"
+                        )
+                    fb = predict_batch(
+                        self.fallback_router, query_embedding, feature_vector
+                    )
+                    fallback_weight = float(fb.reshape(-1)[0])
+            else:
+                pred = predict_batch(self.router, query_embedding, feature_vector)
+                pred_weight = float(pred.reshape(-1)[0])
             routing_predict_ms = (time.perf_counter() - p0) * 1000.0
-            pred_weight = float(pred.reshape(-1)[0])
 
-        decision = decide_routing(policy, predicted_weight=pred_weight)
+        decision = decide_routing(
+            policy,
+            predicted_weight=pred_weight,
+            predicted_class_id=pred_class_id,
+            predicted_class_probs=pred_class_probs,
+            confidence_threshold=self.router_confidence_threshold,
+            fallback_weight=fallback_weight,
+        )
         debug = decision_to_debug_info(decision)
 
         if not decision.run_graph:

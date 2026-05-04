@@ -6,6 +6,7 @@ from surf_rag.router.architectures.base import RouterArchitectureDefinition
 
 from . import logreg_v1 as _logreg_v1
 from . import mlp_v1 as _mlp_v1
+from . import mlp_v2 as _mlp_v2
 from . import polyreg_v1 as _polyreg_v1
 from . import tower_v01 as _tower_v01
 
@@ -16,6 +17,13 @@ _REGISTRY: dict[str, RouterArchitectureDefinition] = {
         build_model_config=_mlp_v1.build_model_config,
         config_from_json=_mlp_v1.config_from_json,
         build_model=_mlp_v1.build_model,
+    ),
+    "mlp-v2": RouterArchitectureDefinition(
+        name="mlp-v2",
+        validate_kwargs=_mlp_v2.validate_kwargs,
+        build_model_config=_mlp_v2.build_model_config,
+        config_from_json=_mlp_v2.config_from_json,
+        build_model=_mlp_v2.build_model,
     ),
     "logreg-v1": RouterArchitectureDefinition(
         name="logreg-v1",

@@ -55,7 +55,7 @@ def _add_common(p: argparse.ArgumentParser) -> None:
         "--policy",
         default=None,
         help=(
-            "Routing policy: learned-soft, learned-hard, learned-hybrid, 50-50, "
+            "Routing policy: learned-soft, hard-routing, hybrid, 50-50, "
             "dense-only, graph-only, oracle-upper-bound"
         ),
     )
@@ -127,10 +127,24 @@ def cmd_prepare(args: argparse.Namespace) -> int:
         dry_run=args.dry_run,
         router_device=args.router_device,
         router_input_mode=args.router_input_mode,
+        router_task_type=args.router_task_type,
+        router_confidence_threshold=args.router_confidence_threshold,
+        router_fallback_regressor_id=args.router_fallback_regressor_id,
+        router_fallback_architecture_id=args.router_fallback_architecture_id,
         router_inference_batch_size=args.router_inference_batch_size,
         latency_warmup_questions=args.latency_warmup_questions,
         dev_sync=args.dev_sync,
         pipeline_config_for_artifact=cfg,
+        router_embedding_provider=getattr(args, "router_embedding_provider", None),
+        router_embedding_cache_mode=getattr(args, "router_embedding_cache_mode", None),
+        router_embedding_cache_id=getattr(args, "router_embedding_cache_id", None),
+        router_embedding_cache_path=getattr(args, "router_embedding_cache_path", None),
+        router_embedding_cache_writeback=getattr(
+            args, "router_embedding_cache_writeback", None
+        ),
+        router_openai_embedding_dimensions=getattr(
+            args, "router_openai_embedding_dimensions", None
+        ),
     )
 
 
@@ -192,6 +206,9 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
         run_paths=paths,
         benchmark_path=args.benchmark_path.resolve(),
         split_question_ids_path=split_path,
+        apply_answerability_audit=bool(
+            getattr(args, "apply_answerability_audit", False)
+        ),
     )
     out = paths.run_root / "metrics.json"
     out.write_text(
@@ -279,6 +296,10 @@ def main() -> int:
     )
     p_prep.add_argument("--router-device", default="cpu")
     p_prep.add_argument("--router-input-mode", default="both")
+    p_prep.add_argument("--router-task-type", default="regression")
+    p_prep.add_argument("--router-confidence-threshold", type=float, default=0.7)
+    p_prep.add_argument("--router-fallback-regressor-id", default=None)
+    p_prep.add_argument("--router-fallback-architecture-id", default=None)
     p_prep.add_argument(
         "--router-inference-batch-size",
         type=int,
@@ -290,6 +311,38 @@ def main() -> int:
         type=int,
         default=0,
         help="Warmup retrieval questions excluded from latency reporting.",
+    )
+    p_prep.add_argument(
+        "--router-embedding-provider",
+        default=None,
+        help="Override dataset embedding provider for router query tensors (st|openai).",
+    )
+    p_prep.add_argument(
+        "--router-embedding-cache-mode",
+        default=None,
+        help="off | prefer | required | auto (default from config; auto follows dataset).",
+    )
+    p_prep.add_argument(
+        "--router-embedding-cache-id",
+        default=None,
+        help="Benchmark embedding cache id (under benchmark bundle query_embeddings/...).",
+    )
+    p_prep.add_argument(
+        "--router-embedding-cache-path",
+        default=None,
+        help="Explicit cache directory root (overrides default layout).",
+    )
+    p_prep.add_argument(
+        "--router-embedding-cache-writeback",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="When using prefer mode, append cache misses (default: true).",
+    )
+    p_prep.add_argument(
+        "--router-openai-embedding-dimensions",
+        type=int,
+        default=None,
+        help="OpenAI embedding output dimensions override for router query tensors.",
     )
     p_prep.set_defaults(func=cmd_prepare)
 
@@ -311,7 +364,18 @@ def main() -> int:
         default=None,
         help="Override router dataset split JSON (train/dev/test ids)",
     )
-    p_ev.set_defaults(func=cmd_evaluate)
+    audit_grp = p_ev.add_mutually_exclusive_group()
+    audit_grp.add_argument(
+        "--apply-answerability-audit",
+        action="store_true",
+        help="Use canonical mask/manifest under benchmark bundle (see audit/answerability/).",
+    )
+    audit_grp.add_argument(
+        "--no-apply-answerability-audit",
+        action="store_true",
+        help="Disable answerability masking even if set in YAML.",
+    )
+    p_ev.set_defaults(func=cmd_evaluate, apply_answerability_audit=False)
 
     p_pc = sub.add_parser("print-config", help="Print resolved paths for one run")
     _add_common(p_pc)

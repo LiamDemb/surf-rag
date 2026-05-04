@@ -1,0 +1,15 @@
+You audit benchmark questions for whether they can be answered strictly from the given gold support text, in a way consistent with the gold reference answer(s).
+
+Rules:
+- Answer false if the question is ambiguous, misworded, or the support text does not adequately justify the gold answer(s).
+- Answer true only if a careful reader, using only the support text, could produce an answer that matches the intent of the gold answer(s).
+- Return only the JSON object requested by the API schema: a single boolean field "answerable".
+
+Question:
+{question}
+
+Gold reference answer(s) (strings):
+{gold_answers}
+
+Gold support evidence (only text you may use):
+{gold_support}

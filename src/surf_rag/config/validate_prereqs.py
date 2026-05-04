@@ -34,6 +34,45 @@ def validate_router_dataset(config_path: Path) -> int:
         return _fail(
             f"Missing oracle labels {labels} — run make oracle-labels (CONFIG=...)"
         )
+    from surf_rag.evaluation.query_embedding_cache_artifacts import (
+        make_query_embedding_cache_paths,
+    )
+    from surf_rag.router.embedding_config import (
+        EMBEDDING_CACHE_REQUIRED,
+        EMBEDDING_PROVIDER_OPENAI,
+        parse_embedding_provider,
+        resolve_embedding_cache_mode_for_dataset,
+        resolve_embedding_model_for_provider,
+    )
+
+    rd = cfg.router.dataset
+    prov = parse_embedding_provider(str(rd.embedding_provider))
+    mode = resolve_embedding_cache_mode_for_dataset(
+        str(rd.embedding_provider), str(rd.embedding_cache_mode)
+    )
+    if prov == EMBEDDING_PROVIDER_OPENAI and mode == EMBEDDING_CACHE_REQUIRED:
+        cid = (rd.embedding_cache_id or "").strip()
+        if not cid:
+            return _fail(
+                "router.dataset uses OpenAI with required embedding cache but "
+                "embedding_cache_id is empty. Set embedding_cache_id in CONFIG."
+            )
+        model = resolve_embedding_model_for_provider(
+            str(rd.embedding_provider), str(rd.embedding_model)
+        )
+        cpaths = make_query_embedding_cache_paths(
+            r.benchmark_path,
+            provider=str(prov),
+            model=model,
+            cache_id=cid,
+            openai_dimensions=rd.openai_embedding_dimensions,
+        )
+        if not cpaths.embeddings_jsonl.is_file():
+            return _fail(
+                "OpenAI + required cache: expected embedding cache JSONL at "
+                f"{cpaths.embeddings_jsonl} — run "
+                f"make router-build-query-embedding-cache CONFIG={config_path}"
+            )
     return 0
 
 

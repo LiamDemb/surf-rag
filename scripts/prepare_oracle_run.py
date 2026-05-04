@@ -99,6 +99,17 @@ def parse_args() -> argparse.Namespace:
         help="Chunks retained after fusion re-scoring. Default 25.",
     )
     parser.add_argument(
+        "--oracle-metric",
+        default=None,
+        help="Oracle objective metric for selecting best weight bin (stateful_ndcg|ndcg|hit|recall).",
+    )
+    parser.add_argument(
+        "--oracle-metric-k",
+        type=int,
+        default=None,
+        help="Cutoff k for oracle objective metric selection.",
+    )
+    parser.add_argument(
         "--limit",
         type=int,
         default=None,
@@ -162,8 +173,12 @@ def main() -> int:
         branch_top_k=args.branch_top_k,
         fusion_keep_k=args.fusion_keep_k,
         weight_grid=DEFAULT_DENSE_WEIGHT_GRID,
-        oracle_metric="stateful_ndcg",
-        oracle_metric_k=PRIMARY_NDCG_K,
+        oracle_metric=str(
+            args.oracle_metric if args.oracle_metric is not None else "stateful_ndcg"
+        ),
+        oracle_metric_k=int(
+            args.oracle_metric_k if args.oracle_metric_k is not None else PRIMARY_NDCG_K
+        ),
         diagnostic_metric_ks=DEFAULT_NDCG_KS,
     )
 

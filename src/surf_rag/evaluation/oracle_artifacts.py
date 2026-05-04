@@ -334,6 +334,7 @@ class WeightBinScore:
     dense_weight: float
     graph_weight: float
     ndcg_primary: float
+    oracle_objective_value: float = 0.0
     diagnostic_ndcg: Dict[int, float] = field(default_factory=dict)
     diagnostic_hit: Dict[int, float] = field(default_factory=dict)
     diagnostic_recall: Dict[int, float] = field(default_factory=dict)
@@ -344,6 +345,7 @@ class WeightBinScore:
             "dense_weight": float(self.dense_weight),
             "graph_weight": float(self.graph_weight),
             "ndcg_primary": float(self.ndcg_primary),
+            "oracle_objective_value": float(self.oracle_objective_value),
             "diagnostic_ndcg": {
                 str(k): float(v) for k, v in self.diagnostic_ndcg.items()
             },

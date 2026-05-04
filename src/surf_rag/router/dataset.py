@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Mapping, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
+from pathlib import Path
+
 from surf_rag.evaluation.oracle_artifacts import DEFAULT_DENSE_WEIGHT_GRID
 from surf_rag.router.feature_normalization import (
     fit_normalizer_v1,
@@ -21,6 +23,7 @@ from surf_rag.router.query_features import (
     QueryFeatureContext,
     FEATURE_SET_VERSION,
 )
+from surf_rag.router.dataset_embedding_resolve import resolve_aligned_query_embeddings
 from surf_rag.router.splits import (
     assign_splits_stratified,
     split_summary,
@@ -34,11 +37,18 @@ def build_router_dataframe(
     *,
     feature_context: QueryFeatureContext,
     embedding_model: str,
+    embedding_provider: str = "sentence-transformers",
+    embedding_cache_mode: str = "off",
+    benchmark_path: Path | None = None,
+    embedding_cache_id: str = "default",
+    embedding_cache_path: str | None = None,
+    embedding_cache_writeback: bool = True,
     train_ratio: float,
     dev_ratio: float,
     test_ratio: float,
     split_seed: int,
     router_id: str,
+    openai_embedding_dimensions: int | None = None,
 ) -> Tuple[pd.DataFrame, FeatureNormalizerV1, Dict[str, Any]]:
     """Assemble a single dataframe with raw + norm features, embeddings, and splits.
     Skips benchmark rows with no matching label row.
@@ -94,8 +104,24 @@ def build_router_dataframe(
         raise ValueError("Train split is empty; adjust ratios or data")
     normalizer = fit_normalizer_v1(train_feats)
 
-    questions = [str(b.get("question", "")) for b in aligned_bench]
-    emb = _embed_with_fallback(questions, embedding_model)
+    bp = benchmark_path
+    if embedding_cache_mode != "off" and bp is None:
+        raise ValueError(
+            "benchmark_path is required when embedding_cache_mode is not 'off'"
+        )
+    emb, emb_meta = resolve_aligned_query_embeddings(
+        aligned_bench,
+        embedding_provider=embedding_provider,
+        embedding_model=embedding_model,
+        cache_mode=embedding_cache_mode,
+        benchmark_path=(bp if bp is not None else Path(".")),
+        cache_id=str(embedding_cache_id or "default"),
+        cache_path_override=embedding_cache_path,
+        writeback=bool(embedding_cache_writeback),
+        batch_size=32,
+        openai_embedding_dimensions=openai_embedding_dimensions,
+    )
+    sum_meta["embedding_resolution"] = emb_meta
 
     weight_grid = list(
         map(float, aligned_labels[0].get("weight_grid") or DEFAULT_DENSE_WEIGHT_GRID)
@@ -117,6 +143,10 @@ def build_router_dataframe(
                 f"Oracle curve length {len(curve)} != weight grid {len(weight_grid)}"
             )
         best_score = float(lab.get("oracle_best_score", 0.0))
+        class_name = str(lab.get("oracle_binary_class", "dense")).strip().lower()
+        if class_name not in {"dense", "graph"}:
+            class_name = "dense"
+        class_id = int(lab.get("oracle_binary_class_id", 1))
         rec: Dict[str, Any] = {
             "question_id": qid,
             "question": b.get("question", ""),
@@ -129,10 +159,21 @@ def build_router_dataframe(
             "oracle_best_score": best_score,
             "oracle_curve_std": std,
             "is_valid_for_router_training": bool(best_score > 0.0),
+            "oracle_binary_class": class_name,
+            "oracle_binary_class_id": class_id,
+            "oracle_binary_best_score": float(lab.get("oracle_binary_best_score", 0.0)),
+            "oracle_binary_scores": dict(lab.get("oracle_binary_scores") or {}),
+            "oracle_binary_class_to_weight": dict(
+                lab.get("oracle_binary_class_to_weight") or {"dense": 1.0, "graph": 0.0}
+            ),
+            "is_valid_for_router_training_classification": bool(
+                lab.get("is_valid_for_router_training_classification", best_score > 0.0)
+            ),
             "router_id": router_id,
             "oracle_run_id": router_id,
             "feature_set_version": FEATURE_SET_VERSION,
             "embedding_model": embedding_model,
+            "embedding_provider": embedding_provider,
             "embedding_dim": int(emb.shape[1]) if len(emb.shape) > 1 else 0,
         }
         rec.update(prefixed)
@@ -144,9 +185,3 @@ def build_router_dataframe(
 
     df = pd.DataFrame.from_records(records)
     return df, normalizer, sum_meta
-
-
-def _embed_with_fallback(questions: List[str], model_name: str) -> np.ndarray:
-    from surf_rag.router.query_embeddings import embed_queries
-
-    return embed_queries(questions, model_name=model_name)

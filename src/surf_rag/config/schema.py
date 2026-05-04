@@ -80,11 +80,26 @@ class EntityMatchingSection:
 class OracleSection:
     branch_top_k: int = 20
     fusion_keep_k: int = 20
+    oracle_metric: str = "stateful_ndcg"
+    oracle_metric_k: int = 10
 
 
 @dataclass
 class RouterDatasetSection:
     embedding_model: str = "all-MiniLM-L6-v2"
+    """sentence-transformers model id or OpenAI embedding model (e.g. text-embedding-3-large)."""
+    embedding_provider: str = "sentence-transformers"
+    """sentence-transformers | openai"""
+    embedding_cache_mode: str = "auto"
+    """auto | off | prefer | required | build — auto: required for openai, off for ST."""
+    embedding_cache_id: str = "default"
+    """Subdirectory segment under query_embeddings/<provider>/<model>/."""
+    embedding_cache_path: str | None = None
+    """Optional absolute or relative path override for cache root (advanced)."""
+    embedding_cache_writeback: bool = True
+    """In prefer/build modes, append newly computed rows to the benchmark cache."""
+    openai_embedding_dimensions: int | None = None
+    """When set, passed to OpenAI embeddings API and used in OpenAI query cache layout."""
     train_ratio: float = 0.6
     dev_ratio: float = 0.2
     test_ratio: float = 0.2
@@ -104,8 +119,12 @@ class RouterTrainSection:
     midpoint_balance_epsilon: float = 1e-6
     loss: str = "regret"
     loss_kwargs: dict[str, Any] = field(default_factory=dict)
+    task_type: str = "regression"
     input_modes: list[str] = field(
         default_factory=lambda: ["both", "query-features", "embedding"]
+    )
+    task_types: list[str] = field(
+        default_factory=lambda: ["regression", "classification"]
     )
 
 
@@ -159,8 +178,8 @@ class E2ESection:
             "graph-only",
             "50-50",
             "learned-soft",
-            "learned-hard",
-            "learned-hybrid",
+            "hard-routing",
+            "hybrid",
             "oracle-upper-bound",
         ]
     )
@@ -171,13 +190,27 @@ class E2ESection:
     cross_encoder_model: str | None = None
     router_device: str = "cpu"
     router_input_mode: str = "both"
+    router_task_type: str = "regression"
+    router_confidence_threshold: float = 0.7
+    router_fallback_regressor_id: str | None = None
+    router_fallback_architecture_id: str | None = None
     router_inference_batch_size: int = 32
+    router_embedding_provider: str | None = None
+    """Override embedding provider for router inputs; None uses router dataset manifest."""
+    router_embedding_cache_mode: str = "auto"
+    """auto | off | prefer | required — auto follows router dataset (openai -> required)."""
+    router_embedding_cache_id: str | None = None
+    """None means use router.dataset.embedding_cache_id."""
+    router_embedding_cache_path: str | None = None
+    router_embedding_cache_writeback: bool = True
+    router_openai_embedding_dimensions: int | None = None
     latency_warmup_questions: int = 0
     limit: int | None = None
     only_question_ids: list[str] = field(default_factory=list)
     dry_run: bool = False
     include_graph_provenance: bool = False
     completion_window: str | None = None
+    apply_answerability_audit: bool = False
 
 
 @dataclass

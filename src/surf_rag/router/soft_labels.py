@@ -9,6 +9,25 @@ from typing import Any, Dict, Iterable, List, Sequence
 
 import numpy as np
 
+BINARY_CLASS_TO_WEIGHT: dict[str, float] = {
+    "graph": 0.0,
+    "dense": 1.0,
+}
+BINARY_CLASS_TO_ID: dict[str, int] = {
+    "graph": 0,
+    "dense": 1,
+}
+BINARY_TIE_BREAK_ORDER: tuple[str, ...] = ("dense", "graph")
+
+
+def _normalize_oracle_metric(metric: str) -> str:
+    m = str(metric or "").strip().lower()
+    if m in {"stateful_ndcg", "ndcg"}:
+        return "ndcg"
+    if m in {"hit", "recall"}:
+        return m
+    raise ValueError(f"Unsupported oracle metric: {metric!r}")
+
 
 def _as_finite_floats(values: Sequence[float]) -> List[float]:
     out: List[float] = []
@@ -20,12 +39,75 @@ def _as_finite_floats(values: Sequence[float]) -> List[float]:
     return out
 
 
-def _extract_oracle_curve(row: Dict[str, Any]) -> List[float]:
-    return [float(s.get("ndcg_primary", 0.0)) for s in (row.get("scores") or [])]
+def _extract_oracle_curve(
+    row: Dict[str, Any], *, oracle_metric: str, oracle_metric_k: int
+) -> List[float]:
+    metric = _normalize_oracle_metric(oracle_metric)
+    scores = row.get("scores") or []
+    out: List[float] = []
+    k_key = str(int(oracle_metric_k))
+    for s in scores:
+        if "oracle_objective_value" in s:
+            out.append(float(s.get("oracle_objective_value", 0.0)))
+            continue
+        if metric == "ndcg":
+            out.append(float(s.get("ndcg_primary", 0.0)))
+            continue
+        by_metric = s.get(f"diagnostic_{metric}") or {}
+        out.append(float(by_metric.get(k_key, 0.0)))
+    return out
 
 
 def _extract_weight_grid(row: Dict[str, Any]) -> List[float]:
     return [float(w) for w in (row.get("weight_grid") or [])]
+
+
+def _extract_objective_value_by_dense_weight(
+    row: Dict[str, Any], *, oracle_metric: str, oracle_metric_k: int
+) -> Dict[float, float]:
+    scores = row.get("scores") or []
+    metric = _normalize_oracle_metric(oracle_metric)
+    k_key = str(int(oracle_metric_k))
+    out: Dict[float, float] = {}
+    for s in scores:
+        try:
+            dense_weight = float(s.get("dense_weight"))
+        except (TypeError, ValueError):
+            continue
+        if "oracle_objective_value" in s:
+            out[dense_weight] = float(s.get("oracle_objective_value", 0.0))
+            continue
+        if metric == "ndcg":
+            out[dense_weight] = float(s.get("ndcg_primary", 0.0))
+            continue
+        by_metric = s.get(f"diagnostic_{metric}") or {}
+        out[dense_weight] = float(by_metric.get(k_key, 0.0))
+    return out
+
+
+def _resolve_binary_class_target(
+    row: Dict[str, Any], *, oracle_metric: str, oracle_metric_k: int
+) -> Dict[str, Any]:
+    by_weight = _extract_objective_value_by_dense_weight(
+        row, oracle_metric=oracle_metric, oracle_metric_k=oracle_metric_k
+    )
+    branch_scores = {
+        cls: float(by_weight.get(weight, 0.0))
+        for cls, weight in BINARY_CLASS_TO_WEIGHT.items()
+    }
+    dense_score = float(branch_scores["dense"])
+    graph_score = float(branch_scores["graph"])
+    best_value = max(dense_score, graph_score)
+    best_class = "dense" if dense_score >= graph_score else "graph"
+    return {
+        "oracle_binary_class": best_class,
+        "oracle_binary_class_id": int(BINARY_CLASS_TO_ID[best_class]),
+        "oracle_binary_best_score": float(best_value),
+        "oracle_binary_scores": {k: float(v) for k, v in branch_scores.items()},
+        "oracle_binary_tie_break_order": list(BINARY_TIE_BREAK_ORDER),
+        "oracle_binary_class_to_weight": dict(BINARY_CLASS_TO_WEIGHT),
+        "is_valid_for_router_training_classification": bool(best_value > 0.0),
+    }
 
 
 def oracle_label_from_curve(
@@ -60,6 +142,9 @@ def oracle_label_from_curve(
 def materialize_router_labels(
     oracle_score_rows: Iterable[Dict[str, Any]],
     output_path: Path,
+    *,
+    oracle_metric: str = "stateful_ndcg",
+    oracle_metric_k: int = 10,
 ) -> int:
     """Materialize deterministic router labels from oracle score rows."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -70,11 +155,19 @@ def materialize_router_labels(
             if not qid:
                 continue
             label = oracle_label_from_curve(
-                oracle_curve=_extract_oracle_curve(row),
+                oracle_curve=_extract_oracle_curve(
+                    row,
+                    oracle_metric=oracle_metric,
+                    oracle_metric_k=oracle_metric_k,
+                ),
                 weight_grid=_extract_weight_grid(row),
                 dataset_source=str(row.get("dataset_source", "")),
             )
+            class_target = _resolve_binary_class_target(
+                row, oracle_metric=oracle_metric, oracle_metric_k=oracle_metric_k
+            )
             rec = {"question_id": qid, **label}
+            rec.update(class_target)
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
             count += 1
     return count

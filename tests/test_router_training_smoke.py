@@ -175,7 +175,13 @@ def test_train_smoke_query_features(tmp_path: Path) -> None:
     )
     assert out_model.checkpoint.is_file()
     assert (
-        tmp_path / "t2" / "models" / "mlp-v1-qf" / "query-features" / "model.pt"
+        tmp_path
+        / "t2"
+        / "models"
+        / "mlp-v1-qf"
+        / "regression"
+        / "query-features"
+        / "model.pt"
     ).is_file()
 
 

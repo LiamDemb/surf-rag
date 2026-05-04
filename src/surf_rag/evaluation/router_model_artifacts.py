@@ -1,4 +1,4 @@
-"""Trained router bundle paths under ``data/router/<router_id>/models/<arch>/<mode>/``."""
+"""Trained router bundle paths under ``data/router/<router_id>/models/<arch>/<task>/<mode>/``."""
 
 from __future__ import annotations
 
@@ -15,17 +15,39 @@ from surf_rag.router.model import (
     parse_router_input_mode,
 )
 
+ROUTER_TASK_REGRESSION = "regression"
+ROUTER_TASK_CLASSIFICATION = "classification"
+
+
+def parse_router_task_type(value: str | None) -> str:
+    s = str(value or ROUTER_TASK_REGRESSION).strip().lower().replace("_", "-")
+    aliases = {
+        "regression": ROUTER_TASK_REGRESSION,
+        "reg": ROUTER_TASK_REGRESSION,
+        "classification": ROUTER_TASK_CLASSIFICATION,
+        "class": ROUTER_TASK_CLASSIFICATION,
+        "cls": ROUTER_TASK_CLASSIFICATION,
+    }
+    if s not in aliases:
+        raise ValueError(
+            "router_task_type must be one of "
+            f"{sorted(set(aliases.values()))}, got {value!r}"
+        )
+    return aliases[s]
+
 
 def build_router_model_root(
     router_base: Path,
     router_id: str,
     input_mode: str = "both",
     router_architecture_id: str | None = None,
+    router_task_type: str = ROUTER_TASK_REGRESSION,
 ) -> Path:
     mode = parse_router_input_mode(input_mode)
+    task = parse_router_task_type(router_task_type)
     if router_architecture_id and str(router_architecture_id).strip():
         rid = str(router_architecture_id).strip()
-        return router_base / router_id / "models" / rid / mode
+        return router_base / router_id / "models" / rid / task / mode
     return router_base / router_id / "model" / mode
 
 
@@ -71,6 +93,7 @@ def make_router_model_paths_for_cli(
     router_base: Optional[Path] = None,
     input_mode: str = "both",
     router_architecture_id: str | None = None,
+    router_task_type: str = ROUTER_TASK_REGRESSION,
 ) -> RouterModelPaths:
     base = router_base if router_base is not None else default_router_base()
     return RouterModelPaths(
@@ -79,6 +102,7 @@ def make_router_model_paths_for_cli(
             router_id,
             input_mode,
             router_architecture_id=router_architecture_id,
+            router_task_type=router_task_type,
         )
     )
 
@@ -121,12 +145,19 @@ def write_router_model_manifest(
     training_config: Dict[str, Any],
     feature_set_version: str,
     embedding_model: str,
+    embedding_provider: str | None = None,
+    embedding_dim: int | None = None,
+    embedding_source: str | None = None,
     weight_grid: List[float],
     source_files: Optional[Dict[str, str]] = None,
+    task_type: str = ROUTER_TASK_REGRESSION,
+    target_spec: Optional[Dict[str, Any]] = None,
+    class_to_weight_map: Optional[Dict[str, float]] = None,
 ) -> None:
     """Write ``manifest.json`` for a trained router (schema v1)."""
     paths.ensure_dirs()
     mode = parse_router_input_mode(input_mode)
+    task = parse_router_task_type(task_type)
     data: Dict[str, Any] = {
         "schema_version": 1,
         "created_at": utc_now_iso(),
@@ -137,10 +168,11 @@ def write_router_model_manifest(
             else None
         ),
         "model_id": (
-            f"{router_id}:{str(router_architecture_id).strip()}:{mode}"
+            f"{router_id}:{str(router_architecture_id).strip()}:{task}:{mode}"
             if router_architecture_id and str(router_architecture_id).strip()
-            else f"{router_id}:{mode}"
+            else f"{router_id}:{task}:{mode}"
         ),
+        "task_type": task,
         "source": {
             "router_dataset_manifest": dataset_manifest_path,
         },
@@ -149,6 +181,17 @@ def write_router_model_manifest(
             "active_inputs": active_inputs_for_mode(mode),
             "feature_set_version": feature_set_version,
             "embedding_model": embedding_model,
+            "embedding_provider": (
+                str(embedding_provider).strip()
+                if embedding_provider and str(embedding_provider).strip()
+                else None
+            ),
+            "embedding_dim": int(embedding_dim) if embedding_dim is not None else None,
+            "embedding_source": (
+                str(embedding_source).strip()
+                if embedding_source and str(embedding_source).strip()
+                else None
+            ),
             "weight_grid": [float(x) for x in weight_grid],
             "architecture_name": architecture_name,
             "architecture_kwargs": dict(architecture_kwargs or {}),
@@ -162,6 +205,11 @@ def write_router_model_manifest(
             "reports_dir": paths.reports_dir.name,
         },
     }
+    data["target_spec"] = dict(target_spec or {"name": "oracle_curve"})
+    if task == ROUTER_TASK_CLASSIFICATION:
+        data["class_to_weight_map"] = dict(
+            class_to_weight_map or {"graph": 0.0, "dense": 1.0}
+        )
     if source_files:
         data["source"]["files"] = source_files
     paths.manifest.write_text(

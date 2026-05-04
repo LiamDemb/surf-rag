@@ -20,7 +20,17 @@ from surf_rag.evaluation.artifact_paths import (
     default_router_base,
     e2e_policy_run_dir,
 )
+from surf_rag.evaluation.answerability_layout import (
+    answerability_manifest_path,
+    answerability_mask_path,
+    answerability_verdicts_path,
+)
+from surf_rag.evaluation.answerability_types import (
+    iter_verdicts_jsonl,
+    load_mask_json_path,
+)
 from surf_rag.evaluation.e2e_aggregation import (
+    PerQuestionEval,
     aggregate_e2e_report,
     aggregate_per_question,
     load_benchmark_index,
@@ -40,7 +50,12 @@ from surf_rag.evaluation.oracle_artifacts import (
     read_jsonl,
     read_retrieval_cache,
 )
-from surf_rag.evaluation.manifest import update_manifest_artifacts, write_manifest
+from surf_rag.evaluation.manifest import (
+    update_manifest_artifacts,
+    write_manifest,
+    read_manifest,
+    utc_now_iso,
+)
 from surf_rag.evaluation.retrieval_jsonl import (
     dict_to_retrieval_result,
     write_retrieval_line,
@@ -69,11 +84,98 @@ from surf_rag.router.inference_inputs import (
     compute_query_tensors_for_router,
     load_router_inference_context,
 )
+from surf_rag.router.model import ROUTER_TASK_REGRESSION, parse_router_task_type
 from surf_rag.router.policies import RoutingPolicyName
 from surf_rag.strategies.factory import build_dense_retriever, build_graph_retriever
 
 logger = logging.getLogger(__name__)
 _BASE_METRIC_KS: tuple[int, ...] = (5, 10, 20)
+
+
+def _audit_row_meta(
+    qid: str,
+    mask_by_qid: dict[str, str],
+    verdict_by_qid: dict[str, dict],
+) -> dict[str, Any]:
+    reason = mask_by_qid.get(qid)
+    vr = verdict_by_qid.get(qid) or {}
+    av = vr.get("answerable")
+    if av is True or av is False:
+        answerable = bool(av)
+    elif reason == "audit":
+        answerable = False
+    elif reason == "balance":
+        answerable = True
+    else:
+        answerable = True
+    in_primary = reason is None
+    exclude_reason: str | None = reason if reason else None
+    if in_primary:
+        exclude_reason = None
+    return {
+        "answerable": answerable,
+        "in_primary_eval": in_primary,
+        "exclude_reason": exclude_reason,
+    }
+
+
+def _build_overlap_breakdown(
+    *,
+    report_generation: dict[str, Any],
+    report_pure: dict[str, Any] | None,
+    report_ce: dict[str, Any] | None,
+    pure_available: bool,
+    ce_enabled: bool,
+    ce_ks: List[int],
+    reranker_kind: str,
+    rerank_top_k: int,
+    overlap_keys: tuple[str, ...],
+) -> dict[str, Any]:
+    overlap_breakdown: dict[str, Any] = {}
+    for key in overlap_keys:
+        gen_block = report_generation.get(key, {})
+        out_block: dict[str, Any] = {
+            "count": int(gen_block.get("count", 0)),
+            "latency_ms": dict(gen_block.get("latency_ms") or {}),
+            "qa": dict(gen_block.get("qa") or {}),
+        }
+        if report_pure is not None:
+            pure_block = dict((report_pure.get(key) or {}).get("retrieval_at_k") or {})
+            out_block["retrieval_before_ce"] = {
+                "status": "ok",
+                "reported_ks": list(_BASE_METRIC_KS),
+                "retrieval_at_k": pure_block,
+            }
+        else:
+            out_block["retrieval_before_ce"] = {
+                "status": "unavailable",
+                "reason": "missing retrieval/retrieval_results_pretrunc.jsonl",
+                "reported_ks": list(_BASE_METRIC_KS),
+            }
+        if report_ce is not None:
+            ce_block = dict((report_ce.get(key) or {}).get("retrieval_at_k") or {})
+            out_block["retrieval_after_ce"] = {
+                "status": "ok",
+                "reported_ks": list(ce_ks),
+                "retrieval_at_k": ce_block,
+            }
+        elif ce_enabled and not ce_ks:
+            out_block["retrieval_after_ce"] = {
+                "status": "unavailable",
+                "reason": (
+                    f"rerank_top_k={rerank_top_k} is below smallest metric k="
+                    f"{min(_BASE_METRIC_KS)}"
+                ),
+                "reported_ks": [],
+            }
+        else:
+            out_block["retrieval_after_ce"] = {
+                "status": "not_applicable",
+                "reason": f"reranker={reranker_kind or 'none'}",
+                "reported_ks": [],
+            }
+        overlap_breakdown[str(key)] = out_block
+    return overlap_breakdown
 
 
 class _UnusedRetriever:
@@ -227,6 +329,7 @@ def evaluate_e2e_run(
     run_paths: RunArtifactPaths,
     benchmark_path: Path,
     split_question_ids_path: Optional[Path] = None,
+    apply_answerability_audit: bool = False,
 ) -> dict[str, Any]:
     """Load retrieval + answers under ``run_paths``; return overlap report + per-row list."""
     from surf_rag.evaluation.retrieval_metrics import DEFAULT_NDCG_KS
@@ -235,6 +338,26 @@ def evaluate_e2e_run(
     split_sets: RouterSplitSets | None = RouterSplitSets.from_path_or_default(
         split_question_ids_path
     )
+
+    mask_by_qid: dict[str, str] = {}
+    verdict_by_qid: dict[str, dict] = {}
+    if apply_answerability_audit:
+        mp = answerability_mask_path(benchmark_path)
+        mf = answerability_manifest_path(benchmark_path)
+        vp = answerability_verdicts_path(benchmark_path)
+        if not mp.is_file() or not mf.is_file():
+            raise FileNotFoundError(
+                "Answerability audit enabled but mask.json or manifest.json is missing "
+                f"under the benchmark bundle. Expected:\n  {mp}\n  {mf}\n"
+                "Run: python -m scripts.audit.benchmark_answerability collect && balance "
+                "(after submit) with an audit CONFIG."
+            )
+        mask_by_qid = load_mask_json_path(mp)
+        if vp.is_file():
+            for row in iter_verdicts_jsonl(vp):
+                qid = str(row.get("question_id", "") or "").strip()
+                if qid:
+                    verdict_by_qid[qid] = row
 
     retrieval_path = run_paths.retrieval_results_jsonl()
     retrieval_pretrunc_path = run_paths.retrieval_results_pretrunc_jsonl()
@@ -384,6 +507,9 @@ def evaluate_e2e_run(
                 "reported_ks": [],
             }
 
+        if apply_answerability_audit:
+            q_row["audit"] = _audit_row_meta(qid, mask_by_qid, verdict_by_qid)
+
         rows_out.append(q_row)
 
     report_generation = aggregate_e2e_report(
@@ -399,55 +525,23 @@ def evaluate_e2e_run(
         if (ce_enabled and ce_ks)
         else None
     )
-    overlap_breakdown: dict[str, Any] = {}
-    for key in overlap_keys:
-        gen_block = report_generation.get(key, {})
-        out_block: dict[str, Any] = {
-            "count": int(gen_block.get("count", 0)),
-            "latency_ms": dict(gen_block.get("latency_ms") or {}),
-            "qa": dict(gen_block.get("qa") or {}),
-        }
-        if report_pure is not None:
-            pure_block = dict((report_pure.get(key) or {}).get("retrieval_at_k") or {})
-            out_block["retrieval_before_ce"] = {
-                "status": "ok",
-                "reported_ks": list(_BASE_METRIC_KS),
-                "retrieval_at_k": pure_block,
-            }
-        else:
-            out_block["retrieval_before_ce"] = {
-                "status": "unavailable",
-                "reason": "missing retrieval/retrieval_results_pretrunc.jsonl",
-                "reported_ks": list(_BASE_METRIC_KS),
-            }
-        if report_ce is not None:
-            ce_block = dict((report_ce.get(key) or {}).get("retrieval_at_k") or {})
-            out_block["retrieval_after_ce"] = {
-                "status": "ok",
-                "reported_ks": list(ce_ks),
-                "retrieval_at_k": ce_block,
-            }
-        elif ce_enabled and not ce_ks:
-            out_block["retrieval_after_ce"] = {
-                "status": "unavailable",
-                "reason": (
-                    f"rerank_top_k={rerank_top_k} is below smallest metric k="
-                    f"{min(_BASE_METRIC_KS)}"
-                ),
-                "reported_ks": [],
-            }
-        else:
-            out_block["retrieval_after_ce"] = {
-                "status": "not_applicable",
-                "reason": f"reranker={reranker_kind or 'none'}",
-                "reported_ks": [],
-            }
-        overlap_breakdown[str(key)] = out_block
+    overlap_breakdown = _build_overlap_breakdown(
+        report_generation=report_generation,
+        report_pure=report_pure,
+        report_ce=report_ce,
+        pure_available=pure_available,
+        ce_enabled=ce_enabled,
+        ce_ks=ce_ks,
+        reranker_kind=reranker_kind,
+        rerank_top_k=rerank_top_k,
+        overlap_keys=overlap_keys,
+    )
 
     startup_latency: dict[str, Any] = {}
     if isinstance(e2e_meta, dict):
         startup_latency = dict(e2e_meta.get("startup_latency_ms") or {})
-    return {
+
+    out: dict[str, Any] = {
         "run_root": str(run_paths.run_root.resolve()),
         "split_question_ids": (
             str(split_question_ids_path) if split_question_ids_path else None
@@ -461,6 +555,8 @@ def evaluate_e2e_run(
         "overlap_breakdown": overlap_breakdown,
         "per_question": rows_out,
     }
+
+    return out
 
 
 def e2e_prepare_and_submit(
@@ -488,11 +584,21 @@ def e2e_prepare_and_submit(
     dry_run: bool = False,
     router_device: str = "cpu",
     router_input_mode: str = "both",
+    router_task_type: str = ROUTER_TASK_REGRESSION,
+    router_confidence_threshold: float = 0.7,
+    router_fallback_regressor_id: Optional[str] = None,
+    router_fallback_architecture_id: Optional[str] = None,
     router_inference_batch_size: int = 32,
     latency_warmup_questions: int = 0,
     dev_sync: bool = False,
     pipeline_config_for_artifact: Optional["PipelineConfig"] = None,
     run_paths_override: Optional[RunArtifactPaths] = None,
+    router_embedding_provider: Optional[str] = None,
+    router_embedding_cache_mode: Optional[str] = None,
+    router_embedding_cache_id: Optional[str] = None,
+    router_embedding_cache_path: Optional[str] = None,
+    router_embedding_cache_writeback: Optional[bool] = None,
+    router_openai_embedding_dimensions: Optional[int] = None,
 ) -> int:
     """Routed fusion retrieval + optional rerank + OpenAI batch submission.
 
@@ -504,18 +610,36 @@ def e2e_prepare_and_submit(
         if isinstance(routing_policy, RoutingPolicyName)
         else parse_routing_policy(routing_policy)
     )
+    task_type = parse_router_task_type(router_task_type)
     pipeline_name = e2e_pipeline_manifest_name(policy)
 
     if policy in (
         RoutingPolicyName.LEARNED_SOFT.value,
-        RoutingPolicyName.LEARNED_HARD.value,
-        RoutingPolicyName.LEARNED_HYBRID.value,
+        RoutingPolicyName.HARD_ROUTING.value,
+        RoutingPolicyName.HYBRID.value,
         ORACLE_UPPER_BOUND_POLICY,
+    ) and (not router_id or not str(router_id).strip()):
+        raise ValueError(
+            "router_id is required for learned routing policies and oracle-upper-bound"
+        )
+    if policy == RoutingPolicyName.LEARNED_SOFT.value and task_type != "regression":
+        raise ValueError("Policy 'learned-soft' requires router_task_type=regression.")
+    if (
+        policy
+        in (
+            RoutingPolicyName.HARD_ROUTING.value,
+            RoutingPolicyName.HYBRID.value,
+        )
+        and task_type != "classification"
     ):
-        if not router_id or not str(router_id).strip():
-            raise ValueError(
-                "router_id is required for learned routing policies and oracle-upper-bound"
-            )
+        raise ValueError(f"Policy {policy!r} requires router_task_type=classification.")
+    if policy == RoutingPolicyName.HYBRID.value and (
+        not router_fallback_regressor_id
+        or not str(router_fallback_regressor_id).strip()
+    ):
+        raise ValueError(
+            "Policy 'hybrid' requires router_fallback_regressor_id for low-confidence fallback."
+        )
     if policy == ORACLE_UPPER_BOUND_POLICY and str(split).strip().lower() != "test":
         raise ValueError("oracle-upper-bound is test-only; use --split test")
 
@@ -575,15 +699,15 @@ def e2e_prepare_and_submit(
         RoutingPolicyName.DENSE_ONLY.value,
         RoutingPolicyName.EQUAL_50_50.value,
         RoutingPolicyName.LEARNED_SOFT.value,
-        RoutingPolicyName.LEARNED_HARD.value,
-        RoutingPolicyName.LEARNED_HYBRID.value,
+        RoutingPolicyName.HARD_ROUTING.value,
+        RoutingPolicyName.HYBRID.value,
     )
     need_graph = policy in (
         RoutingPolicyName.GRAPH_ONLY.value,
         RoutingPolicyName.EQUAL_50_50.value,
         RoutingPolicyName.LEARNED_SOFT.value,
-        RoutingPolicyName.LEARNED_HARD.value,
-        RoutingPolicyName.LEARNED_HYBRID.value,
+        RoutingPolicyName.HARD_ROUTING.value,
+        RoutingPolicyName.HYBRID.value,
     )
 
     if need_dense:
@@ -604,12 +728,13 @@ def e2e_prepare_and_submit(
         graph_retriever = _UnusedRetriever("Graph")
 
     loaded_router = None
+    fallback_router = None
     router_ctx = None
     rb = router_base if router_base is not None else default_router_base()
     if policy in (
         RoutingPolicyName.LEARNED_SOFT.value,
-        RoutingPolicyName.LEARNED_HARD.value,
-        RoutingPolicyName.LEARNED_HYBRID.value,
+        RoutingPolicyName.HARD_ROUTING.value,
+        RoutingPolicyName.HYBRID.value,
     ):
         t_router = time.perf_counter()
         router_ctx = load_router_inference_context(
@@ -619,9 +744,39 @@ def e2e_prepare_and_submit(
             router_base=rb,
             retrieval_asset_dir=asset_dir,
             device=router_device,
+            router_task_type=task_type,
+            router_embedding_provider=router_embedding_provider,
+            router_embedding_cache_mode=router_embedding_cache_mode,
+            router_embedding_cache_id=router_embedding_cache_id,
+            router_embedding_cache_path=router_embedding_cache_path,
+            router_embedding_cache_writeback=router_embedding_cache_writeback,
+            e2e_benchmark_path=benchmark_path.resolve(),
+            router_openai_embedding_dimensions=router_openai_embedding_dimensions,
         )
         startup_components["router_init_ms"] = (time.perf_counter() - t_router) * 1000.0
         loaded_router = router_ctx.router
+        if policy == RoutingPolicyName.HYBRID.value:
+            t_router_fb = time.perf_counter()
+            fb_ctx = load_router_inference_context(
+                str(router_fallback_regressor_id),
+                router_architecture_id=router_fallback_architecture_id,
+                input_mode=router_input_mode,
+                router_base=rb,
+                retrieval_asset_dir=asset_dir,
+                device=router_device,
+                router_task_type=ROUTER_TASK_REGRESSION,
+                router_embedding_provider=router_embedding_provider,
+                router_embedding_cache_mode=router_embedding_cache_mode,
+                router_embedding_cache_id=router_embedding_cache_id,
+                router_embedding_cache_path=router_embedding_cache_path,
+                router_embedding_cache_writeback=router_embedding_cache_writeback,
+                e2e_benchmark_path=benchmark_path.resolve(),
+                router_openai_embedding_dimensions=router_openai_embedding_dimensions,
+            )
+            startup_components["router_fallback_init_ms"] = (
+                time.perf_counter() - t_router_fb
+            ) * 1000.0
+            fallback_router = fb_ctx.router
 
     startup_total_ms = (time.perf_counter() - startup_t0) * 1000.0
 
@@ -630,6 +785,8 @@ def e2e_prepare_and_submit(
         graph_retriever,
         fusion_keep_k=fusion_keep_k,
         router=loaded_router,
+        fallback_router=fallback_router,
+        router_confidence_threshold=float(router_confidence_threshold),
     )
     resolved_cross_encoder_device = cross_encoder_device
     if (
@@ -682,6 +839,7 @@ def e2e_prepare_and_submit(
                 "router_id": router_id,
                 "router_architecture_id": router_architecture_id,
                 "router_input_mode": router_input_mode,
+                "router_task_type": task_type,
                 "router_inference_batch_size": router_inference_batch_size,
                 "latency_protocol": {
                     "version": LATENCY_PROTOCOL_VERSION,
@@ -777,7 +935,10 @@ def e2e_prepare_and_submit(
                 continue
             q_emb = feat = None
             if router_ctx is not None:
-                q_emb, feat = compute_query_tensors_for_router(question, router_ctx)
+                w_qid = str(sample.get("question_id", "") or "").strip()
+                q_emb, feat = compute_query_tensors_for_router(
+                    question, router_ctx, question_id=w_qid or None
+                )
             pipeline.run(
                 question,
                 RoutingPolicyName(policy),
@@ -804,7 +965,9 @@ def e2e_prepare_and_submit(
             q_emb = feat = None
             if router_ctx is not None:
                 rt0 = time.perf_counter()
-                q_emb, feat = compute_query_tensors_for_router(question, router_ctx)
+                q_emb, feat = compute_query_tensors_for_router(
+                    question, router_ctx, question_id=qid or None
+                )
                 routing_input_ms = (time.perf_counter() - rt0) * 1000.0
 
             if policy == ORACLE_UPPER_BOUND_POLICY:
@@ -935,4 +1098,22 @@ def e2e_prepare_and_submit(
             completion_window=completion_window,
             dry_run=dry_run,
         )
+    if router_ctx is not None:
+        mpath = paths.manifest
+        if mpath.is_file():
+            mdata = read_manifest(paths)
+            e2e_block = mdata.setdefault("e2e", {})
+            e2e_block["router_query_embedding_cache"] = {
+                "cache_mode": router_ctx.embedding_cache_mode,
+                "embedding_provider": router_ctx.embedding_provider,
+                "embedding_model": router_ctx.embedding_model,
+                "cache_id": router_ctx.embedding_cache_id or None,
+                "cache_root": router_ctx.embedding_cache_root,
+                "stats": dict(router_ctx.router_cache_stats),
+            }
+            mdata["updated_at"] = utc_now_iso()
+            mpath.write_text(
+                json.dumps(mdata, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
     return code

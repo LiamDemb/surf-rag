@@ -9,6 +9,11 @@ from pathlib import Path
 
 from surf_rag.config.argv import argv_provides
 from surf_rag.router.excluded_features import normalize_excluded_features
+from surf_rag.router.embedding_config import (
+    resolve_embedding_cache_mode_for_dataset,
+    resolve_embedding_model_for_provider,
+    resolve_router_e2e_embedding_cache_mode,
+)
 from surf_rag.config.loader import (
     PipelineConfig,
     load_pipeline_config,
@@ -170,6 +175,10 @@ def merge_oracle_prepare_args(
         args.branch_top_k = o.branch_top_k
     if not argv_provides(argv, "--fusion-keep-k"):
         args.fusion_keep_k = o.fusion_keep_k
+    if not argv_provides(argv, "--oracle-metric"):
+        args.oracle_metric = o.oracle_metric
+    if not argv_provides(argv, "--oracle-metric-k"):
+        args.oracle_metric_k = o.oracle_metric_k
     if not argv_provides(argv, "--router-base"):
         args.router_base = rp.router_base
 
@@ -214,6 +223,28 @@ def merge_router_build_dataset_args(
         args.dev_ratio = rd.dev_ratio
     if not argv_provides(argv, "--test-ratio"):
         args.test_ratio = rd.test_ratio
+    if not argv_provides(argv, "--embedding-provider"):
+        args.embedding_provider = rd.embedding_provider
+    if not argv_provides(argv, "--embedding-cache-mode"):
+        args.embedding_cache_mode = rd.embedding_cache_mode
+    if not argv_provides(argv, "--embedding-cache-id"):
+        args.embedding_cache_id = rd.embedding_cache_id
+    if not argv_provides(argv, "--embedding-cache-path"):
+        args.embedding_cache_path = rd.embedding_cache_path
+    if not argv_provides(argv, "--openai-embedding-dimensions"):
+        args.openai_embedding_dimensions = rd.openai_embedding_dimensions
+    if not argv_provides(argv, "--embedding-cache-writeback") and not argv_provides(
+        argv, "--no-embedding-cache-writeback"
+    ):
+        args.embedding_cache_writeback = rd.embedding_cache_writeback
+    args.embedding_cache_mode = resolve_embedding_cache_mode_for_dataset(
+        str(getattr(args, "embedding_provider", rd.embedding_provider)),
+        str(getattr(args, "embedding_cache_mode", rd.embedding_cache_mode)),
+    )
+    args.embedding_model = resolve_embedding_model_for_provider(
+        str(getattr(args, "embedding_provider", rd.embedding_provider)),
+        str(getattr(args, "embedding_model", rd.embedding_model)),
+    )
 
 
 def merge_router_train_args(
@@ -250,6 +281,8 @@ def merge_router_train_args(
         args.loss = rt.loss
     if not argv_provides(argv, "--loss-kwargs"):
         args.loss_kwargs = dict(rt.loss_kwargs)
+    if not argv_provides(argv, "--router-task-type"):
+        args.router_task_type = rt.task_type
     if not argv_provides(argv, "--midpoint-balance-masking") and not argv_provides(
         argv, "--no-midpoint-balance-masking"
     ):
@@ -355,12 +388,41 @@ def merge_e2e_prepare_args(
         args.router_device = e.router_device
     if not argv_provides(argv, "--router-input-mode"):
         args.router_input_mode = e.router_input_mode
+    if not argv_provides(argv, "--router-task-type"):
+        args.router_task_type = e.router_task_type
+    if not argv_provides(argv, "--router-confidence-threshold"):
+        args.router_confidence_threshold = e.router_confidence_threshold
+    if not argv_provides(argv, "--router-fallback-regressor-id"):
+        args.router_fallback_regressor_id = e.router_fallback_regressor_id
+    if not argv_provides(argv, "--router-fallback-architecture-id"):
+        args.router_fallback_architecture_id = e.router_fallback_architecture_id
     if not argv_provides(argv, "--router-inference-batch-size"):
         args.router_inference_batch_size = e.router_inference_batch_size
     if not argv_provides(argv, "--latency-warmup-questions"):
         args.latency_warmup_questions = e.latency_warmup_questions
     if e.only_question_ids and not argv_provides(argv, "--only-question-id"):
         args.only_question_id = list(e.only_question_ids)
+    if not argv_provides(argv, "--router-embedding-provider"):
+        args.router_embedding_provider = e.router_embedding_provider
+    if not argv_provides(argv, "--router-embedding-cache-mode"):
+        args.router_embedding_cache_mode = e.router_embedding_cache_mode
+    if not argv_provides(argv, "--router-embedding-cache-id"):
+        args.router_embedding_cache_id = e.router_embedding_cache_id
+    if not argv_provides(argv, "--router-embedding-cache-path"):
+        args.router_embedding_cache_path = e.router_embedding_cache_path
+    if not argv_provides(argv, "--router-openai-embedding-dimensions"):
+        args.router_openai_embedding_dimensions = e.router_openai_embedding_dimensions
+    if not argv_provides(
+        argv, "--router-embedding-cache-writeback"
+    ) and not argv_provides(argv, "--no-router-embedding-cache-writeback"):
+        args.router_embedding_cache_writeback = e.router_embedding_cache_writeback
+    rd = cfg.router.dataset
+    args.router_embedding_cache_mode = resolve_router_e2e_embedding_cache_mode(
+        str(rd.embedding_provider),
+        str(
+            getattr(args, "router_embedding_cache_mode", e.router_embedding_cache_mode)
+        ),
+    )
 
 
 def merge_e2e_evaluate_args(
@@ -376,3 +438,10 @@ def merge_e2e_evaluate_args(
         args.router_architecture_id = p.router_architecture_id
     if not argv_provides(argv, "--router-base"):
         args.router_base = rb
+    e = cfg.e2e
+    if argv_provides(argv, "--apply-answerability-audit"):
+        args.apply_answerability_audit = True
+    elif argv_provides(argv, "--no-apply-answerability-audit"):
+        args.apply_answerability_audit = False
+    else:
+        args.apply_answerability_audit = bool(e.apply_answerability_audit)

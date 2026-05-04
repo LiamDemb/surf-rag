@@ -1,0 +1,12 @@
+You are grading short-form QA. Decide if the prediction is correct with respect to the reference answer(s) for the question (semantic match; minor wording differences allowed).
+
+Question:
+{question}
+
+Reference answer(s):
+{gold_answers}
+
+Model prediction:
+{prediction}
+
+Return JSON with a single boolean field "correct" (true if the prediction is an acceptable answer, false otherwise).

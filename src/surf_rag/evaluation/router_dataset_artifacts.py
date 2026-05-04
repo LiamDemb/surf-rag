@@ -128,10 +128,14 @@ def write_router_dataset_manifest(
     router_labels_path: str,
     feature_set_version: str,
     embedding_model: str,
+    embedding_provider: str | None = None,
+    embedding_dim: int | None = None,
+    embedding_cache: Dict[str, Any] | None = None,
     split_seed: int,
     train_ratio: float,
     dev_ratio: float,
     test_ratio: float,
+    openai_embedding_dimensions: int | None = None,
     extra: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Write ``manifest.json`` for a router dataset build (schema v3)."""
@@ -155,6 +159,22 @@ def write_router_dataset_manifest(
             "router_labels": router_labels_path,
             "labeling_strategy": "oracle-curve-v1",
         },
+        "supervision": {
+            "targets": {
+                "regression": {
+                    "target": "oracle_curve",
+                    "validity_flag": "is_valid_for_router_training",
+                },
+                "classification": {
+                    "target": "oracle_binary_class_id",
+                    "validity_flag": "is_valid_for_router_training_classification",
+                    "class_names": ["graph", "dense"],
+                    "class_to_weight_map": {"graph": 0.0, "dense": 1.0},
+                    "tie_break_order": ["dense", "graph"],
+                    "target_version": "binary_v1",
+                },
+            }
+        },
         "feature_set_version": feature_set_version,
         "embedding_model": embedding_model,
         "split": {
@@ -172,6 +192,14 @@ def write_router_dataset_manifest(
             "reports_dir": paths.reports_dir.name,
         },
     }
+    if embedding_provider:
+        data["embedding_provider"] = str(embedding_provider)
+    if embedding_dim is not None:
+        data["embedding_dim"] = int(embedding_dim)
+    if openai_embedding_dimensions is not None:
+        data["openai_embedding_dimensions"] = int(openai_embedding_dimensions)
+    if embedding_cache:
+        data["embedding_cache"] = dict(embedding_cache)
     if extra:
         data.update(extra)
     paths.manifest.write_text(
