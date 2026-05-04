@@ -88,6 +88,7 @@ def test_cmd_evaluate_emits_family_separated_metrics(
         split_question_ids=None,
         router_id=None,
         router_base=None,
+        apply_answerability_audit=False,
     )
     rc = cmd_evaluate(args)
     assert rc == 0

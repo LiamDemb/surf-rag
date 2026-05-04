@@ -376,3 +376,10 @@ def merge_e2e_evaluate_args(
         args.router_architecture_id = p.router_architecture_id
     if not argv_provides(argv, "--router-base"):
         args.router_base = rb
+    e = cfg.e2e
+    if argv_provides(argv, "--apply-answerability-audit"):
+        args.apply_answerability_audit = True
+    elif argv_provides(argv, "--no-apply-answerability-audit"):
+        args.apply_answerability_audit = False
+    else:
+        args.apply_answerability_audit = bool(e.apply_answerability_audit)

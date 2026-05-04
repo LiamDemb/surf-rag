@@ -192,6 +192,9 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
         run_paths=paths,
         benchmark_path=args.benchmark_path.resolve(),
         split_question_ids_path=split_path,
+        apply_answerability_audit=bool(
+            getattr(args, "apply_answerability_audit", False)
+        ),
     )
     out = paths.run_root / "metrics.json"
     out.write_text(
@@ -311,7 +314,18 @@ def main() -> int:
         default=None,
         help="Override router dataset split JSON (train/dev/test ids)",
     )
-    p_ev.set_defaults(func=cmd_evaluate)
+    audit_grp = p_ev.add_mutually_exclusive_group()
+    audit_grp.add_argument(
+        "--apply-answerability-audit",
+        action="store_true",
+        help="Use canonical mask/manifest under benchmark bundle (see audit/answerability/).",
+    )
+    audit_grp.add_argument(
+        "--no-apply-answerability-audit",
+        action="store_true",
+        help="Disable answerability masking even if set in YAML.",
+    )
+    p_ev.set_defaults(func=cmd_evaluate, apply_answerability_audit=False)
 
     p_pc = sub.add_parser("print-config", help="Print resolved paths for one run")
     _add_common(p_pc)

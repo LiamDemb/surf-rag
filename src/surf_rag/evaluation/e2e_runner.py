@@ -20,7 +20,17 @@ from surf_rag.evaluation.artifact_paths import (
     default_router_base,
     e2e_policy_run_dir,
 )
+from surf_rag.evaluation.answerability_layout import (
+    answerability_manifest_path,
+    answerability_mask_path,
+    answerability_verdicts_path,
+)
+from surf_rag.evaluation.answerability_types import (
+    iter_verdicts_jsonl,
+    load_mask_json_path,
+)
 from surf_rag.evaluation.e2e_aggregation import (
+    PerQuestionEval,
     aggregate_e2e_report,
     aggregate_per_question,
     load_benchmark_index,
@@ -74,6 +84,92 @@ from surf_rag.strategies.factory import build_dense_retriever, build_graph_retri
 
 logger = logging.getLogger(__name__)
 _BASE_METRIC_KS: tuple[int, ...] = (5, 10, 20)
+
+
+def _audit_row_meta(
+    qid: str,
+    mask_by_qid: dict[str, str],
+    verdict_by_qid: dict[str, dict],
+) -> dict[str, Any]:
+    reason = mask_by_qid.get(qid)
+    vr = verdict_by_qid.get(qid) or {}
+    av = vr.get("answerable")
+    if av is True or av is False:
+        answerable = bool(av)
+    elif reason == "audit":
+        answerable = False
+    elif reason == "balance":
+        answerable = True
+    else:
+        answerable = True
+    in_primary = reason is None
+    exclude_reason: str | None = reason if reason else None
+    if in_primary:
+        exclude_reason = None
+    return {
+        "answerable": answerable,
+        "in_primary_eval": in_primary,
+        "exclude_reason": exclude_reason,
+    }
+
+
+def _build_overlap_breakdown(
+    *,
+    report_generation: dict[str, Any],
+    report_pure: dict[str, Any] | None,
+    report_ce: dict[str, Any] | None,
+    pure_available: bool,
+    ce_enabled: bool,
+    ce_ks: List[int],
+    reranker_kind: str,
+    rerank_top_k: int,
+    overlap_keys: tuple[str, ...],
+) -> dict[str, Any]:
+    overlap_breakdown: dict[str, Any] = {}
+    for key in overlap_keys:
+        gen_block = report_generation.get(key, {})
+        out_block: dict[str, Any] = {
+            "count": int(gen_block.get("count", 0)),
+            "latency_ms": dict(gen_block.get("latency_ms") or {}),
+            "qa": dict(gen_block.get("qa") or {}),
+        }
+        if report_pure is not None:
+            pure_block = dict((report_pure.get(key) or {}).get("retrieval_at_k") or {})
+            out_block["retrieval_before_ce"] = {
+                "status": "ok",
+                "reported_ks": list(_BASE_METRIC_KS),
+                "retrieval_at_k": pure_block,
+            }
+        else:
+            out_block["retrieval_before_ce"] = {
+                "status": "unavailable",
+                "reason": "missing retrieval/retrieval_results_pretrunc.jsonl",
+                "reported_ks": list(_BASE_METRIC_KS),
+            }
+        if report_ce is not None:
+            ce_block = dict((report_ce.get(key) or {}).get("retrieval_at_k") or {})
+            out_block["retrieval_after_ce"] = {
+                "status": "ok",
+                "reported_ks": list(ce_ks),
+                "retrieval_at_k": ce_block,
+            }
+        elif ce_enabled and not ce_ks:
+            out_block["retrieval_after_ce"] = {
+                "status": "unavailable",
+                "reason": (
+                    f"rerank_top_k={rerank_top_k} is below smallest metric k="
+                    f"{min(_BASE_METRIC_KS)}"
+                ),
+                "reported_ks": [],
+            }
+        else:
+            out_block["retrieval_after_ce"] = {
+                "status": "not_applicable",
+                "reason": f"reranker={reranker_kind or 'none'}",
+                "reported_ks": [],
+            }
+        overlap_breakdown[str(key)] = out_block
+    return overlap_breakdown
 
 
 class _UnusedRetriever:
@@ -227,6 +323,7 @@ def evaluate_e2e_run(
     run_paths: RunArtifactPaths,
     benchmark_path: Path,
     split_question_ids_path: Optional[Path] = None,
+    apply_answerability_audit: bool = False,
 ) -> dict[str, Any]:
     """Load retrieval + answers under ``run_paths``; return overlap report + per-row list."""
     from surf_rag.evaluation.retrieval_metrics import DEFAULT_NDCG_KS
@@ -235,6 +332,26 @@ def evaluate_e2e_run(
     split_sets: RouterSplitSets | None = RouterSplitSets.from_path_or_default(
         split_question_ids_path
     )
+
+    mask_by_qid: dict[str, str] = {}
+    verdict_by_qid: dict[str, dict] = {}
+    if apply_answerability_audit:
+        mp = answerability_mask_path(benchmark_path)
+        mf = answerability_manifest_path(benchmark_path)
+        vp = answerability_verdicts_path(benchmark_path)
+        if not mp.is_file() or not mf.is_file():
+            raise FileNotFoundError(
+                "Answerability audit enabled but mask.json or manifest.json is missing "
+                f"under the benchmark bundle. Expected:\n  {mp}\n  {mf}\n"
+                "Run: python -m scripts.audit.benchmark_answerability collect && balance "
+                "(after submit) with an audit CONFIG."
+            )
+        mask_by_qid = load_mask_json_path(mp)
+        if vp.is_file():
+            for row in iter_verdicts_jsonl(vp):
+                qid = str(row.get("question_id", "") or "").strip()
+                if qid:
+                    verdict_by_qid[qid] = row
 
     retrieval_path = run_paths.retrieval_results_jsonl()
     retrieval_pretrunc_path = run_paths.retrieval_results_pretrunc_jsonl()
@@ -384,6 +501,9 @@ def evaluate_e2e_run(
                 "reported_ks": [],
             }
 
+        if apply_answerability_audit:
+            q_row["audit"] = _audit_row_meta(qid, mask_by_qid, verdict_by_qid)
+
         rows_out.append(q_row)
 
     report_generation = aggregate_e2e_report(
@@ -399,55 +519,23 @@ def evaluate_e2e_run(
         if (ce_enabled and ce_ks)
         else None
     )
-    overlap_breakdown: dict[str, Any] = {}
-    for key in overlap_keys:
-        gen_block = report_generation.get(key, {})
-        out_block: dict[str, Any] = {
-            "count": int(gen_block.get("count", 0)),
-            "latency_ms": dict(gen_block.get("latency_ms") or {}),
-            "qa": dict(gen_block.get("qa") or {}),
-        }
-        if report_pure is not None:
-            pure_block = dict((report_pure.get(key) or {}).get("retrieval_at_k") or {})
-            out_block["retrieval_before_ce"] = {
-                "status": "ok",
-                "reported_ks": list(_BASE_METRIC_KS),
-                "retrieval_at_k": pure_block,
-            }
-        else:
-            out_block["retrieval_before_ce"] = {
-                "status": "unavailable",
-                "reason": "missing retrieval/retrieval_results_pretrunc.jsonl",
-                "reported_ks": list(_BASE_METRIC_KS),
-            }
-        if report_ce is not None:
-            ce_block = dict((report_ce.get(key) or {}).get("retrieval_at_k") or {})
-            out_block["retrieval_after_ce"] = {
-                "status": "ok",
-                "reported_ks": list(ce_ks),
-                "retrieval_at_k": ce_block,
-            }
-        elif ce_enabled and not ce_ks:
-            out_block["retrieval_after_ce"] = {
-                "status": "unavailable",
-                "reason": (
-                    f"rerank_top_k={rerank_top_k} is below smallest metric k="
-                    f"{min(_BASE_METRIC_KS)}"
-                ),
-                "reported_ks": [],
-            }
-        else:
-            out_block["retrieval_after_ce"] = {
-                "status": "not_applicable",
-                "reason": f"reranker={reranker_kind or 'none'}",
-                "reported_ks": [],
-            }
-        overlap_breakdown[str(key)] = out_block
+    overlap_breakdown = _build_overlap_breakdown(
+        report_generation=report_generation,
+        report_pure=report_pure,
+        report_ce=report_ce,
+        pure_available=pure_available,
+        ce_enabled=ce_enabled,
+        ce_ks=ce_ks,
+        reranker_kind=reranker_kind,
+        rerank_top_k=rerank_top_k,
+        overlap_keys=overlap_keys,
+    )
 
     startup_latency: dict[str, Any] = {}
     if isinstance(e2e_meta, dict):
         startup_latency = dict(e2e_meta.get("startup_latency_ms") or {})
-    return {
+
+    out: dict[str, Any] = {
         "run_root": str(run_paths.run_root.resolve()),
         "split_question_ids": (
             str(split_question_ids_path) if split_question_ids_path else None
@@ -461,6 +549,8 @@ def evaluate_e2e_run(
         "overlap_breakdown": overlap_breakdown,
         "per_question": rows_out,
     }
+
+    return out
 
 
 def e2e_prepare_and_submit(

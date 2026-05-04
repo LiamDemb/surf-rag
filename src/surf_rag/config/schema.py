@@ -178,6 +178,7 @@ class E2ESection:
     dry_run: bool = False
     include_graph_provenance: bool = False
     completion_window: str | None = None
+    apply_answerability_audit: bool = False
 
 
 @dataclass
