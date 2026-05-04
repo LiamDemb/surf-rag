@@ -34,11 +34,13 @@ def _label_row(qid: str, *, std: float = 0.5, curve: list[float] | None = None) 
 
 
 def test_build_dataframe_shape(monkeypatch: pytest.MonkeyPatch) -> None:
-    def _fake(questions, model_name: str, batch_size: int = 32) -> np.ndarray:
-        n = len(questions)
-        return np.ones((n, 4), dtype=np.float32)
+    def _fake_resolve(aligned_bench, **kwargs):
+        n = len(aligned_bench)
+        return np.ones((n, 4), dtype=np.float32), {"hits": n, "misses": 0}
 
-    monkeypatch.setattr("surf_rag.router.dataset._embed_with_fallback", _fake)
+    monkeypatch.setattr(
+        "surf_rag.router.dataset.resolve_aligned_query_embeddings", _fake_resolve
+    )
     bench = [
         {
             "question_id": "a1",

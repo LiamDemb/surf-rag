@@ -87,6 +87,19 @@ class OracleSection:
 @dataclass
 class RouterDatasetSection:
     embedding_model: str = "all-MiniLM-L6-v2"
+    """sentence-transformers model id or OpenAI embedding model (e.g. text-embedding-3-large)."""
+    embedding_provider: str = "sentence-transformers"
+    """sentence-transformers | openai"""
+    embedding_cache_mode: str = "auto"
+    """auto | off | prefer | required | build — auto: required for openai, off for ST."""
+    embedding_cache_id: str = "default"
+    """Subdirectory segment under query_embeddings/<provider>/<model>/."""
+    embedding_cache_path: str | None = None
+    """Optional absolute or relative path override for cache root (advanced)."""
+    embedding_cache_writeback: bool = True
+    """In prefer/build modes, append newly computed rows to the benchmark cache."""
+    openai_embedding_dimensions: int | None = None
+    """When set, passed to OpenAI embeddings API and used in OpenAI query cache layout."""
     train_ratio: float = 0.6
     dev_ratio: float = 0.2
     test_ratio: float = 0.2
@@ -182,6 +195,15 @@ class E2ESection:
     router_fallback_regressor_id: str | None = None
     router_fallback_architecture_id: str | None = None
     router_inference_batch_size: int = 32
+    router_embedding_provider: str | None = None
+    """Override embedding provider for router inputs; None uses router dataset manifest."""
+    router_embedding_cache_mode: str = "auto"
+    """auto | off | prefer | required — auto follows router dataset (openai -> required)."""
+    router_embedding_cache_id: str | None = None
+    """None means use router.dataset.embedding_cache_id."""
+    router_embedding_cache_path: str | None = None
+    router_embedding_cache_writeback: bool = True
+    router_openai_embedding_dimensions: int | None = None
     latency_warmup_questions: int = 0
     limit: int | None = None
     only_question_ids: list[str] = field(default_factory=list)

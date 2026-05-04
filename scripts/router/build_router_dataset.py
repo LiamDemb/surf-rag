@@ -126,6 +126,38 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--test-ratio", type=float, default=None, help="Override TEST_RATIO (env)."
     )
+    p.add_argument(
+        "--embedding-provider",
+        default=None,
+        help="sentence-transformers | openai (else config / ROUTER_EMBEDDING_PROVIDER).",
+    )
+    p.add_argument(
+        "--embedding-cache-mode",
+        default=None,
+        help="auto | off | prefer | required | build (else config).",
+    )
+    p.add_argument(
+        "--embedding-cache-id",
+        default=None,
+        help="Cache subdirectory id under query_embeddings/...",
+    )
+    p.add_argument(
+        "--embedding-cache-path",
+        default=None,
+        help="Override cache root directory (advanced).",
+    )
+    p.add_argument(
+        "--embedding-cache-writeback",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Append live-computed rows to benchmark cache in prefer/build modes.",
+    )
+    p.add_argument(
+        "--openai-embedding-dimensions",
+        type=int,
+        default=None,
+        help="OpenAI embeddings API dimensions (e.g. 256 for text-embedding-3-large).",
+    )
     p.add_argument("--log-level", default="INFO")
     return p.parse_args()
 
@@ -184,11 +216,6 @@ def main() -> int:
         ),
     )
 
-    emb_model = (
-        args.embedding_model
-        or os.getenv("EMBEDDING_MODEL")
-        or os.getenv("MODEL_NAME", "all-MiniLM-L6-v2")
-    )
     split_seed = int(
         args.split_seed if args.split_seed is not None else os.getenv("SEED", "42")
     )
@@ -212,16 +239,76 @@ def main() -> int:
         raise SystemExit("split ratios must be positive and sum to > 0")
     tr, dv, te = tr / s, dv / s, te / s
 
+    from surf_rag.router.embedding_config import (
+        parse_embedding_provider,
+        resolve_embedding_cache_mode_for_dataset,
+        resolve_embedding_model_for_provider,
+    )
+
+    if args.config is not None:
+        emb_prov = parse_embedding_provider(str(args.embedding_provider))
+        emb_mode = str(args.embedding_cache_mode)
+        emb_model = str(args.embedding_model)
+    else:
+        emb_prov = parse_embedding_provider(
+            str(getattr(args, "embedding_provider", None) or "")
+            or os.getenv("ROUTER_EMBEDDING_PROVIDER", "sentence-transformers")
+        )
+        emb_mode = resolve_embedding_cache_mode_for_dataset(
+            str(emb_prov),
+            str(getattr(args, "embedding_cache_mode", None) or "")
+            or os.getenv("ROUTER_EMBEDDING_CACHE_MODE", "auto"),
+        )
+        emb_model = resolve_embedding_model_for_provider(
+            str(emb_prov),
+            str(
+                args.embedding_model
+                or os.getenv("EMBEDDING_MODEL_FOR_ROUTER")
+                or os.getenv("EMBEDDING_MODEL")
+                or os.getenv("MODEL_NAME", "all-MiniLM-L6-v2")
+            ),
+        )
+
+    cache_id = (
+        str(
+            getattr(args, "embedding_cache_id", None)
+            or os.getenv("ROUTER_EMBEDDING_CACHE_ID", "")
+            or "default"
+        ).strip()
+        or "default"
+    )
+    cache_path_ov = getattr(args, "embedding_cache_path", None)
+    if (
+        cache_path_ov is not None
+        and isinstance(cache_path_ov, str)
+        and not str(cache_path_ov).strip()
+    ):
+        cache_path_ov = None
+    if getattr(args, "embedding_cache_writeback", None) is None:
+        emb_wb = True
+    else:
+        emb_wb = bool(args.embedding_cache_writeback)
+
+    openai_ed = getattr(args, "openai_embedding_dimensions", None)
+    if openai_ed is not None:
+        openai_ed = int(openai_ed)
     df, normalizer, sum_meta = build_router_dataframe(
         bench,
         label_rows,
         feature_context=ctx,
         embedding_model=emb_model,
+        embedding_provider=emb_prov,
+        embedding_cache_mode=emb_mode,
+        benchmark_path=args.benchmark_path.resolve(),
+        embedding_cache_id=cache_id,
+        embedding_cache_path=cache_path_ov,
+        embedding_cache_writeback=emb_wb,
         train_ratio=tr,
         dev_ratio=dv,
         test_ratio=te,
         split_seed=split_seed,
         router_id=args.router_id,
+        openai_embedding_dimensions=openai_ed,
     )
 
     write_parquet(r_paths.router_dataset_parquet, df)
@@ -239,6 +326,13 @@ def main() -> int:
         split_seed=split_seed,
     )
     write_split_question_ids(r_paths.split_question_ids, split_payload)
+    emb_dim = None
+    if len(df) and "embedding_dim" in df.columns:
+        emb_dim = int(df["embedding_dim"].iloc[0])
+    emb_cache = dict(sum_meta.get("embedding_resolution") or {})
+    emb_cache["cache_id"] = cache_id
+    emb_cache["writeback"] = emb_wb
+    emb_cache["benchmark_path"] = str(args.benchmark_path.resolve())
     write_router_dataset_manifest(
         r_paths,
         router_id=args.router_id,
@@ -252,10 +346,14 @@ def main() -> int:
         router_labels_path=str(o_paths.router_labels.resolve()),
         feature_set_version=df["feature_set_version"].iloc[0] if len(df) else "1",
         embedding_model=emb_model,
+        embedding_provider=emb_prov,
+        embedding_dim=emb_dim,
+        embedding_cache=emb_cache,
         split_seed=split_seed,
         train_ratio=tr,
         dev_ratio=dv,
         test_ratio=te,
+        openai_embedding_dimensions=openai_ed,
         extra={
             "row_count": int(len(df)),
             "row_count_total": int(ignored_payload["num_rows_total"]),

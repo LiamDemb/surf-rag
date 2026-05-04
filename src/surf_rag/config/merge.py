@@ -9,6 +9,11 @@ from pathlib import Path
 
 from surf_rag.config.argv import argv_provides
 from surf_rag.router.excluded_features import normalize_excluded_features
+from surf_rag.router.embedding_config import (
+    resolve_embedding_cache_mode_for_dataset,
+    resolve_embedding_model_for_provider,
+    resolve_router_e2e_embedding_cache_mode,
+)
 from surf_rag.config.loader import (
     PipelineConfig,
     load_pipeline_config,
@@ -218,6 +223,28 @@ def merge_router_build_dataset_args(
         args.dev_ratio = rd.dev_ratio
     if not argv_provides(argv, "--test-ratio"):
         args.test_ratio = rd.test_ratio
+    if not argv_provides(argv, "--embedding-provider"):
+        args.embedding_provider = rd.embedding_provider
+    if not argv_provides(argv, "--embedding-cache-mode"):
+        args.embedding_cache_mode = rd.embedding_cache_mode
+    if not argv_provides(argv, "--embedding-cache-id"):
+        args.embedding_cache_id = rd.embedding_cache_id
+    if not argv_provides(argv, "--embedding-cache-path"):
+        args.embedding_cache_path = rd.embedding_cache_path
+    if not argv_provides(argv, "--openai-embedding-dimensions"):
+        args.openai_embedding_dimensions = rd.openai_embedding_dimensions
+    if not argv_provides(argv, "--embedding-cache-writeback") and not argv_provides(
+        argv, "--no-embedding-cache-writeback"
+    ):
+        args.embedding_cache_writeback = rd.embedding_cache_writeback
+    args.embedding_cache_mode = resolve_embedding_cache_mode_for_dataset(
+        str(getattr(args, "embedding_provider", rd.embedding_provider)),
+        str(getattr(args, "embedding_cache_mode", rd.embedding_cache_mode)),
+    )
+    args.embedding_model = resolve_embedding_model_for_provider(
+        str(getattr(args, "embedding_provider", rd.embedding_provider)),
+        str(getattr(args, "embedding_model", rd.embedding_model)),
+    )
 
 
 def merge_router_train_args(
@@ -375,6 +402,27 @@ def merge_e2e_prepare_args(
         args.latency_warmup_questions = e.latency_warmup_questions
     if e.only_question_ids and not argv_provides(argv, "--only-question-id"):
         args.only_question_id = list(e.only_question_ids)
+    if not argv_provides(argv, "--router-embedding-provider"):
+        args.router_embedding_provider = e.router_embedding_provider
+    if not argv_provides(argv, "--router-embedding-cache-mode"):
+        args.router_embedding_cache_mode = e.router_embedding_cache_mode
+    if not argv_provides(argv, "--router-embedding-cache-id"):
+        args.router_embedding_cache_id = e.router_embedding_cache_id
+    if not argv_provides(argv, "--router-embedding-cache-path"):
+        args.router_embedding_cache_path = e.router_embedding_cache_path
+    if not argv_provides(argv, "--router-openai-embedding-dimensions"):
+        args.router_openai_embedding_dimensions = e.router_openai_embedding_dimensions
+    if not argv_provides(
+        argv, "--router-embedding-cache-writeback"
+    ) and not argv_provides(argv, "--no-router-embedding-cache-writeback"):
+        args.router_embedding_cache_writeback = e.router_embedding_cache_writeback
+    rd = cfg.router.dataset
+    args.router_embedding_cache_mode = resolve_router_e2e_embedding_cache_mode(
+        str(rd.embedding_provider),
+        str(
+            getattr(args, "router_embedding_cache_mode", e.router_embedding_cache_mode)
+        ),
+    )
 
 
 def merge_e2e_evaluate_args(

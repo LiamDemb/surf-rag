@@ -25,7 +25,8 @@ from surf_rag.evaluation.router_model_artifacts import (
     write_router_model_manifest,
     write_predictions_jsonl,
 )
-from surf_rag.router.model import parse_router_input_mode
+from surf_rag.router.embedding_config import parse_embedding_provider
+from surf_rag.router.embedding_lock import infer_embedding_provider_from_model
 from surf_rag.router.model import ROUTER_TASK_REGRESSION, parse_router_task_type
 from surf_rag.router.training import (
     RouterTrainConfig,
@@ -145,7 +146,7 @@ def main() -> int:
         log.error("Missing dataset manifest: %s", ds_paths.manifest)
         return 1
 
-    read_router_dataset_manifest(ds_paths)
+    dmanifest = read_router_dataset_manifest(ds_paths)
     parquet_path = ds_paths.router_dataset_parquet
 
     raw_mode = (args.input_mode or "").strip() or os.getenv("ROUTER_INPUT_MODE", "both")
@@ -249,6 +250,23 @@ def main() -> int:
     wg = _weight_grid_from_df(df)
     mcfg = result.model.config
 
+    ds_emb_model = str(dmanifest.get("embedding_model") or "").strip()
+    ds_prov_raw = dmanifest.get("embedding_provider")
+    if str(ds_prov_raw or "").strip():
+        ds_embedding_provider = parse_embedding_provider(str(ds_prov_raw))
+    else:
+        ds_embedding_provider = infer_embedding_provider_from_model(ds_emb_model)
+    emb_src = str(
+        (dmanifest.get("embedding_cache") or {}).get("embedding_source") or ""
+    ).strip()
+    if not emb_src:
+        emb_src = "unknown"
+    emb_dim_ds = dmanifest.get("embedding_dim")
+    if emb_dim_ds is None and "embedding_dim" in df.columns and len(df):
+        emb_dim_ds = int(df["embedding_dim"].iloc[0])
+    if emb_dim_ds is None:
+        emb_dim_ds = int(getattr(mcfg, "embedding_dim", 0) or 0)
+
     save_checkpoint(
         out_paths.checkpoint,
         result.model,
@@ -321,6 +339,9 @@ def main() -> int:
         embedding_model=str(
             df["embedding_model"].iloc[0] if "embedding_model" in df.columns else ""
         ),
+        embedding_provider=ds_embedding_provider,
+        embedding_dim=int(emb_dim_ds) if emb_dim_ds is not None else None,
+        embedding_source=emb_src,
         weight_grid=wg.tolist(),
         source_files={
             "router_dataset": str(parquet_path.resolve()),

@@ -81,6 +81,35 @@ python -m scripts.e2e_benchmark --config configs/pipelines/surf-bench-200.yaml p
 - Old model locations are still discoverable through fallback resolution.
 - You can gradually add classification checkpoints next to existing regression models.
 
+## OpenAI query-embedding cache
+
+For OpenAI embeddings (`router.dataset.embedding_provider: openai`), the default cache mode is
+**`required`**: the router dataset build and E2E learned routing read vectors from a
+benchmark-local JSONL cache and do not call the embeddings API when the cache is complete.
+
+Workflow:
+
+1. Set `router.dataset.embedding_model` (default OpenAI model: `text-embedding-3-large`),
+   `embedding_cache_id`, and optionally `embedding_cache_mode` / `embedding_cache_path`.
+2. `make router-build-query-embedding-cache CONFIG=...` — writes
+   `<benchmark_bundle>/query_embeddings/<provider>/<model>/<cache_id>/embeddings.jsonl`
+   plus `manifest.json`. This target depends only on **`make validate-oracle-config`**
+   (benchmark + corpus); it does **not** require oracle labels or `router-build-dataset`.
+3. `make router-build-dataset CONFIG=...` — consumes the cache; manifest records
+   `embedding_provider`, `embedding_dim`, and an `embedding_cache` provenance block.
+4. Train / E2E — model manifest locks `embedding_provider` / `embedding_model` /
+   `embedding_dim` / `embedding_source`; `load_router_inference_context` validates against
+   the dataset manifest.
+
+**`prefer`** reads the cache first, embeds misses live, and appends new rows when
+`embedding_cache_writeback` is true. **`off`** ignores the cache.
+
+E2E overrides live under `e2e.router_embedding_*` (merged into `scripts/e2e_benchmark.py prepare`).
+`router_embedding_cache_mode: auto` follows the dataset provider (OpenAI → required).
+
+Environment (optional overrides): `ROUTER_EMBEDDING_PROVIDER`, `ROUTER_EMBEDDING_CACHE_MODE`,
+`ROUTER_EMBEDDING_CACHE_ID` (see `surf_rag.config.env`).
+
 ## Troubleshooting
 
 - **Policy/task mismatch error**
@@ -93,3 +122,7 @@ python -m scripts.e2e_benchmark --config configs/pipelines/surf-bench-200.yaml p
   - Check class mapping in manifest: `dense=1.0`, `graph=0.0`, `fusion=0.5`.
 - **Unexpected regression behavior changes**
   - Remove task fields to confirm fallback behavior; defaults remain regression.
+- **OpenAI + required cache errors**
+  - Run `make router-build-query-embedding-cache CONFIG=...` before `router-build-dataset`.
+  - Ensure every benchmark row has `question_id` when cache modes are strict.
+  - `make validate-router-config` (before `router-build-dataset`) checks cache presence for OpenAI + required.

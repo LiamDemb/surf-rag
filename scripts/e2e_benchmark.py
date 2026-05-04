@@ -135,6 +135,16 @@ def cmd_prepare(args: argparse.Namespace) -> int:
         latency_warmup_questions=args.latency_warmup_questions,
         dev_sync=args.dev_sync,
         pipeline_config_for_artifact=cfg,
+        router_embedding_provider=getattr(args, "router_embedding_provider", None),
+        router_embedding_cache_mode=getattr(args, "router_embedding_cache_mode", None),
+        router_embedding_cache_id=getattr(args, "router_embedding_cache_id", None),
+        router_embedding_cache_path=getattr(args, "router_embedding_cache_path", None),
+        router_embedding_cache_writeback=getattr(
+            args, "router_embedding_cache_writeback", None
+        ),
+        router_openai_embedding_dimensions=getattr(
+            args, "router_openai_embedding_dimensions", None
+        ),
     )
 
 
@@ -301,6 +311,38 @@ def main() -> int:
         type=int,
         default=0,
         help="Warmup retrieval questions excluded from latency reporting.",
+    )
+    p_prep.add_argument(
+        "--router-embedding-provider",
+        default=None,
+        help="Override dataset embedding provider for router query tensors (st|openai).",
+    )
+    p_prep.add_argument(
+        "--router-embedding-cache-mode",
+        default=None,
+        help="off | prefer | required | auto (default from config; auto follows dataset).",
+    )
+    p_prep.add_argument(
+        "--router-embedding-cache-id",
+        default=None,
+        help="Benchmark embedding cache id (under benchmark bundle query_embeddings/...).",
+    )
+    p_prep.add_argument(
+        "--router-embedding-cache-path",
+        default=None,
+        help="Explicit cache directory root (overrides default layout).",
+    )
+    p_prep.add_argument(
+        "--router-embedding-cache-writeback",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="When using prefer mode, append cache misses (default: true).",
+    )
+    p_prep.add_argument(
+        "--router-openai-embedding-dimensions",
+        type=int,
+        default=None,
+        help="OpenAI embedding output dimensions override for router query tensors.",
     )
     p_prep.set_defaults(func=cmd_prepare)
 

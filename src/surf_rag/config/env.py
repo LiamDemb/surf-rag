@@ -124,6 +124,13 @@ def apply_pipeline_env_from_config(config: object) -> None:
     os.environ["ORACLE_BRANCH_TOP_K"] = str(o.branch_top_k)
     os.environ["ORACLE_FUSION_KEEP_K"] = str(o.fusion_keep_k)
     rd = cfg.router.dataset
+    from surf_rag.router.embedding_config import (
+        resolve_embedding_cache_mode_for_dataset,
+    )
+
+    _rd_mode = resolve_embedding_cache_mode_for_dataset(
+        str(rd.embedding_provider), str(rd.embedding_cache_mode)
+    )
     os.environ["SEED"] = str(cfg.seed)
     os.environ["TRAIN_RATIO"] = str(rd.train_ratio)
     os.environ["DEV_RATIO"] = str(rd.dev_ratio)
@@ -140,6 +147,9 @@ def apply_pipeline_env_from_config(config: object) -> None:
     )
     os.environ["ROUTER_MIDPOINT_BALANCE_EPSILON"] = str(rt.midpoint_balance_epsilon)
     os.environ["EMBEDDING_MODEL_FOR_ROUTER"] = _env_s(rd.embedding_model)
+    os.environ["ROUTER_EMBEDDING_PROVIDER"] = _env_s(rd.embedding_provider)
+    os.environ["ROUTER_EMBEDDING_CACHE_MODE"] = _env_s(_rd_mode)
+    os.environ["ROUTER_EMBEDDING_CACHE_ID"] = _env_s(rd.embedding_cache_id or "")
     em = cfg.entity_matching
     os.environ["ENTITY_MATCH_MAX_DF"] = str(em.max_df)
     os.environ["ENTITY_MATCH_MAX_PER_QUERY"] = str(em.max_per_query)

@@ -145,6 +145,9 @@ def write_router_model_manifest(
     training_config: Dict[str, Any],
     feature_set_version: str,
     embedding_model: str,
+    embedding_provider: str | None = None,
+    embedding_dim: int | None = None,
+    embedding_source: str | None = None,
     weight_grid: List[float],
     source_files: Optional[Dict[str, str]] = None,
     task_type: str = ROUTER_TASK_REGRESSION,
@@ -178,6 +181,17 @@ def write_router_model_manifest(
             "active_inputs": active_inputs_for_mode(mode),
             "feature_set_version": feature_set_version,
             "embedding_model": embedding_model,
+            "embedding_provider": (
+                str(embedding_provider).strip()
+                if embedding_provider and str(embedding_provider).strip()
+                else None
+            ),
+            "embedding_dim": int(embedding_dim) if embedding_dim is not None else None,
+            "embedding_source": (
+                str(embedding_source).strip()
+                if embedding_source and str(embedding_source).strip()
+                else None
+            ),
             "weight_grid": [float(x) for x in weight_grid],
             "architecture_name": architecture_name,
             "architecture_kwargs": dict(architecture_kwargs or {}),

@@ -50,7 +50,12 @@ from surf_rag.evaluation.oracle_artifacts import (
     read_jsonl,
     read_retrieval_cache,
 )
-from surf_rag.evaluation.manifest import update_manifest_artifacts, write_manifest
+from surf_rag.evaluation.manifest import (
+    update_manifest_artifacts,
+    write_manifest,
+    read_manifest,
+    utc_now_iso,
+)
 from surf_rag.evaluation.retrieval_jsonl import (
     dict_to_retrieval_result,
     write_retrieval_line,
@@ -588,6 +593,12 @@ def e2e_prepare_and_submit(
     dev_sync: bool = False,
     pipeline_config_for_artifact: Optional["PipelineConfig"] = None,
     run_paths_override: Optional[RunArtifactPaths] = None,
+    router_embedding_provider: Optional[str] = None,
+    router_embedding_cache_mode: Optional[str] = None,
+    router_embedding_cache_id: Optional[str] = None,
+    router_embedding_cache_path: Optional[str] = None,
+    router_embedding_cache_writeback: Optional[bool] = None,
+    router_openai_embedding_dimensions: Optional[int] = None,
 ) -> int:
     """Routed fusion retrieval + optional rerank + OpenAI batch submission.
 
@@ -734,6 +745,13 @@ def e2e_prepare_and_submit(
             retrieval_asset_dir=asset_dir,
             device=router_device,
             router_task_type=task_type,
+            router_embedding_provider=router_embedding_provider,
+            router_embedding_cache_mode=router_embedding_cache_mode,
+            router_embedding_cache_id=router_embedding_cache_id,
+            router_embedding_cache_path=router_embedding_cache_path,
+            router_embedding_cache_writeback=router_embedding_cache_writeback,
+            e2e_benchmark_path=benchmark_path.resolve(),
+            router_openai_embedding_dimensions=router_openai_embedding_dimensions,
         )
         startup_components["router_init_ms"] = (time.perf_counter() - t_router) * 1000.0
         loaded_router = router_ctx.router
@@ -747,6 +765,13 @@ def e2e_prepare_and_submit(
                 retrieval_asset_dir=asset_dir,
                 device=router_device,
                 router_task_type=ROUTER_TASK_REGRESSION,
+                router_embedding_provider=router_embedding_provider,
+                router_embedding_cache_mode=router_embedding_cache_mode,
+                router_embedding_cache_id=router_embedding_cache_id,
+                router_embedding_cache_path=router_embedding_cache_path,
+                router_embedding_cache_writeback=router_embedding_cache_writeback,
+                e2e_benchmark_path=benchmark_path.resolve(),
+                router_openai_embedding_dimensions=router_openai_embedding_dimensions,
             )
             startup_components["router_fallback_init_ms"] = (
                 time.perf_counter() - t_router_fb
@@ -910,7 +935,10 @@ def e2e_prepare_and_submit(
                 continue
             q_emb = feat = None
             if router_ctx is not None:
-                q_emb, feat = compute_query_tensors_for_router(question, router_ctx)
+                w_qid = str(sample.get("question_id", "") or "").strip()
+                q_emb, feat = compute_query_tensors_for_router(
+                    question, router_ctx, question_id=w_qid or None
+                )
             pipeline.run(
                 question,
                 RoutingPolicyName(policy),
@@ -937,7 +965,9 @@ def e2e_prepare_and_submit(
             q_emb = feat = None
             if router_ctx is not None:
                 rt0 = time.perf_counter()
-                q_emb, feat = compute_query_tensors_for_router(question, router_ctx)
+                q_emb, feat = compute_query_tensors_for_router(
+                    question, router_ctx, question_id=qid or None
+                )
                 routing_input_ms = (time.perf_counter() - rt0) * 1000.0
 
             if policy == ORACLE_UPPER_BOUND_POLICY:
@@ -1068,4 +1098,22 @@ def e2e_prepare_and_submit(
             completion_window=completion_window,
             dry_run=dry_run,
         )
+    if router_ctx is not None:
+        mpath = paths.manifest
+        if mpath.is_file():
+            mdata = read_manifest(paths)
+            e2e_block = mdata.setdefault("e2e", {})
+            e2e_block["router_query_embedding_cache"] = {
+                "cache_mode": router_ctx.embedding_cache_mode,
+                "embedding_provider": router_ctx.embedding_provider,
+                "embedding_model": router_ctx.embedding_model,
+                "cache_id": router_ctx.embedding_cache_id or None,
+                "cache_root": router_ctx.embedding_cache_root,
+                "stats": dict(router_ctx.router_cache_stats),
+            }
+            mdata["updated_at"] = utc_now_iso()
+            mpath.write_text(
+                json.dumps(mdata, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
     return code

@@ -128,10 +128,14 @@ def write_router_dataset_manifest(
     router_labels_path: str,
     feature_set_version: str,
     embedding_model: str,
+    embedding_provider: str | None = None,
+    embedding_dim: int | None = None,
+    embedding_cache: Dict[str, Any] | None = None,
     split_seed: int,
     train_ratio: float,
     dev_ratio: float,
     test_ratio: float,
+    openai_embedding_dimensions: int | None = None,
     extra: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Write ``manifest.json`` for a router dataset build (schema v3)."""
@@ -188,6 +192,14 @@ def write_router_dataset_manifest(
             "reports_dir": paths.reports_dir.name,
         },
     }
+    if embedding_provider:
+        data["embedding_provider"] = str(embedding_provider)
+    if embedding_dim is not None:
+        data["embedding_dim"] = int(embedding_dim)
+    if openai_embedding_dimensions is not None:
+        data["openai_embedding_dimensions"] = int(openai_embedding_dimensions)
+    if embedding_cache:
+        data["embedding_cache"] = dict(embedding_cache)
     if extra:
         data.update(extra)
     paths.manifest.write_text(

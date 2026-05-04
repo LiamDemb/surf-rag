@@ -1,7 +1,7 @@
 .PHONY: help print-resolved-config print-paths print-oracle-config print-router-config \
 	install install-hooks setup-models lock test ingest fetch-wikipedia-articles build-corpus align-2wiki-support align-2wiki-support-full filter-benchmark pipeline \
 	oracle-prepare oracle-create-router-labels oracle-labels \
-	router-build-dataset router-pipeline \
+	router-build-dataset router-build-query-embedding-cache router-pipeline \
 	router-train router-eval router-train-ablations router-evaluate-ablations \
 	router-calibrate-threshold \
 	figures-render \
@@ -57,6 +57,7 @@ help:
 	@echo "  make pipeline                — ingest → fetch → align → build-corpus"
 	@echo "  make oracle-labels            — oracle + router labels"
 	@echo "  make router-pipeline         — oracle-labels + router-build-dataset"
+	@echo "  make router-build-query-embedding-cache — benchmark query-embedding JSONL cache (oracle labels not required; runs validate-oracle-config)"
 	@echo "  make e2e-submit / e2e-collect / e2e-evaluate   (+ optional E2E_RUN_ID= E2E_POLICY=)"
 	@echo "  make answerability-submit / answerability-collect / answerability-balance (CONFIG=configs/audit/....yaml)"
 	@echo "  make llm-judge-submit / collect / merge (optional E2E_RUN_ID= E2E_POLICY=; else from CONFIG)"
@@ -134,6 +135,9 @@ oracle-labels: oracle-prepare oracle-create-router-labels
 
 router-build-dataset: validate-router-config
 	$(PY) -m scripts.router.build_router_dataset --config "$(CONFIG)"
+
+router-build-query-embedding-cache: validate-oracle-config
+	$(PY) -m scripts.router.build_query_embedding_cache --config "$(CONFIG)"
 
 router-pipeline: oracle-labels router-build-dataset
 
