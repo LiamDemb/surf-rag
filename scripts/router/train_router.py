@@ -63,7 +63,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--architecture",
         default=None,
-        help="Router architecture family (e.g., mlp-v1, logreg-v1).",
+        help="Router architecture family (e.g., mlp-v1, mlp-v2, logreg-v1).",
     )
     p.add_argument(
         "--architecture-kwargs",

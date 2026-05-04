@@ -113,6 +113,73 @@ def test_polyreg_v1_excluded_raises_when_none_left_for_query_features() -> None:
         )
 
 
+def test_mlp_v2_defaults() -> None:
+    arch = get_architecture("mlp-v2")
+    out = arch.validate_kwargs({})
+    assert out["hidden_dim_1"] == 32
+    assert out["hidden_dim_2"] == 8
+    assert out["dropout_1"] == 0.2
+    assert out["dropout_2"] == 0.1
+    assert out["activation"] == "gelu"
+    assert out["excluded_features"] == ()
+
+
+def test_mlp_v2_rejects_unknown_kwargs() -> None:
+    arch = get_architecture("mlp-v2")
+    with pytest.raises(ValueError, match="unknown architecture kwargs"):
+        arch.validate_kwargs({"bogus": 1})
+
+def test_mlp_v2_rejects_excluded_features() -> None:
+    arch = get_architecture("mlp-v2")
+    with pytest.raises(ValueError, match="does not support excluded_features"):
+        arch.validate_kwargs({"excluded_features": ["content_token_len"]})
+
+
+def test_mlp_v2_validates_dropout() -> None:
+    arch = get_architecture("mlp-v2")
+    with pytest.raises(ValueError, match="dropout_1"):
+        arch.validate_kwargs({"dropout_1": 1.0})
+    with pytest.raises(ValueError, match="dropout_2"):
+        arch.validate_kwargs({"dropout_2": -0.1})
+
+
+def test_mlp_v2_rejects_non_embedding_input_mode() -> None:
+    arch = get_architecture("mlp-v2")
+    with pytest.raises(ValueError, match="mlp-v2 only supports input_mode=embedding"):
+        arch.build_model_config(256, 14, "both", "regression", {})
+    with pytest.raises(ValueError, match="mlp-v2 only supports input_mode=embedding"):
+        arch.build_model_config(256, 14, "query-features", "regression", {})
+
+
+def test_mlp_v2_builds_and_forward() -> None:
+    arch = get_architecture("mlp-v2")
+    cfg = arch.build_model_config(
+        8,
+        14,
+        "embedding",
+        "regression",
+        {"hidden_dim_1": 4, "hidden_dim_2": 2, "dropout_1": 0.2, "dropout_2": 0.1},
+    )
+    m = arch.build_model(cfg)
+    import torch
+
+    xe = torch.randn(3, 8)
+    xf = torch.zeros(3, 14)
+    w = m.predict_weight(xe, xf)
+    assert w.shape == (3,)
+
+
+def test_mlp_v2_classification_head_width() -> None:
+    arch = get_architecture("mlp-v2")
+    cfg = arch.build_model_config(4, 0, "embedding", "classification", {})
+    m = arch.build_model(cfg)
+    import torch
+
+    xe = torch.randn(2, 4)
+    logits = m.predict_class_logits(xe, torch.zeros(2, 0))
+    assert logits.shape == (2, 2)
+
+
 def test_polyreg_v1_excluded_reduces_polynomial_width() -> None:
     arch = get_architecture("polyreg-v1")
     cfg = arch.build_model_config(
