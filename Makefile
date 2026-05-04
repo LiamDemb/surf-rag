@@ -151,7 +151,7 @@ router-train-ablations: validate-router-train
 		$(PY) -m scripts.router.train_router --config "$(CONFIG)" --input-mode "$$m" || exit 1; \
 	done
 
-router-eval: validate-router-train
+router-evaluate: validate-router-train
 	$(PY) -m scripts.router.evaluate_router --config "$(CONFIG)" \
 		$(if $(ROUTER_TASK_TYPE),--router-task-type "$(ROUTER_TASK_TYPE)",)
 
