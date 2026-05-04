@@ -75,3 +75,82 @@ def test_materialize_router_labels_writes_expected_jsonl(tmp_path: Path):
         assert rec["oracle_best_score"] == pytest.approx(max(rec["oracle_curve"]))
         assert "oracle_best_weight" not in rec
         assert "oracle_best_index" not in rec
+
+
+def test_materialize_router_labels_uses_recall_objective(tmp_path: Path) -> None:
+    grid = [0.0, 0.5, 1.0]
+    rows = [
+        {
+            "question_id": "q1",
+            "dataset_source": "nq",
+            "weight_grid": grid,
+            "scores": [
+                {
+                    "dense_weight": 0.0,
+                    "graph_weight": 1.0,
+                    "ndcg_primary": 0.9,
+                    "diagnostic_recall": {"20": 0.1},
+                },
+                {
+                    "dense_weight": 0.5,
+                    "graph_weight": 0.5,
+                    "ndcg_primary": 0.5,
+                    "diagnostic_recall": {"20": 0.8},
+                },
+                {
+                    "dense_weight": 1.0,
+                    "graph_weight": 0.0,
+                    "ndcg_primary": 0.2,
+                    "diagnostic_recall": {"20": 1.0},
+                },
+            ],
+        }
+    ]
+    out = tmp_path / "labels" / "router_labels.jsonl"
+    n = materialize_router_labels(
+        rows,
+        output_path=out,
+        oracle_metric="recall",
+        oracle_metric_k=20,
+    )
+    assert n == 1
+    rec = json.loads(out.read_text(encoding="utf-8").strip())
+    assert rec["oracle_curve"] == pytest.approx([0.1, 0.8, 1.0])
+    assert rec["oracle_best_score"] == pytest.approx(1.0)
+
+
+def test_materialize_router_labels_prefers_oracle_objective_value(
+    tmp_path: Path,
+) -> None:
+    grid = [0.0, 1.0]
+    rows = [
+        {
+            "question_id": "q1",
+            "dataset_source": "nq",
+            "weight_grid": grid,
+            "scores": [
+                {
+                    "dense_weight": 0.0,
+                    "graph_weight": 1.0,
+                    "ndcg_primary": 0.9,
+                    "oracle_objective_value": 0.2,
+                },
+                {
+                    "dense_weight": 1.0,
+                    "graph_weight": 0.0,
+                    "ndcg_primary": 0.1,
+                    "oracle_objective_value": 0.7,
+                },
+            ],
+        }
+    ]
+    out = tmp_path / "labels" / "router_labels.jsonl"
+    n = materialize_router_labels(
+        rows,
+        output_path=out,
+        oracle_metric="recall",
+        oracle_metric_k=20,
+    )
+    assert n == 1
+    rec = json.loads(out.read_text(encoding="utf-8").strip())
+    assert rec["oracle_curve"] == pytest.approx([0.2, 0.7])

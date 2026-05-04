@@ -80,6 +80,8 @@ class EntityMatchingSection:
 class OracleSection:
     branch_top_k: int = 20
     fusion_keep_k: int = 20
+    oracle_metric: str = "stateful_ndcg"
+    oracle_metric_k: int = 10
 
 
 @dataclass

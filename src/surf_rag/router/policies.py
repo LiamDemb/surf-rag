@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-# Fusion band is inclusive on both ends; outer bands are strict (< low, > high).
+# Fusion only for weights strictly between 0.4 and 0.6; at or below 0.4 graph-only,
+# at or above 0.6 dense-only.
 LEARNED_HYBRID_FUSION_MIN = 0.4
 LEARNED_HYBRID_FUSION_MAX = 0.6
 
@@ -129,7 +130,7 @@ def decide_routing(
             run_graph=True,
             predicted_weight=clipped,
             hard_branch=None,
-            tie_break="fusion_band_inclusive",
+            tie_break="fusion_band_open",
         )
     raise ValueError(f"unknown policy {policy}")
 

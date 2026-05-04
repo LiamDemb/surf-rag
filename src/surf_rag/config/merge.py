@@ -170,6 +170,10 @@ def merge_oracle_prepare_args(
         args.branch_top_k = o.branch_top_k
     if not argv_provides(argv, "--fusion-keep-k"):
         args.fusion_keep_k = o.fusion_keep_k
+    if not argv_provides(argv, "--oracle-metric"):
+        args.oracle_metric = o.oracle_metric
+    if not argv_provides(argv, "--oracle-metric-k"):
+        args.oracle_metric_k = o.oracle_metric_k
     if not argv_provides(argv, "--router-base"):
         args.router_base = rp.router_base
 

@@ -17,11 +17,13 @@ from surf_rag.evaluation.oracle_artifacts import (
 )
 from surf_rag.evaluation.oracle_pipeline import (
     OracleRunConfig,
+    metric_value_for_objective,
     populate_retrieval_cache,
     prepare_oracle_run,
     sweep_missing_oracle_scores,
     sweep_weights_for_question,
 )
+from surf_rag.evaluation.retrieval_metrics import RankedMetricSuite
 from surf_rag.retrieval.base import BranchRetriever
 from surf_rag.retrieval.types import RetrievalResult, RetrievedChunk
 
@@ -82,6 +84,7 @@ def test_sweep_weights_per_question_prefers_winning_branch():
         graph,
         weight_grid=DEFAULT_DENSE_WEIGHT_GRID,
         fusion_keep_k=5,
+        oracle_metric="stateful_ndcg",
         oracle_metric_k=10,
         diagnostic_metric_ks=(5, 10, 20),
     )
@@ -141,6 +144,7 @@ def test_sweep_missing_oracle_scores_skips_when_branch_cache_missing(tmp_path):
         paths,
         weight_grid=DEFAULT_DENSE_WEIGHT_GRID,
         fusion_keep_k=5,
+        oracle_metric="stateful_ndcg",
         oracle_metric_k=10,
         diagnostic_metric_ks=(5, 10, 20),
     )
@@ -298,3 +302,78 @@ def test_prepare_oracle_run_handles_retriever_error_gracefully(tmp_path):
     # Oracle still runs with dense only; graph contributes nothing.
     score_rows = read_oracle_score_rows(paths)
     assert score_rows[0]["graph_status"] == "ERROR"
+
+
+def test_metric_value_for_objective_supported_and_invalid() -> None:
+    suite = RankedMetricSuite(k=10, ndcg=0.7, hit=1.0, recall=0.5)
+    assert metric_value_for_objective(suite, "stateful_ndcg") == pytest.approx(0.7)
+    assert metric_value_for_objective(suite, "ndcg") == pytest.approx(0.7)
+    assert metric_value_for_objective(suite, "hit") == pytest.approx(1.0)
+    assert metric_value_for_objective(suite, "recall") == pytest.approx(0.5)
+    with pytest.raises(ValueError, match="Unsupported oracle metric"):
+        metric_value_for_objective(suite, "mrr")
+
+
+def test_sweep_weights_objective_switches_winner(monkeypatch: pytest.MonkeyPatch):
+    dense = RetrievalResult(
+        query="q",
+        retriever_name="Dense",
+        status="OK",
+        chunks=[_chunk("dense", "dense", 1.0)],
+    )
+    graph = RetrievalResult(
+        query="q",
+        retriever_name="Graph",
+        status="OK",
+        chunks=[_chunk("graph", "graph", 1.0)],
+    )
+    row = {
+        "question_id": "q1",
+        "question": "q",
+        "dataset_source": "nq",
+        "gold_support_sentences": ["gold"],
+    }
+
+    def _fake_compute_metric_suite(chunks, *_args, **kwargs):
+        k_values = tuple(kwargs.get("ks", (10,)))
+        # Fusion stores the dense weight in each chunk metadata.
+        w = float(chunks[0].metadata.get("fusion_weight_dense", 0.0)) if chunks else 0.0
+        ndcg = 0.9 if w >= 0.5 else 0.2
+        recall = 0.1 if w >= 0.5 else 1.0
+        return [
+            RankedMetricSuite(
+                k=int(k), ndcg=ndcg, hit=1.0 if recall > 0 else 0.0, recall=recall
+            )
+            for k in k_values
+        ]
+
+    monkeypatch.setattr(
+        "surf_rag.evaluation.oracle_pipeline.compute_metric_suite",
+        _fake_compute_metric_suite,
+    )
+
+    ndcg_row = sweep_weights_for_question(
+        row,
+        dense,
+        graph,
+        weight_grid=(0.0, 1.0),
+        fusion_keep_k=2,
+        oracle_metric="stateful_ndcg",
+        oracle_metric_k=10,
+        diagnostic_metric_ks=(10,),
+    )
+    recall_row = sweep_weights_for_question(
+        row,
+        dense,
+        graph,
+        weight_grid=(0.0, 1.0),
+        fusion_keep_k=2,
+        oracle_metric="recall",
+        oracle_metric_k=10,
+        diagnostic_metric_ks=(10,),
+    )
+    assert ndcg_row.best_dense_weight == pytest.approx(1.0)
+    assert ndcg_row.best_score == pytest.approx(0.9)
+    assert recall_row.best_dense_weight == pytest.approx(0.0)
+    assert recall_row.best_score == pytest.approx(1.0)
+    assert all("oracle_objective_value" in score.to_json() for score in ndcg_row.scores)

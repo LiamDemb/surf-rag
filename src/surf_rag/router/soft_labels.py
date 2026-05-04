@@ -10,6 +10,15 @@ from typing import Any, Dict, Iterable, List, Sequence
 import numpy as np
 
 
+def _normalize_oracle_metric(metric: str) -> str:
+    m = str(metric or "").strip().lower()
+    if m in {"stateful_ndcg", "ndcg"}:
+        return "ndcg"
+    if m in {"hit", "recall"}:
+        return m
+    raise ValueError(f"Unsupported oracle metric: {metric!r}")
+
+
 def _as_finite_floats(values: Sequence[float]) -> List[float]:
     out: List[float] = []
     for v in values:
@@ -20,8 +29,23 @@ def _as_finite_floats(values: Sequence[float]) -> List[float]:
     return out
 
 
-def _extract_oracle_curve(row: Dict[str, Any]) -> List[float]:
-    return [float(s.get("ndcg_primary", 0.0)) for s in (row.get("scores") or [])]
+def _extract_oracle_curve(
+    row: Dict[str, Any], *, oracle_metric: str, oracle_metric_k: int
+) -> List[float]:
+    metric = _normalize_oracle_metric(oracle_metric)
+    scores = row.get("scores") or []
+    out: List[float] = []
+    k_key = str(int(oracle_metric_k))
+    for s in scores:
+        if "oracle_objective_value" in s:
+            out.append(float(s.get("oracle_objective_value", 0.0)))
+            continue
+        if metric == "ndcg":
+            out.append(float(s.get("ndcg_primary", 0.0)))
+            continue
+        by_metric = s.get(f"diagnostic_{metric}") or {}
+        out.append(float(by_metric.get(k_key, 0.0)))
+    return out
 
 
 def _extract_weight_grid(row: Dict[str, Any]) -> List[float]:
@@ -60,6 +84,9 @@ def oracle_label_from_curve(
 def materialize_router_labels(
     oracle_score_rows: Iterable[Dict[str, Any]],
     output_path: Path,
+    *,
+    oracle_metric: str = "stateful_ndcg",
+    oracle_metric_k: int = 10,
 ) -> int:
     """Materialize deterministic router labels from oracle score rows."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -70,7 +97,11 @@ def materialize_router_labels(
             if not qid:
                 continue
             label = oracle_label_from_curve(
-                oracle_curve=_extract_oracle_curve(row),
+                oracle_curve=_extract_oracle_curve(
+                    row,
+                    oracle_metric=oracle_metric,
+                    oracle_metric_k=oracle_metric_k,
+                ),
                 weight_grid=_extract_weight_grid(row),
                 dataset_source=str(row.get("dataset_source", "")),
             )

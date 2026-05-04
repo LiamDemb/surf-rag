@@ -24,6 +24,7 @@ from surf_rag.evaluation.oracle_artifacts import (
 from surf_rag.evaluation.retrieval_metrics import (
     DEFAULT_NDCG_KS,
     PRIMARY_NDCG_K,
+    RankedMetricSuite,
     compute_metric_suite,
 )
 from surf_rag.retrieval.base import BranchRetriever
@@ -34,6 +35,17 @@ logger = logging.getLogger(__name__)
 
 
 ProgressFn = Optional[Callable[[str, int, int], None]]
+
+
+def metric_value_for_objective(suite: RankedMetricSuite, oracle_metric: str) -> float:
+    metric = str(oracle_metric or "").strip().lower()
+    if metric in {"stateful_ndcg", "ndcg"}:
+        return float(suite.ndcg)
+    if metric == "hit":
+        return float(suite.hit)
+    if metric == "recall":
+        return float(suite.recall)
+    raise ValueError(f"Unsupported oracle metric: {oracle_metric!r}")
 
 
 @dataclass
@@ -132,6 +144,7 @@ def sweep_weights_for_question(
     *,
     weight_grid: Sequence[float],
     fusion_keep_k: int,
+    oracle_metric: str,
     oracle_metric_k: int,
     diagnostic_metric_ks: Sequence[int],
 ) -> OracleScoreRow:
@@ -163,6 +176,7 @@ def sweep_weights_for_question(
                     dense_weight=float(w),
                     graph_weight=1.0 - float(w),
                     ndcg_primary=0.0,
+                    oracle_objective_value=0.0,
                     diagnostic_ndcg={k: 0.0 for k in diagnostic_metric_ks},
                     diagnostic_hit={k: 0.0 for k in diagnostic_metric_ks},
                     diagnostic_recall={k: 0.0 for k in diagnostic_metric_ks},
@@ -178,12 +192,15 @@ def sweep_weights_for_question(
             ks=all_ks,
         )
         by_k = {s.k: s for s in suites}
-        primary_ndcg = by_k[oracle_metric_k].ndcg
+        objective_suite = by_k[oracle_metric_k]
+        primary_ndcg = objective_suite.ndcg
+        objective_value = metric_value_for_objective(objective_suite, oracle_metric)
         bin_scores.append(
             WeightBinScore(
                 dense_weight=float(w),
                 graph_weight=1.0 - float(w),
                 ndcg_primary=float(primary_ndcg),
+                oracle_objective_value=float(objective_value),
                 diagnostic_ndcg={k: by_k[k].ndcg for k in diagnostic_metric_ks},
                 diagnostic_hit={k: by_k[k].hit for k in diagnostic_metric_ks},
                 diagnostic_recall={k: by_k[k].recall for k in diagnostic_metric_ks},
@@ -194,7 +211,7 @@ def sweep_weights_for_question(
     best_idx = max(
         range(len(bin_scores)),
         key=lambda i: (
-            bin_scores[i].ndcg_primary,
+            bin_scores[i].oracle_objective_value,
             -abs(bin_scores[i].dense_weight - 0.5),
         ),
         default=0,
@@ -206,12 +223,12 @@ def sweep_weights_for_question(
         question=question,
         dataset_source=dataset_source,
         weight_grid=[float(w) for w in weight_grid],
-        oracle_metric="stateful_ndcg",
+        oracle_metric=str(oracle_metric),
         oracle_metric_k=int(oracle_metric_k),
         scores=bin_scores,
         best_bin_index=int(best_idx if best else 0),
         best_dense_weight=float(best.dense_weight) if best else 0.0,
-        best_score=float(best.ndcg_primary) if best else 0.0,
+        best_score=float(best.oracle_objective_value) if best else 0.0,
         dense_status=dense.status,
         graph_status=graph.status,
     )
@@ -223,6 +240,7 @@ def sweep_missing_oracle_scores(
     *,
     weight_grid: Sequence[float],
     fusion_keep_k: int,
+    oracle_metric: str,
     oracle_metric_k: int,
     diagnostic_metric_ks: Sequence[int],
     progress: ProgressFn = None,
@@ -262,6 +280,7 @@ def sweep_missing_oracle_scores(
                 graph,
                 weight_grid=weight_grid,
                 fusion_keep_k=fusion_keep_k,
+                oracle_metric=oracle_metric,
                 oracle_metric_k=oracle_metric_k,
                 diagnostic_metric_ks=diagnostic_metric_ks,
             )
@@ -383,6 +402,7 @@ def prepare_oracle_run(
         paths,
         weight_grid=cfg.weight_grid,
         fusion_keep_k=cfg.fusion_keep_k,
+        oracle_metric=cfg.oracle_metric,
         oracle_metric_k=cfg.oracle_metric_k,
         diagnostic_metric_ks=cfg.diagnostic_metric_ks,
         progress=progress,

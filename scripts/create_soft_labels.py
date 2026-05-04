@@ -20,9 +20,11 @@ from surf_rag.evaluation.oracle_artifacts import (
     OracleRunPaths,
     build_oracle_run_root,
     default_oracle_base,
+    read_manifest,
     read_oracle_score_rows,
     update_manifest,
 )
+from surf_rag.evaluation.retrieval_metrics import PRIMARY_NDCG_K
 from surf_rag.router.soft_labels import materialize_router_labels
 
 logger = logging.getLogger(__name__)
@@ -82,7 +84,15 @@ def main() -> int:
         logger.error("No oracle score rows found in %s.", paths.oracle_scores)
         return 1
 
-    n = materialize_router_labels(rows, output_path=paths.router_labels)
+    manifest = read_manifest(paths) if paths.manifest.is_file() else {}
+    oracle_metric = str(manifest.get("oracle_metric", "stateful_ndcg"))
+    oracle_metric_k = int(manifest.get("oracle_metric_k", PRIMARY_NDCG_K))
+    n = materialize_router_labels(
+        rows,
+        output_path=paths.router_labels,
+        oracle_metric=oracle_metric,
+        oracle_metric_k=oracle_metric_k,
+    )
     logger.info("wrote %d labels to %s", n, paths.router_labels)
 
     update_manifest(
