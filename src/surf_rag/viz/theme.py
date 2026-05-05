@@ -62,6 +62,8 @@ def apply_theme(
         "xtick.labelsize": 10,
         "ytick.labelsize": 10,
         "legend.fontsize": 10,
+        "font.family": "serif",
+        "font.serif": ["Libertinus"],
     }
     if dpi is not None:
         base["figure.dpi"] = float(dpi)
