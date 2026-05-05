@@ -29,7 +29,7 @@ def render_figures_from_config(
     overrides: dict[str, object] = dict(t.overrides or {})
     if t.font_size is not None:
         overrides["font.size"] = float(t.font_size)
-    apply_theme(name=t.name, dpi=t.dpi, overrides=overrides or None)
+    apply_theme(name=t.name, dpi=t.dpi, overrides=overrides or None, backend=t.backend)
     rp = resolve_paths(cfg)
     from surf_rag.viz.registry import render as registry_render
 

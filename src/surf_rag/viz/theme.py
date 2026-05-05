@@ -22,6 +22,7 @@ def apply_theme(
     name: str = "default",
     dpi: int | None = None,
     overrides: Mapping[str, Any] | None = None,
+    backend: str | None = None,
 ) -> None:
     """Apply consistent rcParams. Safe to call multiple times.
 
@@ -33,7 +34,12 @@ def apply_theme(
         If set, updates ``figure.dpi`` and ``savefig.dpi``.
     overrides:
         Extra rcParam keys merged last (e.g. from YAML).
+    backend:
+        Optional backend to set before updating rcParams (e.g. "pgf").
     """
+    if backend is not None:
+        mpl.use(backend)
+
     _ = name  # single preset for now
     base: dict[str, Any] = {
         "figure.facecolor": PALETTE["face"],

@@ -226,6 +226,7 @@ class FiguresThemeSection:
     name: str = "default"
     dpi: int = 200
     font_size: int | None = None
+    backend: str | None = None
     overrides: dict[str, Any] = field(default_factory=dict)
 
 
