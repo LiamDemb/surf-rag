@@ -7,6 +7,7 @@ from surf_rag.viz.specs import (
     OracleArgmaxWeightHistogramSpec,
     RouterPredVsOracleIntervalsSpec,
     RouterPredVsOracleSpec,
+    RouterTrainingLearningCurveSpec,
     figure_spec_from_mapping,
 )
 
@@ -168,3 +169,34 @@ def test_oracle_argmax_histogram_from_mapping_defaults() -> None:
 def test_figure_spec_oracle_argmax_histogram_dispatch() -> None:
     spec = figure_spec_from_mapping({"kind": "oracle_argmax_weight_histogram"})
     assert isinstance(spec, OracleArgmaxWeightHistogramSpec)
+
+
+def test_router_training_learning_curve_defaults() -> None:
+    s = RouterTrainingLearningCurveSpec.from_mapping(
+        {"kind": "router_training_learning_curve"}
+    )
+    assert s.filename_stem == "router_training_learning_curve"
+    assert s.include_dev is True
+    assert s.show_loss is True
+    assert s.show_regret is False
+
+
+def test_router_training_learning_curve_unknown_key_raises() -> None:
+    with pytest.raises(ValueError, match="Unknown keys"):
+        RouterTrainingLearningCurveSpec.from_mapping(
+            {"kind": "router_training_learning_curve", "bad": 1}
+        )
+
+
+def test_router_training_learning_curve_requires_metric() -> None:
+    with pytest.raises(ValueError, match="At least one"):
+        RouterTrainingLearningCurveSpec(
+            kind="router_training_learning_curve",
+            show_loss=False,
+            show_regret=False,
+        )
+
+
+def test_figure_spec_router_training_learning_curve_dispatch() -> None:
+    spec = figure_spec_from_mapping({"kind": "router_training_learning_curve"})
+    assert isinstance(spec, RouterTrainingLearningCurveSpec)

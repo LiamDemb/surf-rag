@@ -13,8 +13,12 @@ from surf_rag.viz.renderers.router_pred_vs_oracle import render_router_pred_vs_o
 from surf_rag.viz.renderers.router_pred_vs_oracle_intervals import (
     render_router_pred_vs_oracle_intervals,
 )
+from surf_rag.viz.renderers.router_training_learning_curve import (
+    render_router_training_learning_curve,
+)
 
 register("router_pred_vs_oracle", render_router_pred_vs_oracle)
 register("router_pred_vs_oracle_intervals", render_router_pred_vs_oracle_intervals)
 register("benchmark_oracle_ndcg_heatmap", render_benchmark_oracle_ndcg_heatmap)
 register("oracle_argmax_weight_histogram", render_oracle_argmax_weight_histogram)
+register("router_training_learning_curve", render_router_training_learning_curve)
