@@ -723,19 +723,15 @@ def collect_batches(
         if not batch_id or str(batch_id).startswith("dry-run"):
             continue
         batch = client.batches.retrieve(batch_id)
-        if batch.status != "completed":
-            logger.warning(
-                "Shard batch %s not completed (status=%s). Skipping.",
-                batch_id,
-                batch.status,
-            )
-            continue
-
         output_file_id = getattr(batch, "output_file_id", None) or getattr(
             batch, "output_file", None
         )
         if not output_file_id:
-            logger.warning("Shard batch %s has no output file.", batch_id)
+            logger.warning(
+                "Shard batch %s has no output file (status=%s). Skipping.",
+                batch_id,
+                getattr(batch, "status", None),
+            )
             continue
 
         logger.info("Downloading shard output for %s...", batch_id)
