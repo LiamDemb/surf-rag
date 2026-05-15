@@ -178,6 +178,18 @@ def _combined_latency(
     return out
 
 
+def branch_retrieval_wall_ms(result: RetrievalResult) -> float:
+    """Approximate single-branch wall time from ``RetrievalResult.latency_ms`` (persisted JSONL)."""
+    lat = dict(result.latency_ms or {})
+    for key in ("total_ms", "total"):
+        if key in lat:
+            try:
+                return float(lat[key])
+            except (TypeError, ValueError):
+                continue
+    return 0.0
+
+
 def build_fused_retrieval_result(
     query: str,
     dense: RetrievalResult,

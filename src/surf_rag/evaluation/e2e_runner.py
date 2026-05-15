@@ -44,6 +44,12 @@ from surf_rag.evaluation.e2e_policies import (
     e2e_pipeline_manifest_name,
     parse_routing_policy,
 )
+from surf_rag.evaluation.frozen_branch_cache import (
+    ResolvedFrozenBranchBundle,
+    _normalize_cache_mode,
+    frozen_results_for_question,
+    load_frozen_branch_bundle,
+)
 from surf_rag.evaluation.oracle_artifacts import (
     OracleRunPaths,
     build_oracle_run_root,
@@ -599,6 +605,13 @@ def e2e_prepare_and_submit(
     router_embedding_cache_path: Optional[str] = None,
     router_embedding_cache_writeback: Optional[bool] = None,
     router_openai_embedding_dimensions: Optional[int] = None,
+    branch_top_k: int = 20,
+    branch_cache_mode: str = "off",
+    branch_cache_oracle_router_id: Optional[str] = None,
+    branch_cache_dense_jsonl: Optional[str] = None,
+    branch_cache_graph_jsonl: Optional[str] = None,
+    branch_cache_strict_manifest: bool = True,
+    branch_cache_sequential_retrieval_total: bool = False,
 ) -> int:
     """Routed fusion retrieval + optional rerank + OpenAI batch submission.
 
@@ -680,6 +693,49 @@ def e2e_prepare_and_submit(
         logger.error("No benchmark samples to process.")
         return 1
 
+    rb = router_base if router_base is not None else default_router_base()
+
+    frozen_bundle: ResolvedFrozenBranchBundle | None = None
+    bc_mode = _normalize_cache_mode(branch_cache_mode)
+    if bc_mode != "off" and policy != ORACLE_UPPER_BOUND_POLICY:
+        if (
+            bc_mode == "router_oracle"
+            and not str(branch_cache_oracle_router_id or router_id or "").strip()
+        ):
+            raise ValueError(
+                "Frozen branch_cache mode router_oracle requires paths.router_id "
+                "(or --router-id) or e2e.branch_cache.oracle_router_id"
+            )
+        qids_all = {
+            str(s.get("question_id", "")).strip()
+            for s in samples
+            if str(s.get("question_id", "")).strip()
+        }
+        frozen_bundle = load_frozen_branch_bundle(
+            mode=bc_mode,
+            router_base=rb,
+            paths_router_id=str(router_id or "").strip(),
+            oracle_router_id=(
+                str(branch_cache_oracle_router_id).strip()
+                if branch_cache_oracle_router_id
+                else None
+            ),
+            dense_jsonl=branch_cache_dense_jsonl,
+            graph_jsonl=branch_cache_graph_jsonl,
+            benchmark_path=benchmark_path.resolve(),
+            retrieval_asset_dir=asset_dir,
+            expect_branch_top_k=int(branch_top_k),
+            strict_manifest=bool(branch_cache_strict_manifest),
+            question_ids=qids_all,
+            policy=policy,
+        )
+        logger.info(
+            "Frozen branch cache enabled (%s): %d dense, %d graph rows.",
+            bc_mode,
+            len(frozen_bundle.dense_by_qid),
+            len(frozen_bundle.graph_by_qid),
+        )
+
     answers_path = paths.generation_answers_jsonl()
     completed_qids = _load_completed_question_ids_from_answers(answers_path)
 
@@ -712,7 +768,7 @@ def e2e_prepare_and_submit(
 
     if need_dense:
         t_dense = time.perf_counter()
-        dense_retriever = build_dense_retriever(str(asset_dir))
+        dense_retriever = build_dense_retriever(str(asset_dir), top_k=int(branch_top_k))
         startup_components["dense_init_ms"] = (time.perf_counter() - t_dense) * 1000.0
     else:
         dense_retriever = _UnusedRetriever("Dense")
@@ -721,6 +777,7 @@ def e2e_prepare_and_submit(
         t_graph = time.perf_counter()
         graph_retriever = build_graph_retriever(
             str(asset_dir),
+            top_k=int(branch_top_k),
             pipeline_config=pipeline_config_for_artifact,
         )
         startup_components["graph_init_ms"] = (time.perf_counter() - t_graph) * 1000.0
@@ -730,7 +787,6 @@ def e2e_prepare_and_submit(
     loaded_router = None
     fallback_router = None
     router_ctx = None
-    rb = router_base if router_base is not None else default_router_base()
     if policy in (
         RoutingPolicyName.LEARNED_SOFT.value,
         RoutingPolicyName.HARD_ROUTING.value,
@@ -780,6 +836,9 @@ def e2e_prepare_and_submit(
 
     startup_total_ms = (time.perf_counter() - startup_t0) * 1000.0
 
+    use_sequential_fusion_total = bool(
+        frozen_bundle is not None and branch_cache_sequential_retrieval_total
+    )
     pipeline = RoutedFusionPipeline(
         dense_retriever,
         graph_retriever,
@@ -787,6 +846,7 @@ def e2e_prepare_and_submit(
         router=loaded_router,
         fallback_router=fallback_router,
         router_confidence_threshold=float(router_confidence_threshold),
+        sequential_fusion_retrieval_total=use_sequential_fusion_total,
     )
     resolved_cross_encoder_device = cross_encoder_device
     if (
@@ -830,6 +890,7 @@ def e2e_prepare_and_submit(
                 "schema": "surf-rag/e2e/v1",
                 "benchmark_id": benchmark_id,
                 "routing_policy": policy,
+                "branch_top_k": int(branch_top_k),
                 "fusion_keep_k": fusion_keep_k,
                 "reranker": reranker_kind,
                 "rerank_top_k": rerank_top_k,
@@ -841,6 +902,19 @@ def e2e_prepare_and_submit(
                 "router_input_mode": router_input_mode,
                 "router_task_type": task_type,
                 "router_inference_batch_size": router_inference_batch_size,
+                "branch_cache": (
+                    {
+                        **(frozen_bundle.provenance if frozen_bundle else {}),
+                        "sequential_retrieval_total": bool(
+                            branch_cache_sequential_retrieval_total
+                        ),
+                    }
+                    if frozen_bundle is not None
+                    else {
+                        "mode": "off",
+                        "sequential_retrieval_total": False,
+                    }
+                ),
                 "latency_protocol": {
                     "version": LATENCY_PROTOCOL_VERSION,
                     "included_components": [
@@ -879,7 +953,6 @@ def e2e_prepare_and_submit(
 
     records: List[BatchRequestRecord] = []
     if policy == ORACLE_UPPER_BOUND_POLICY:
-        rb = router_base if router_base is not None else default_router_base()
         oracle_paths = OracleRunPaths(
             run_root=build_oracle_run_root(rb, str(router_id).strip())
         )
@@ -939,11 +1012,22 @@ def e2e_prepare_and_submit(
                 q_emb, feat = compute_query_tensors_for_router(
                     question, router_ctx, question_id=w_qid or None
                 )
+            d_r = g_r = None
+            if frozen_bundle is not None:
+                w_qid = str(sample.get("question_id", "") or "").strip()
+                d_r, g_r = frozen_results_for_question(
+                    policy,
+                    w_qid,
+                    dense_by_qid=frozen_bundle.dense_by_qid,
+                    graph_by_qid=frozen_bundle.graph_by_qid,
+                )
             pipeline.run(
                 question,
                 RoutingPolicyName(policy),
                 query_embedding=q_emb,
                 feature_vector=feat,
+                dense_result=d_r,
+                graph_result=g_r,
             )
 
     retrieval_fp = paths.retrieval_results_jsonl().open("a", encoding="utf-8")
@@ -1009,11 +1093,21 @@ def e2e_prepare_and_submit(
                 }
                 rr.debug_info = {**dict(rr.debug_info or {}), "routing": oracle_debug}
             else:
+                d_r = g_r = None
+                if frozen_bundle is not None:
+                    d_r, g_r = frozen_results_for_question(
+                        policy,
+                        qid,
+                        dense_by_qid=frozen_bundle.dense_by_qid,
+                        graph_by_qid=frozen_bundle.graph_by_qid,
+                    )
                 routed = pipeline.run_with_pretrunc(
                     question,
                     RoutingPolicyName(policy),
                     query_embedding=q_emb,
                     feature_vector=feat,
+                    dense_result=d_r,
+                    graph_result=g_r,
                 )
                 rr_pre = routed.pretrunc_result
                 rr = routed.generation_result

@@ -148,6 +148,31 @@ def cmd_prepare(args: argparse.Namespace) -> int:
         router_openai_embedding_dimensions=getattr(
             args, "router_openai_embedding_dimensions", None
         ),
+        branch_top_k=int(getattr(args, "branch_top_k", 20)),
+        branch_cache_mode=str(getattr(args, "branch_cache_mode", "off")),
+        branch_cache_oracle_router_id=getattr(
+            args, "branch_cache_oracle_router_id", None
+        ),
+        branch_cache_dense_jsonl=(
+            str(args.branch_cache_dense_jsonl)
+            if getattr(args, "branch_cache_dense_jsonl", None)
+            else None
+        ),
+        branch_cache_graph_jsonl=(
+            str(args.branch_cache_graph_jsonl)
+            if getattr(args, "branch_cache_graph_jsonl", None)
+            else None
+        ),
+        branch_cache_strict_manifest=(
+            True
+            if getattr(args, "branch_cache_strict_manifest", None) is None
+            else bool(args.branch_cache_strict_manifest)
+        ),
+        branch_cache_sequential_retrieval_total=(
+            False
+            if getattr(args, "branch_cache_sequential_retrieval_total", None) is None
+            else bool(args.branch_cache_sequential_retrieval_total)
+        ),
     )
 
 
@@ -302,6 +327,49 @@ def main() -> int:
         help=(
             "Generation-context retrieval depth before LLM prompting; pure retrieval "
             "metrics are sourced from pre-truncation retrieval artifacts."
+        ),
+    )
+    p_prep.add_argument(
+        "--branch-top-k",
+        type=int,
+        default=20,
+        help="Per-branch top-k for dense/graph retrievers (align with frozen oracle cache).",
+    )
+    p_prep.add_argument(
+        "--branch-cache-mode",
+        default="off",
+        help="Frozen replay: off | router_oracle | explicit_jsonl.",
+    )
+    p_prep.add_argument(
+        "--branch-cache-oracle-router-id",
+        default=None,
+        help="Override router id for router_oracle cache directory (default: paths.router_id).",
+    )
+    p_prep.add_argument(
+        "--branch-cache-dense-jsonl",
+        type=Path,
+        default=None,
+        help="Explicit dense retrieval JSONL (mode explicit_jsonl).",
+    )
+    p_prep.add_argument(
+        "--branch-cache-graph-jsonl",
+        type=Path,
+        default=None,
+        help="Explicit graph retrieval JSONL (mode explicit_jsonl).",
+    )
+    p_prep.add_argument(
+        "--branch-cache-strict-manifest",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Strictly validate oracle manifest vs benchmark/corpus (default: true from YAML).",
+    )
+    p_prep.add_argument(
+        "--branch-cache-sequential-retrieval-total",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "When using frozen dual-branch fusion, set fused total_ms to sum of cached "
+            "branch totals + fusion (default: false from YAML)."
         ),
     )
     p_prep.add_argument(

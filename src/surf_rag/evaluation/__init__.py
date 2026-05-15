@@ -48,12 +48,23 @@ from surf_rag.evaluation.retrieval_metrics import (
     score_retrieval_result,
     stateful_relevances,
 )
-from surf_rag.evaluation.router_model_artifacts import (
-    RouterModelPaths,
-    build_router_model_root,
-    make_router_model_paths_for_cli,
-    read_router_model_manifest,
-)
+
+
+def __getattr__(name: str):
+    """Lazy router model exports (avoid importing torch at evaluation package import)."""
+    _lazy = {
+        "RouterModelPaths",
+        "build_router_model_root",
+        "make_router_model_paths_for_cli",
+        "read_router_model_manifest",
+    }
+    if name in _lazy:
+        from surf_rag.evaluation import router_model_artifacts as _rma
+
+        return getattr(_rma, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 from surf_rag.evaluation.router_overlap import (
     RouterOverlapSplit,
     RouterSplitSets,

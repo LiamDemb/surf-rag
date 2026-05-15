@@ -10,11 +10,13 @@ from surf_rag.retrieval.base import BranchRetriever
 from surf_rag.retrieval.fusion import (
     FUSED_RETRIEVER_NAME,
     FusionPipeline,
+    branch_retrieval_wall_ms,
     build_fused_retrieval_result,
     fuse_branch_results,
     fuse_cached_results,
     min_max_normalize,
 )
+from surf_rag.retrieval.routed import dual_branch_weighted_fusion_output
 from surf_rag.retrieval.types import RetrievalResult, RetrievedChunk
 
 
@@ -251,3 +253,32 @@ def test_fuse_cached_results_wrapper_produces_fused_result():
     )
     assert res.retriever_name == FUSED_RETRIEVER_NAME
     assert res.status == "OK"
+
+
+def test_branch_retrieval_wall_ms_prefers_total():
+    dense = _mk_result("Dense", "OK", [_chunk("a", 1.0)])
+    dense.latency_ms.clear()
+    dense.latency_ms["total"] = 12.5
+    assert branch_retrieval_wall_ms(dense) == pytest.approx(12.5)
+
+
+def test_dual_branch_sequential_fusion_total_matches_branch_sum():
+    dense = _mk_result("Dense", "OK", [_chunk("a", 1.0)])
+    dense.latency_ms["total"] = 10.0
+    graph = _mk_result("Graph", "OK", [_chunk("b", 1.0)])
+    graph.latency_ms["total"] = 20.0
+    out = dual_branch_weighted_fusion_output(
+        query="q",
+        dense_result=dense,
+        graph_result=graph,
+        fusion_keep_k=5,
+        dense_weight=0.5,
+        routing_predict_ms=0.0,
+        t_route_start=0.0,
+        debug={},
+        sequential_fusion_total=True,
+    )
+    fusion_ms = float(out.pretrunc_result.latency_ms.get("fusion", 0.0))
+    total_ms = float(out.pretrunc_result.latency_ms.get("total", 0.0))
+    assert fusion_ms > 0.0
+    assert total_ms == pytest.approx(10.0 + 20.0 + fusion_ms)

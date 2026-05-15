@@ -168,6 +168,22 @@ class GenerationSection:
 
 
 @dataclass
+class E2EBranchCacheSection:
+    """Optional frozen dense/graph JSONL replay for fair e2e ablations."""
+
+    mode: str = "off"
+    """off | router_oracle | explicit_jsonl"""
+    oracle_router_id: str | None = None
+    """When mode is router_oracle, override ``paths.router_id`` for cache directory."""
+    dense_jsonl: str | None = None
+    graph_jsonl: str | None = None
+    strict_manifest: bool = True
+    """When True, oracle manifest must match benchmark_path, corpus dir, branch_top_k."""
+    sequential_retrieval_total: bool = False
+    """When True with dual-branch fusion, fused ``total_ms`` uses cached branch totals + fusion."""
+
+
+@dataclass
 class E2ESection:
     run_id: str | None = None
     split: str = "test"
@@ -211,6 +227,7 @@ class E2ESection:
     include_graph_provenance: bool = False
     completion_window: str | None = None
     apply_answerability_audit: bool = False
+    branch_cache: E2EBranchCacheSection = field(default_factory=E2EBranchCacheSection)
 
 
 @dataclass
