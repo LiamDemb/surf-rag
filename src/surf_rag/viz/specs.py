@@ -72,9 +72,23 @@ _ORACLE_ARGMAX_WEIGHT_HISTOGRAM_ALLOWED = frozenset(
     }
 )
 
+_ROUTER_TRAINING_LEARNING_CURVE_ALLOWED = frozenset(
+    {
+        "kind",
+        "filename_stem",
+        "fig_width",
+        "fig_height",
+        "show_plot_subtitle",
+        "include_dev",
+        "show_loss",
+        "show_regret",
+    }
+)
+
 _KNOWN_KINDS_HINT = (
     "router_pred_vs_oracle, router_pred_vs_oracle_intervals, "
-    "benchmark_oracle_ndcg_heatmap, oracle_argmax_weight_histogram"
+    "benchmark_oracle_ndcg_heatmap, oracle_argmax_weight_histogram, "
+    "router_training_learning_curve"
 )
 
 
@@ -352,6 +366,45 @@ class OracleArgmaxWeightHistogramSpec(BaseFigureSpec):
         )
 
 
+@dataclass(frozen=True)
+class RouterTrainingLearningCurveSpec(BaseFigureSpec):
+    """Learning curves from ``training_history.json`` in router model artifacts."""
+
+    filename_stem: str = "router_training_learning_curve"
+    fig_width: float = 8.0
+    fig_height: float = 4.5
+    show_plot_subtitle: bool = True
+    include_dev: bool = True
+    show_loss: bool = True
+    show_regret: bool = False
+
+    def __post_init__(self) -> None:
+        if self.kind != "router_training_learning_curve":
+            raise ValueError(f"unexpected kind {self.kind!r}")
+        if self.fig_width <= 0 or self.fig_height <= 0:
+            raise ValueError("fig_width and fig_height must be positive")
+        if not (self.show_loss or self.show_regret):
+            raise ValueError("At least one of show_loss/show_regret must be true")
+
+    @staticmethod
+    def from_mapping(m: Mapping[str, Any]) -> RouterTrainingLearningCurveSpec:
+        extra = frozenset(m.keys()) - _ROUTER_TRAINING_LEARNING_CURVE_ALLOWED
+        if extra:
+            raise ValueError(
+                f"Unknown keys for router_training_learning_curve plot: {sorted(extra)}"
+            )
+        return RouterTrainingLearningCurveSpec(
+            kind="router_training_learning_curve",
+            filename_stem=str(m.get("filename_stem", "router_training_learning_curve")),
+            fig_width=float(m.get("fig_width", 8.0)),
+            fig_height=float(m.get("fig_height", 4.5)),
+            show_plot_subtitle=bool(m.get("show_plot_subtitle", True)),
+            include_dev=bool(m.get("include_dev", True)),
+            show_loss=bool(m.get("show_loss", True)),
+            show_regret=bool(m.get("show_regret", False)),
+        )
+
+
 def figure_spec_from_mapping(plot: Mapping[str, Any]) -> BaseFigureSpec:
     """Dispatch on ``kind`` for one entry under ``figures.plots``."""
     kind = plot.get("kind")
@@ -366,4 +419,6 @@ def figure_spec_from_mapping(plot: Mapping[str, Any]) -> BaseFigureSpec:
         return BenchmarkOracleHeatmapSpec.from_mapping(plot)
     if key == "oracle_argmax_weight_histogram":
         return OracleArgmaxWeightHistogramSpec.from_mapping(plot)
+    if key == "router_training_learning_curve":
+        return RouterTrainingLearningCurveSpec.from_mapping(plot)
     raise ValueError(f"Unknown figure kind {key!r}. Known kinds: {_KNOWN_KINDS_HINT}")

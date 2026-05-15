@@ -40,6 +40,29 @@ def _write_predictions(path: Path, n: int = 3) -> None:
     )
 
 
+def _write_training_history(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "history": [
+            {
+                "epoch": 1,
+                "train_loss": 0.9,
+                "dev_loss": 1.2,
+                "train_regret": 0.6,
+                "dev_regret": 0.7,
+            },
+            {
+                "epoch": 2,
+                "train_loss": 0.7,
+                "dev_loss": 0.9,
+                "train_regret": 0.4,
+                "dev_regret": 0.5,
+            },
+        ]
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
 def test_render_figures_from_config_runs_two_plots(tmp_path: Path) -> None:
     rb = tmp_path / "router"
     mp = make_router_model_paths_for_cli(
@@ -92,3 +115,46 @@ def test_render_figures_from_config_noop_when_disabled(tmp_path: Path) -> None:
     cfg = replace(PipelineConfig(), figures=replace(FiguresSection(), enabled=False))
     outs = render_figures_from_config(cfg)
     assert outs == []
+
+
+def test_render_figures_from_config_learning_curve(tmp_path: Path) -> None:
+    rb = tmp_path / "router"
+    mp = make_router_model_paths_for_cli(
+        "rid",
+        router_base=rb,
+        input_mode="both",
+        router_architecture_id="arch1",
+    )
+    mp.ensure_dirs()
+    write_json(
+        mp.manifest, {"task_type": "regression", "model": {"weight_grid": [0, 1]}}
+    )
+    _write_training_history(mp.training_history)
+    figures = FiguresSection(
+        enabled=True,
+        plots=[
+            {
+                "kind": "router_training_learning_curve",
+                "filename_stem": "learning_curve",
+            }
+        ],
+    )
+    cfg = replace(
+        PipelineConfig(),
+        paths=replace(
+            PathsSection(),
+            router_id="rid",
+            router_base=str(rb),
+            router_architecture_id="arch1",
+            data_base=str(tmp_path),
+            figures_base=str(tmp_path / "figures"),
+        ),
+        router=replace(
+            RouterSection(),
+            train=replace(RouterTrainSection(), input_mode="both"),
+        ),
+        figures=figures,
+    )
+    outs = render_figures_from_config(cfg, force=True)
+    assert len(outs) == 1
+    assert outs[0].path_image.name.startswith("learning_curve")

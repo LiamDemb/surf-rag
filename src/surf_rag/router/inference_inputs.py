@@ -47,6 +47,7 @@ from surf_rag.router.model import parse_router_input_mode
 from surf_rag.router.query_embeddings import embed_queries
 from surf_rag.router.query_features import (
     QueryFeatureContext,
+    V1_FEATURE_NAMES,
     extract_features_v1,
     feature_vector_ordered,
 )
@@ -333,6 +334,23 @@ def load_router_inference_context(
     )
 
 
+def _dummy_feature_vector_dim_for_embedding_mode(router: LoadedRouter) -> int:
+    """Width of placeholder ``feature_vector`` rows when ``input_mode`` is embedding-only.
+
+    ``predict_*`` always receives ``(query_embedding, feature_vector)``. Embedding-only
+    architectures such as ``RouterMLPv2`` omit ``feature_dim`` on config and ignore the
+    second tensor at forward time; we still allocate a second array for API symmetry.
+    Prefer ``config.feature_dim`` when the architecture defines it; otherwise use the
+    canonical V1 query-feature width (aligned with router dataset ``feature_vector_norm``).
+    """
+    fd = getattr(router.config, "feature_dim", None)
+    if fd is not None:
+        n = int(fd)
+        if n > 0:
+            return n
+    return int(len(V1_FEATURE_NAMES))
+
+
 def compute_query_tensors_for_router_batch(
     queries: Sequence[str],
     ictx: RouterInferenceContext,
@@ -432,7 +450,7 @@ def compute_query_tensors_for_router_batch(
             axis=0,
         )
     if mode == "embedding":
-        fd = int(r.config.feature_dim)
+        fd = _dummy_feature_vector_dim_for_embedding_mode(r)
         qf = np.zeros((n, fd), dtype=np.float32)
     elif mode == "query-features":
         ed = int(r.config.embedding_dim)

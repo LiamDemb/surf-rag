@@ -36,7 +36,10 @@ from surf_rag.evaluation.e2e_policies import (
 from surf_rag.evaluation.router_dataset_artifacts import (
     make_router_dataset_paths_for_cli,
 )
-from surf_rag.generation.batch_orchestrator import collect_batches
+from surf_rag.generation.batch_orchestrator import (
+    collect_batches,
+    submit_dry_run_batches,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -171,6 +174,31 @@ def cmd_collect(args: argparse.Namespace) -> int:
         run_id=args.run_id,
     )
     return collect_batches(run_root=paths.run_root)
+
+
+def cmd_submit_batch(args: argparse.Namespace) -> int:
+    if (
+        not args.benchmark_name
+        or not args.benchmark_id
+        or not args.run_id
+        or not args.policy
+    ):
+        log.error("Missing required E2E fields (use --config or CLI flags).")
+        return 2
+    bb = args.benchmark_base or default_benchmark_base()
+    try:
+        policy = parse_routing_policy(args.policy)
+    except ValueError as e:
+        log.error("%s", e)
+        return 2
+    paths = make_e2e_run_paths(
+        benchmark_base=bb,
+        benchmark_name=args.benchmark_name,
+        benchmark_id=args.benchmark_id,
+        policy=policy,
+        run_id=args.run_id,
+    )
+    return submit_dry_run_batches(run_root=paths.run_root)
 
 
 def cmd_evaluate(args: argparse.Namespace) -> int:
@@ -346,6 +374,12 @@ def main() -> int:
     )
     p_prep.set_defaults(func=cmd_prepare)
 
+    p_sb = sub.add_parser(
+        "submit-batch", help="Submit an already generated batch from a dry-run"
+    )
+    _add_common(p_sb)
+    p_sb.set_defaults(func=cmd_submit_batch)
+
     p_col = sub.add_parser("collect", help="Download batch outputs → answers.jsonl")
     _add_common(p_col)
     p_col.set_defaults(func=cmd_collect)
@@ -388,12 +422,10 @@ def main() -> int:
         args._pipeline_config = cfg
         if args.cmd == "prepare":
             merge_e2e_prepare_args(args, cfg)
-        elif args.cmd == "collect":
+        elif args.cmd in ("collect", "submit-batch", "print-config"):
             merge_e2e_common_args(args, cfg)
         elif args.cmd == "evaluate":
             merge_e2e_evaluate_args(args, cfg)
-        elif args.cmd == "print-config":
-            merge_e2e_common_args(args, cfg)
     return int(args.func(args))
 
 

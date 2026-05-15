@@ -22,6 +22,7 @@ def test_list_figure_kinds_includes_built_ins() -> None:
     assert "router_pred_vs_oracle_intervals" in kinds
     assert "benchmark_oracle_ndcg_heatmap" in kinds
     assert "oracle_argmax_weight_histogram" in kinds
+    assert "router_training_learning_curve" in kinds
 
 
 def test_render_unknown_kind_raises(tmp_path: Path) -> None:

@@ -680,6 +680,91 @@ def _build_state(
     }
 
 
+def submit_dry_run_batches(
+    *,
+    state_path: Optional[Path] = None,
+    run_root: Optional[Path] = None,
+    completion_window: str = "24h",
+) -> int:
+    """Submit previously dry-run generated batch shards to OpenAI."""
+    if state_path is None:
+        if run_root is None:
+            raise ValueError("submit_dry_run_batches requires state_path or run_root")
+        state_path = RunArtifactPaths(run_root).batch_state_json()
+
+    if not state_path.is_file():
+        logger.error("State file not found: %s", state_path)
+        return 1
+
+    with state_path.open("r", encoding="utf-8") as f:
+        state = json.load(f)
+
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        logger.error("OPENAI_API_KEY is not set.")
+        return 1
+
+    client = OpenAI(api_key=api_key)
+
+    shards = state.get("shards") or []
+    updated_shards = []
+    submitted_count = 0
+
+    benchmark = state.get("benchmark", "")
+    split = state.get("split", "")
+    run_id = state.get("run_id", "")
+    pipeline_name = state.get("pipeline_name", "")
+
+    for i, shard in enumerate(shards):
+        batch_id = shard.get("batch_id")
+        if batch_id and str(batch_id).startswith("dry-run"):
+            input_path = Path(shard["input_path"])
+            request_count = shard.get("request_count", 0)
+            if not input_path.is_file():
+                logger.error("Shard file missing: %s", input_path)
+                updated_shards.append(shard)
+                continue
+
+            logger.info(
+                "Uploading shard %d from %s (%d requests)...",
+                i,
+                input_path,
+                request_count,
+            )
+            with input_path.open("rb") as r:
+                uploaded = client.files.create(file=r, purpose="batch")
+            batch = client.batches.create(
+                input_file_id=uploaded.id,
+                endpoint="/v1/chat/completions",
+                completion_window=completion_window,
+                metadata={
+                    "description": f"Generation ({pipeline_name})",
+                    "benchmark": benchmark,
+                    "split": split,
+                    "run_id": run_id,
+                    "shard": str(i),
+                },
+            )
+            shard_copy = dict(shard)
+            shard_copy["batch_id"] = batch.id
+            updated_shards.append(shard_copy)
+            logger.info("Shard %d batch created: %s", i, batch.id)
+            submitted_count += 1
+        else:
+            updated_shards.append(shard)
+
+    state["shards"] = updated_shards
+    state_path.write_text(
+        json.dumps(state, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    if submitted_count > 0:
+        logger.info("Submitted %d dry-run shards. Updated state file.", submitted_count)
+    else:
+        logger.info("No dry-run shards found to submit.")
+    return 0
+
+
 def collect_batches(
     *,
     state_path: Optional[Path] = None,
@@ -723,19 +808,15 @@ def collect_batches(
         if not batch_id or str(batch_id).startswith("dry-run"):
             continue
         batch = client.batches.retrieve(batch_id)
-        if batch.status != "completed":
-            logger.warning(
-                "Shard batch %s not completed (status=%s). Skipping.",
-                batch_id,
-                batch.status,
-            )
-            continue
-
         output_file_id = getattr(batch, "output_file_id", None) or getattr(
             batch, "output_file", None
         )
         if not output_file_id:
-            logger.warning("Shard batch %s has no output file.", batch_id)
+            logger.warning(
+                "Shard batch %s has no output file (status=%s). Skipping.",
+                batch_id,
+                getattr(batch, "status", None),
+            )
             continue
 
         logger.info("Downloading shard output for %s...", batch_id)

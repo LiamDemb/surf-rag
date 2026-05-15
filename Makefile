@@ -6,7 +6,7 @@
 	router-calibrate-threshold \
 	figures-render \
 	validate-oracle-config validate-router-config validate-router-train \
-	e2e-print-config e2e-prepare e2e-submit e2e-collect e2e-evaluate e2e-run \
+	e2e-print-config e2e-prepare e2e-submit e2e-submit-batch e2e-collect e2e-evaluate e2e-run \
 	e2e-run-all-policies e2e-collect-all-policies e2e-evaluate-all-policies e2e-smoke-test-v01 \
 	answerability-submit answerability-collect answerability-balance \
 	llm-judge-submit llm-judge-collect llm-judge-merge \
@@ -195,6 +195,12 @@ e2e-submit:
 		$(if $(ROUTER_TASK_TYPE),--router-task-type "$(ROUTER_TASK_TYPE)",) \
 		$(if $(E2E_DEV_SYNC),--dev-sync,)
 
+e2e-submit-batch:
+	$(PY) -m scripts.e2e_benchmark --config "$(CONFIG)" submit-batch \
+		$(if $(E2E_RUN_ID),--run-id "$(E2E_RUN_ID)",) \
+		$(if $(E2E_POLICY),--policy "$(E2E_POLICY)",) \
+		$(if $(E2E_SPLIT),--split "$(E2E_SPLIT)",)
+
 e2e-collect:
 	$(PY) -m scripts.e2e_benchmark --config "$(CONFIG)" collect \
 		$(if $(E2E_RUN_ID),--run-id "$(E2E_RUN_ID)",) \
@@ -217,6 +223,12 @@ e2e-run-all-policies:
 	@for pol in $(E2E_POLICIES); do \
 		echo "=== E2E policy=$$pol$(if $(E2E_RUN_ID), run=$(E2E_RUN_ID),) ==="; \
 		$(MAKE) e2e-submit E2E_POLICY=$$pol CONFIG="$(CONFIG)" $(if $(E2E_RUN_ID),E2E_RUN_ID="$(E2E_RUN_ID)",) || exit 1; \
+	done
+
+e2e-submit-batch-all-policies:
+	@for pol in $(E2E_POLICIES); do \
+		echo "=== E2E submit-batch policy=$$pol$(if $(E2E_RUN_ID), run=$(E2E_RUN_ID),) ==="; \
+		$(MAKE) e2e-submit-batch E2E_POLICY=$$pol CONFIG="$(CONFIG)" $(if $(E2E_RUN_ID),E2E_RUN_ID="$(E2E_RUN_ID)",) || exit 1; \
 	done
 
 e2e-collect-all-policies:
