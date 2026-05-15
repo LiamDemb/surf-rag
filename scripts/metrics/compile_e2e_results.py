@@ -31,6 +31,11 @@ def main():
         required=True,
         help="The run_id to search for under evaluations/ (e.g. e2e-rg-001)",
     )
+    parser.add_argument(
+        "--split-file",
+        required=False,
+        help="Optional override path to a split_question_ids.json file to use for filtering seen questions.",
+    )
     args = parser.parse_args()
 
     cfg = load_pipeline_config(Path(args.config))
@@ -48,24 +53,42 @@ def main():
     evals_dir = benchmark_base / benchmark_name / benchmark_id / "evaluations"
 
     # Load splits
-    ds_paths = make_router_dataset_paths_for_cli(router_id, router_base=router_base)
-
     test_qids = set()
-    if ds_paths.split_question_ids.is_file():
-        splits = json.loads(ds_paths.split_question_ids.read_text(encoding="utf-8"))
+    seen_qids = set()
+
+    split_file_path = Path(args.split_file) if args.split_file else None
+
+    if not split_file_path:
+        ds_paths = make_router_dataset_paths_for_cli(router_id, router_base=router_base)
+        split_file_path = ds_paths.split_question_ids
+
+    if split_file_path and split_file_path.is_file():
+        splits = json.loads(split_file_path.read_text(encoding="utf-8"))
         test_qids = set(splits.get("test", []))
+        seen_qids = set(splits.get("train", [])) | set(splits.get("dev", []))
+        logging.info(f"Loaded dataset splits from {split_file_path}")
     else:
         logging.warning(
-            "Could not find split_question_ids. Considering all questions as 'test'."
+            f"Could not find split_question_ids at {split_file_path}. Considering all questions as 'test' or 'unseen'."
         )
 
-    # Get dataset source from oracle scores
-    oracle_paths = make_run_paths_for_cli(router_id, router_base=router_base)
+    # Get dataset source from benchmark file
+    benchmark_file = (
+        benchmark_base / benchmark_name / benchmark_id / "benchmark" / "benchmark.jsonl"
+    )
     qid_to_source = {}
-    if oracle_paths.oracle_scores.is_file():
-        for row in read_oracle_score_rows(oracle_paths):
-            qid = row["question_id"]
-            qid_to_source[qid] = row.get("dataset_source", "unknown")
+    benchmark_qids = set()
+    if benchmark_file.is_file():
+        with benchmark_file.open("r", encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                row = json.loads(line)
+                qid = row["question_id"]
+                benchmark_qids.add(qid)
+                qid_to_source[qid] = row.get("dataset_source", "unknown")
+    else:
+        logging.warning(f"Could not find benchmark file at {benchmark_file}")
 
     policies_results = {}
 
@@ -113,8 +136,12 @@ def main():
             for item in per_question:
                 qid = item.get("question_id")
 
-                # We only care about the test set
-                if test_qids and qid not in test_qids:
+                # Only include questions that are part of the benchmark
+                if benchmark_qids and qid not in benchmark_qids:
+                    continue
+
+                # Exclude seen/train/dev questions (so we only measure test and unseen questions)
+                if seen_qids and qid in seen_qids:
                     continue
 
                 source = qid_to_source.get(qid, "unknown")
@@ -229,6 +256,7 @@ def main():
         "run_id": args.run_id,
         "benchmark_name": benchmark_name,
         "benchmark_id": benchmark_id,
+        "splits_evaluated": ["test", "unseen"],
         "policies": policies_results,
     }
 
