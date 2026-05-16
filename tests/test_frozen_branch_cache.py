@@ -91,6 +91,32 @@ def test_frozen_results_for_question_dense_only() -> None:
     assert dr is not None and gr is None
 
 
+def test_frozen_results_for_question_rrf() -> None:
+    from surf_rag.retrieval.types import RetrievedChunk
+
+    d = RetrievalResult(
+        query="q",
+        retriever_name="Dense",
+        status="OK",
+        chunks=[RetrievedChunk(chunk_id="a", text="t", score=1.0, rank=0, metadata={})],
+        latency_ms={"total": 1.0},
+    )
+    g = RetrievalResult(
+        query="q",
+        retriever_name="Graph",
+        status="OK",
+        chunks=[RetrievedChunk(chunk_id="b", text="t", score=1.0, rank=0, metadata={})],
+        latency_ms={"total": 2.0},
+    )
+    dr, gr = frozen_results_for_question(
+        RoutingPolicyName.RRF.value,
+        "1",
+        dense_by_qid={"1": d},
+        graph_by_qid={"1": g},
+    )
+    assert dr is not None and gr is not None
+
+
 def test_load_frozen_explicit_jsonl(tmp_path: Path) -> None:
     dpath = tmp_path / "d.jsonl"
     gpath = tmp_path / "g.jsonl"

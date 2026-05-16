@@ -16,6 +16,7 @@ def test_parse_routing_policy_aliases() -> None:
     assert parse_routing_policy("learned-soft") == RoutingPolicyName.LEARNED_SOFT.value
     assert parse_routing_policy("hard-routing") == RoutingPolicyName.HARD_ROUTING.value
     assert parse_routing_policy("hybrid") == RoutingPolicyName.HYBRID.value
+    assert parse_routing_policy("rrf") == RoutingPolicyName.RRF.value
     assert parse_routing_policy("oracle-upper-bound") == ORACLE_UPPER_BOUND_POLICY
 
 
@@ -31,3 +32,4 @@ def test_e2e_pipeline_manifest_name() -> None:
         e2e_pipeline_manifest_name(RoutingPolicyName.DENSE_ONLY.value)
         == "routed-dense-only"
     )
+    assert e2e_pipeline_manifest_name(RoutingPolicyName.RRF.value) == "routed-rrf"

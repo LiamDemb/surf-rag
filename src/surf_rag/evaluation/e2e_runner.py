@@ -579,6 +579,7 @@ def e2e_prepare_and_submit(
     router_architecture_id: Optional[str] = None,
     router_base: Optional[Path] = None,
     fusion_keep_k: int = 25,
+    rrf_k: int = 60,
     reranker_kind: str = "none",
     rerank_top_k: int = 10,
     cross_encoder_model: Optional[str] = None,
@@ -754,6 +755,7 @@ def e2e_prepare_and_submit(
     need_dense = policy in (
         RoutingPolicyName.DENSE_ONLY.value,
         RoutingPolicyName.EQUAL_50_50.value,
+        RoutingPolicyName.RRF.value,
         RoutingPolicyName.LEARNED_SOFT.value,
         RoutingPolicyName.HARD_ROUTING.value,
         RoutingPolicyName.HYBRID.value,
@@ -761,6 +763,7 @@ def e2e_prepare_and_submit(
     need_graph = policy in (
         RoutingPolicyName.GRAPH_ONLY.value,
         RoutingPolicyName.EQUAL_50_50.value,
+        RoutingPolicyName.RRF.value,
         RoutingPolicyName.LEARNED_SOFT.value,
         RoutingPolicyName.HARD_ROUTING.value,
         RoutingPolicyName.HYBRID.value,
@@ -847,6 +850,7 @@ def e2e_prepare_and_submit(
         fallback_router=fallback_router,
         router_confidence_threshold=float(router_confidence_threshold),
         sequential_fusion_retrieval_total=use_sequential_fusion_total,
+        rrf_k=int(rrf_k),
     )
     resolved_cross_encoder_device = cross_encoder_device
     if (
@@ -892,6 +896,7 @@ def e2e_prepare_and_submit(
                 "routing_policy": policy,
                 "branch_top_k": int(branch_top_k),
                 "fusion_keep_k": fusion_keep_k,
+                "rrf_k": int(rrf_k),
                 "reranker": reranker_kind,
                 "rerank_top_k": rerank_top_k,
                 "cross_encoder_model": cross_encoder_model,
@@ -922,7 +927,16 @@ def e2e_prepare_and_submit(
                         "router_predict",
                         "branch_retrieval",
                         "fusion",
+                        "retrieval_reported_total",
                     ],
+                    "definitions": {
+                        "retrieval_reported_total_ms": (
+                            "Comparable per-question total: same as "
+                            "retrieval_stage_total_ms unless dual-branch sequential "
+                            "frozen fusion omitted MLP from the pipe total; then adds "
+                            "router_predict_ms. Reranker wall time remains excluded."
+                        ),
+                    },
                     "excluded_components": [
                         "startup",
                         "warmup",

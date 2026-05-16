@@ -193,6 +193,7 @@ class E2ESection:
             "dense-only",
             "graph-only",
             "50-50",
+            "rrf",
             "learned-soft",
             "hard-routing",
             "hybrid",
@@ -201,6 +202,8 @@ class E2ESection:
     )
     branch_top_k: int = 20
     fusion_keep_k: int = 20
+    rrf_k: int = 60
+    """RRF smoothing constant for policy ``rrf`` (``1/(rrf_k + rank)``)."""
     reranker: str = "none"
     rerank_top_k: int = 5
     cross_encoder_model: str | None = None

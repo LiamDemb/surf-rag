@@ -359,6 +359,8 @@ def merge_e2e_prepare_args(
         args.router_base = rb
     if not argv_provides(argv, "--fusion-keep-k"):
         args.fusion_keep_k = e.fusion_keep_k
+    if not argv_provides(argv, "--rrf-k"):
+        args.rrf_k = e.rrf_k
     if not argv_provides(argv, "--branch-top-k"):
         args.branch_top_k = e.branch_top_k
     if not argv_provides(argv, "--reranker"):

@@ -58,7 +58,7 @@ def _add_common(p: argparse.ArgumentParser) -> None:
         "--policy",
         default=None,
         help=(
-            "Routing policy: learned-soft, hard-routing, hybrid, 50-50, "
+            "Routing policy: learned-soft, hard-routing, hybrid, 50-50, rrf, "
             "dense-only, graph-only, oracle-upper-bound"
         ),
     )
@@ -119,6 +119,7 @@ def cmd_prepare(args: argparse.Namespace) -> int:
         router_architecture_id=getattr(args, "router_architecture_id", None),
         router_base=args.router_base,
         fusion_keep_k=args.fusion_keep_k,
+        rrf_k=int(getattr(args, "rrf_k", 60)),
         reranker_kind=args.reranker,
         rerank_top_k=args.rerank_top_k,
         cross_encoder_model=args.cross_encoder_model,
@@ -328,6 +329,12 @@ def main() -> int:
             "Generation-context retrieval depth before LLM prompting; pure retrieval "
             "metrics are sourced from pre-truncation retrieval artifacts."
         ),
+    )
+    p_prep.add_argument(
+        "--rrf-k",
+        type=int,
+        default=60,
+        help="RRF smoothing constant k in 1/(k+rank) for policy rrf (default: 60).",
     )
     p_prep.add_argument(
         "--branch-top-k",

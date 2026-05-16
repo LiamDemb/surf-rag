@@ -47,3 +47,23 @@ def test_equal_50_50_with_injection_skips_retrievers() -> None:
     )
     assert out.generation_result.status == "OK"
     assert {c.chunk_id for c in out.generation_result.chunks} == {"a", "b"}
+
+
+def test_rrf_with_injection_skips_retrievers() -> None:
+    d = _one_chunk("Dense", "a")
+    g = _one_chunk("Graph", "b")
+    pl = RoutedFusionPipeline(
+        _BoomRetriever(),
+        _BoomRetriever(),
+        fusion_keep_k=5,
+        router=None,
+        rrf_k=10,
+    )
+    out = pl.run_with_pretrunc(
+        "q",
+        RoutingPolicyName.RRF,
+        dense_result=d,
+        graph_result=g,
+    )
+    assert out.generation_result.status == "OK"
+    assert {c.chunk_id for c in out.generation_result.chunks} == {"a", "b"}

@@ -68,6 +68,7 @@ def _policy_needs_dense(policy: str) -> bool:
     return p in (
         RoutingPolicyName.DENSE_ONLY.value,
         RoutingPolicyName.EQUAL_50_50.value,
+        RoutingPolicyName.RRF.value,
         RoutingPolicyName.LEARNED_SOFT.value,
         RoutingPolicyName.HARD_ROUTING.value,
         RoutingPolicyName.HYBRID.value,
@@ -79,6 +80,7 @@ def _policy_needs_graph(policy: str) -> bool:
     return p in (
         RoutingPolicyName.GRAPH_ONLY.value,
         RoutingPolicyName.EQUAL_50_50.value,
+        RoutingPolicyName.RRF.value,
         RoutingPolicyName.LEARNED_SOFT.value,
         RoutingPolicyName.HARD_ROUTING.value,
         RoutingPolicyName.HYBRID.value,

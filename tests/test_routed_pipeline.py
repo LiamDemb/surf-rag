@@ -82,6 +82,17 @@ def test_50_50_both_branches() -> None:
     assert "fusion" in out.latency_ms
 
 
+def test_rrf_both_branches_and_metadata() -> None:
+    d = _CountingRetriever("Dense", _ok("Dense", ["a"]))
+    g = _CountingRetriever("Graph", _ok("Graph", ["b"]))
+    pl = RoutedFusionPipeline(d, g, fusion_keep_k=5, router=None, rrf_k=42)
+    out = pl.run("q", RoutingPolicyName.RRF)
+    assert d.calls == 1 and g.calls == 1
+    assert out.status == "OK"
+    assert out.chunks[0].metadata.get("fusion_method") == "rrf"
+    assert out.chunks[0].metadata.get("rrf_k") == 42
+
+
 def test_dual_output_fused_branch_pretrunc_superset() -> None:
     d = _CountingRetriever("Dense", _ok("Dense", ["a", "b", "c"]))
     g = _CountingRetriever("Graph", _ok("Graph", ["d", "e"]))

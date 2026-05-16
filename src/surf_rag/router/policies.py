@@ -1,4 +1,4 @@
-"""Routing policies for learned-soft, hard-routing, and hybrid fallback."""
+"""Routing policies for learned-soft, hard-routing, hybrid, static fusion, and oracle."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ class RoutingPolicyName(str, Enum):
     HARD_ROUTING = "hard-routing"
     HYBRID = "hybrid"
     EQUAL_50_50 = "50-50"
+    RRF = "rrf"
     DENSE_ONLY = "dense-only"
     GRAPH_ONLY = "graph-only"
     ORACLE_UPPER_BOUND = "oracle-upper-bound"
@@ -52,6 +53,21 @@ def decide_routing(
             run_dense=True,
             run_graph=True,
             predicted_weight=0.5,
+            predicted_class_id=None,
+            confidence=None,
+            confidence_threshold=None,
+            fallback_triggered=False,
+            fallback_weight=None,
+            hard_branch=None,
+            tie_break=None,
+        )
+    if policy == RoutingPolicyName.RRF:
+        return RoutingDecision(
+            policy=policy,
+            dense_weight=0.5,
+            run_dense=True,
+            run_graph=True,
+            predicted_weight=None,
             predicted_class_id=None,
             confidence=None,
             confidence_threshold=None,
