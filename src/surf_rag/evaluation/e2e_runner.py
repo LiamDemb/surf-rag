@@ -40,6 +40,8 @@ from surf_rag.evaluation.latency_metrics import (
     canonicalize_latency_ms,
 )
 from surf_rag.evaluation.e2e_policies import (
+    ORACLE_CLASSIFICATION_POLICY,
+    ORACLE_E2E_POLICIES,
     ORACLE_UPPER_BOUND_POLICY,
     e2e_pipeline_manifest_name,
     parse_routing_policy,
@@ -92,6 +94,10 @@ from surf_rag.router.inference_inputs import (
 )
 from surf_rag.router.model import ROUTER_TASK_REGRESSION, parse_router_task_type
 from surf_rag.router.policies import RoutingPolicyName
+from surf_rag.router.soft_labels import (
+    _extract_objective_value_by_dense_weight,
+    _resolve_binary_class_target,
+)
 from surf_rag.strategies.factory import build_dense_retriever, build_graph_retriever
 
 logger = logging.getLogger(__name__)
@@ -255,65 +261,115 @@ def _read_oracle_scores_by_qid(path: Path) -> dict[str, dict[str, Any]]:
 
 def _validate_oracle_test_alignment(
     *,
+    policy: str,
     benchmark_qids: set[str],
     test_qids: set[str],
     scores_by_qid: dict[str, dict[str, Any]],
     dense_cache: dict[str, RetrievalResult],
     graph_cache: dict[str, RetrievalResult],
 ) -> None:
+    label = str(policy or "").strip()
     missing_in_benchmark = sorted(qid for qid in test_qids if qid not in benchmark_qids)
     if missing_in_benchmark:
         preview = ", ".join(missing_in_benchmark[:10])
         raise ValueError(
-            "oracle-upper-bound strict check failed: test qids missing from benchmark "
+            f"{label} strict check failed: test qids missing from benchmark "
             f"(showing up to 10): {preview}"
         )
     missing_scores = sorted(qid for qid in test_qids if qid not in scores_by_qid)
     if missing_scores:
         preview = ", ".join(missing_scores[:10])
         raise ValueError(
-            "oracle-upper-bound strict check failed: test qids missing in "
+            f"{label} strict check failed: test qids missing in "
             f"oracle_scores.jsonl (showing up to 10): {preview}"
         )
     missing_dense = sorted(qid for qid in test_qids if qid not in dense_cache)
     if missing_dense:
         preview = ", ".join(missing_dense[:10])
         raise ValueError(
-            "oracle-upper-bound strict check failed: test qids missing in "
+            f"{label} strict check failed: test qids missing in "
             f"retrieval_dense.jsonl (showing up to 10): {preview}"
         )
     missing_graph = sorted(qid for qid in test_qids if qid not in graph_cache)
     if missing_graph:
         preview = ", ".join(missing_graph[:10])
         raise ValueError(
-            "oracle-upper-bound strict check failed: test qids missing in "
+            f"{label} strict check failed: test qids missing in "
             f"retrieval_graph.jsonl (showing up to 10): {preview}"
         )
-    bad_bins: list[str] = []
-    for qid in sorted(test_qids):
-        row = scores_by_qid[qid]
-        scores = list(row.get("scores") or [])
+    if policy == ORACLE_UPPER_BOUND_POLICY:
+        bad_bins: list[str] = []
+        for qid in sorted(test_qids):
+            row = scores_by_qid[qid]
+            scores = list(row.get("scores") or [])
+            try:
+                idx = int(row.get("best_bin_index"))
+            except Exception:
+                idx = -1
+            if idx < 0 or idx >= len(scores):
+                bad_bins.append(qid)
+                continue
+            w = scores[idx].get("dense_weight")
+            try:
+                fw = float(w)
+            except Exception:
+                bad_bins.append(qid)
+                continue
+            if fw < 0.0 or fw > 1.0:
+                bad_bins.append(qid)
+        if bad_bins:
+            preview = ", ".join(bad_bins[:10])
+            raise ValueError(
+                f"{label} strict check failed: invalid best_bin_index or "
+                f"dense_weight in oracle_scores.jsonl (showing up to 10): {preview}"
+            )
+    elif policy == ORACLE_CLASSIFICATION_POLICY:
+        bad_endpoints: list[str] = []
+        for qid in sorted(test_qids):
+            row = scores_by_qid[qid]
+            try:
+                om = str(row.get("oracle_metric") or "stateful_ndcg")
+                ok = int(row.get("oracle_metric_k") or 10)
+            except Exception:
+                bad_endpoints.append(qid)
+                continue
+            by_w = _extract_objective_value_by_dense_weight(
+                row, oracle_metric=om, oracle_metric_k=ok
+            )
+            if 0.0 not in by_w or 1.0 not in by_w:
+                bad_endpoints.append(qid)
+        if bad_endpoints:
+            preview = ", ".join(bad_endpoints[:10])
+            raise ValueError(
+                f"{label} strict check failed: oracle_scores rows must include "
+                f"objective bins for dense_weight 0.0 and 1.0 (showing up to 10): "
+                f"{preview}"
+            )
+
+
+def _oracle_classification_bin_and_weight(
+    score_row: dict[str, Any],
+) -> tuple[int, float, dict[str, Any]]:
+    """Best fusion bin over dense_weight in {0.0, 1.0}; dense wins ties (soft_labels)."""
+    om = str(score_row.get("oracle_metric") or "stateful_ndcg")
+    ok = int(score_row.get("oracle_metric_k") or 10)
+    meta = _resolve_binary_class_target(score_row, oracle_metric=om, oracle_metric_k=ok)
+    dense_weight = 1.0 if str(meta.get("oracle_binary_class")) == "dense" else 0.0
+    scores = list(score_row.get("scores") or [])
+    best_idx = -1
+    for i, s in enumerate(scores):
         try:
-            idx = int(row.get("best_bin_index"))
-        except Exception:
-            idx = -1
-        if idx < 0 or idx >= len(scores):
-            bad_bins.append(qid)
+            if float(s.get("dense_weight")) == dense_weight:
+                best_idx = i
+                break
+        except (TypeError, ValueError):
             continue
-        w = scores[idx].get("dense_weight")
-        try:
-            fw = float(w)
-        except Exception:
-            bad_bins.append(qid)
-            continue
-        if fw < 0.0 or fw > 1.0:
-            bad_bins.append(qid)
-    if bad_bins:
-        preview = ", ".join(bad_bins[:10])
+    if best_idx < 0:
         raise ValueError(
-            "oracle-upper-bound strict check failed: invalid best_bin_index or "
-            f"dense_weight in oracle_scores.jsonl (showing up to 10): {preview}"
+            "oracle-classification: scores list has no bin for dense_weight "
+            f"{dense_weight}"
         )
+    return best_idx, dense_weight, meta
 
 
 def make_e2e_run_paths(
@@ -631,10 +687,10 @@ def e2e_prepare_and_submit(
         RoutingPolicyName.LEARNED_SOFT.value,
         RoutingPolicyName.HARD_ROUTING.value,
         RoutingPolicyName.HYBRID.value,
-        ORACLE_UPPER_BOUND_POLICY,
+        *ORACLE_E2E_POLICIES,
     ) and (not router_id or not str(router_id).strip()):
         raise ValueError(
-            "router_id is required for learned routing policies and oracle-upper-bound"
+            "router_id is required for learned routing policies and oracle e2e policies"
         )
     if policy == RoutingPolicyName.LEARNED_SOFT.value and task_type != "regression":
         raise ValueError("Policy 'learned-soft' requires router_task_type=regression.")
@@ -654,8 +710,8 @@ def e2e_prepare_and_submit(
         raise ValueError(
             "Policy 'hybrid' requires router_fallback_regressor_id for low-confidence fallback."
         )
-    if policy == ORACLE_UPPER_BOUND_POLICY and str(split).strip().lower() != "test":
-        raise ValueError("oracle-upper-bound is test-only; use --split test")
+    if policy in ORACLE_E2E_POLICIES and str(split).strip().lower() != "test":
+        raise ValueError(f"{policy} is test-only; use --split test")
 
     paths = (
         run_paths_override
@@ -698,7 +754,7 @@ def e2e_prepare_and_submit(
 
     frozen_bundle: ResolvedFrozenBranchBundle | None = None
     bc_mode = _normalize_cache_mode(branch_cache_mode)
-    if bc_mode != "off" and policy != ORACLE_UPPER_BOUND_POLICY:
+    if bc_mode != "off" and policy not in ORACLE_E2E_POLICIES:
         if (
             bc_mode == "router_oracle"
             and not str(branch_cache_oracle_router_id or router_id or "").strip()
@@ -966,7 +1022,10 @@ def e2e_prepare_and_submit(
         update_manifest_artifacts(paths, {"resolved_config": "resolved_config.yaml"})
 
     records: List[BatchRequestRecord] = []
-    if policy == ORACLE_UPPER_BOUND_POLICY:
+    scores_by_qid: dict[str, dict[str, Any]] = {}
+    dense_cache: dict[str, RetrievalResult] = {}
+    graph_cache: dict[str, RetrievalResult] = {}
+    if policy in ORACLE_E2E_POLICIES:
         oracle_paths = OracleRunPaths(
             run_root=build_oracle_run_root(rb, str(router_id).strip())
         )
@@ -975,19 +1034,19 @@ def e2e_prepare_and_submit(
         ).split_question_ids
         if not split_ids_path.is_file():
             raise FileNotFoundError(
-                "oracle-upper-bound requires router test split ids at "
-                f"{split_ids_path}"
+                f"{policy} requires router test split ids at " f"{split_ids_path}"
             )
         test_qids = _read_router_test_qids(split_ids_path)
         if not test_qids:
             raise ValueError(
-                "oracle-upper-bound strict check failed: router test split is empty"
+                f"{policy} strict check failed: router test split is empty"
             )
         scores_by_qid = _read_oracle_scores_by_qid(oracle_paths.oracle_scores)
         dense_cache = read_retrieval_cache(oracle_paths.retrieval_dense)
         graph_cache = read_retrieval_cache(oracle_paths.retrieval_graph)
         benchmark_qids = {str(s.get("question_id", "")).strip() for s in samples}
         _validate_oracle_test_alignment(
+            policy=policy,
             benchmark_qids=benchmark_qids,
             test_qids=test_qids,
             scores_by_qid=scores_by_qid,
@@ -998,7 +1057,8 @@ def e2e_prepare_and_submit(
             s for s in samples if str(s.get("question_id", "")).strip() in test_qids
         ]
         logger.info(
-            "oracle-upper-bound using %d test questions from router split ids.",
+            "%s using %d test questions from router split ids.",
+            policy,
             len(samples),
         )
     pending = [
@@ -1014,7 +1074,7 @@ def e2e_prepare_and_submit(
     )
 
     warmup_n = int(max(0, latency_warmup_questions))
-    if warmup_n > 0 and pending and policy != ORACLE_UPPER_BOUND_POLICY:
+    if warmup_n > 0 and pending and policy not in ORACLE_E2E_POLICIES:
         warmup_samples = pending[: min(len(pending), warmup_n)]
         for sample in warmup_samples:
             question = str(sample.get("question", "") or "").strip()
@@ -1068,23 +1128,42 @@ def e2e_prepare_and_submit(
                 )
                 routing_input_ms = (time.perf_counter() - rt0) * 1000.0
 
-            if policy == ORACLE_UPPER_BOUND_POLICY:
+            if policy in ORACLE_E2E_POLICIES:
                 if (
                     qid not in scores_by_qid
                     or qid not in dense_cache
                     or qid not in graph_cache
                 ):
                     raise ValueError(
-                        "oracle-upper-bound strict check failed during retrieval loop "
+                        f"{policy} strict check failed during retrieval loop "
                         f"for question_id={qid}"
                     )
                 score_row = scores_by_qid[qid]
-                best_idx = int(score_row["best_bin_index"])
-                score_bin = list(score_row.get("scores") or [])[best_idx]
-                dense_weight = float(score_bin["dense_weight"])
                 dense_cached = dense_cache[qid]
                 graph_cached = graph_cache[qid]
                 t_oracle = time.perf_counter()
+                if policy == ORACLE_UPPER_BOUND_POLICY:
+                    best_idx = int(score_row["best_bin_index"])
+                    score_bin = list(score_row.get("scores") or [])[best_idx]
+                    dense_weight = float(score_bin["dense_weight"])
+                    oracle_debug = {
+                        "routing_policy": ORACLE_UPPER_BOUND_POLICY,
+                        "oracle_dense_weight": dense_weight,
+                        "oracle_best_bin_index": best_idx,
+                        "oracle_source_router_id": str(router_id),
+                    }
+                else:
+                    best_idx, dense_weight, bin_meta = (
+                        _oracle_classification_bin_and_weight(score_row)
+                    )
+                    oracle_debug = {
+                        "routing_policy": ORACLE_CLASSIFICATION_POLICY,
+                        "oracle_dense_weight": dense_weight,
+                        "oracle_best_bin_index": best_idx,
+                        "oracle_source_router_id": str(router_id),
+                        "oracle_binary_class": bin_meta.get("oracle_binary_class"),
+                        "oracle_binary_scores": bin_meta.get("oracle_binary_scores"),
+                    }
                 rr_pre = build_fused_retrieval_result(
                     query=question,
                     dense=dense_cached,
@@ -1095,12 +1174,6 @@ def e2e_prepare_and_submit(
                     total_ms=(time.perf_counter() - t_oracle) * 1000.0,
                 )
                 rr = trim_retrieval_top_k(rr_pre, fusion_keep_k)
-                oracle_debug = {
-                    "routing_policy": ORACLE_UPPER_BOUND_POLICY,
-                    "oracle_dense_weight": dense_weight,
-                    "oracle_best_bin_index": best_idx,
-                    "oracle_source_router_id": str(router_id),
-                }
                 rr_pre.debug_info = {
                     **dict(rr_pre.debug_info or {}),
                     "routing": oracle_debug,

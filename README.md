@@ -66,8 +66,8 @@ When `paths.router_architecture_id` is omitted in e2e:
 
 Benchmark bundles are defined in your pipeline YAML (`paths.benchmark_base`, `benchmark_name`, `benchmark_id`). Routed retrieval, optional cross-encoder reranking, OpenAI Batch generation, and overlap-split metrics are documented in **[docs/dev/end-to-end-system-and-evaluation.md](docs/dev/end-to-end-system-and-evaluation.md)**. Make targets: `e2e-prepare`, `e2e-submit`, `e2e-collect`, `e2e-evaluate`, `e2e-smoke-test-v01` (all use `CONFIG`, default `configs/pipelines/surf-bench-200.yaml`).
 
-`e2e.policy` supports `dense-only`, `graph-only`, `50-50`, `learned-soft`, `learned-hard`, `learned-hybrid`, and `oracle-upper-bound`.
-For `oracle-upper-bound`, retrieval is oracle-soft (per-question best fusion bin from `oracle_scores.jsonl`), is benchmark-scoped under `evaluations/oracle-upper-bound/<run_id>/`, is test-only, and fails fast if router test QIDs are missing in oracle artifacts.
+`e2e.policy` supports `dense-only`, `graph-only`, `50-50`, `learned-soft`, `learned-hard`, `learned-hybrid`, `oracle-upper-bound`, and `oracle-classification`.
+For `oracle-upper-bound`, retrieval uses the per-question best fusion bin over the full oracle weight grid from `oracle_scores.jsonl`. For `oracle-classification`, retrieval uses the better of the two endpoint bins only (`dense_weight` **0.0** vs **1.0**), with dense winning on ties (same rule as binary oracle labels in `soft_labels`). Both oracle e2e policies write under `evaluations/<policy>/<run_id>/`, are **test-only**, require `paths.router_id`, and fail fast if router test QIDs or oracle caches are missing or invalid.
 
 **Config-driven runs:** every stage uses `--config "$(CONFIG)"`. Override with `CONFIG=...` or `make print-resolved-config`. See **[docs/config-driven-workflows.md](docs/config-driven-workflows.md)** and `configs/templates/`.
 

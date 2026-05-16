@@ -3,6 +3,7 @@ import pytest
 pytest.importorskip("torch")
 
 from surf_rag.evaluation.e2e_policies import (
+    ORACLE_CLASSIFICATION_POLICY,
     ORACLE_UPPER_BOUND_POLICY,
     e2e_pipeline_manifest_name,
     parse_routing_policy,
@@ -18,6 +19,7 @@ def test_parse_routing_policy_aliases() -> None:
     assert parse_routing_policy("hybrid") == RoutingPolicyName.HYBRID.value
     assert parse_routing_policy("rrf") == RoutingPolicyName.RRF.value
     assert parse_routing_policy("oracle-upper-bound") == ORACLE_UPPER_BOUND_POLICY
+    assert parse_routing_policy("oracle-classification") == ORACLE_CLASSIFICATION_POLICY
 
 
 def test_removed_policy_names_raise() -> None:

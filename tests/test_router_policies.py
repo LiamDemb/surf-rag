@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from surf_rag.router.policies import (
     RoutingPolicyName,
     decide_routing,
@@ -70,3 +72,10 @@ def test_hybrid_low_confidence_falls_back_to_regressor_weight() -> None:
     assert d.run_dense and d.run_graph
     assert d.fallback_triggered
     assert d.tie_break == "low_confidence_fallback"
+
+
+def test_oracle_policies_raise_in_decide_routing() -> None:
+    with pytest.raises(ValueError, match="oracle-upper-bound"):
+        decide_routing(RoutingPolicyName.ORACLE_UPPER_BOUND)
+    with pytest.raises(ValueError, match="oracle-classification"):
+        decide_routing(RoutingPolicyName.ORACLE_CLASSIFICATION)

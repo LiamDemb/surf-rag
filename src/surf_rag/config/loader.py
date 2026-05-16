@@ -347,10 +347,16 @@ def validate_e2e_config(cfg: PipelineConfig) -> None:
     from surf_rag.evaluation.frozen_branch_cache import _normalize_cache_mode
 
     pol = (cfg.e2e.policy or "").strip().lower().replace("_", "-")
-    if pol in ("learned-soft", "hard-routing", "hybrid", "oracle-upper-bound"):
+    if pol in (
+        "learned-soft",
+        "hard-routing",
+        "hybrid",
+        "oracle-upper-bound",
+        "oracle-classification",
+    ):
         if not str(cfg.paths.router_id).strip():
             raise ValueError(
-                "e2e learned/hybrid policies and oracle-upper-bound require paths.router_id"
+                "e2e learned/hybrid policies and oracle e2e policies require paths.router_id"
             )
     if pol == "learned-soft" and cfg.e2e.router_task_type != "regression":
         raise ValueError(

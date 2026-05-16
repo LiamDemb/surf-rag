@@ -198,6 +198,7 @@ class E2ESection:
             "hard-routing",
             "hybrid",
             "oracle-upper-bound",
+            "oracle-classification",
         ]
     )
     branch_top_k: int = 20

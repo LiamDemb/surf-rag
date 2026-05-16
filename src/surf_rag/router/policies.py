@@ -16,6 +16,7 @@ class RoutingPolicyName(str, Enum):
     DENSE_ONLY = "dense-only"
     GRAPH_ONLY = "graph-only"
     ORACLE_UPPER_BOUND = "oracle-upper-bound"
+    ORACLE_CLASSIFICATION = "oracle-classification"
 
 
 @dataclass(frozen=True)
@@ -109,6 +110,11 @@ def decide_routing(
     if policy == RoutingPolicyName.ORACLE_UPPER_BOUND:
         raise ValueError(
             "oracle-upper-bound decisions are computed from oracle_scores and must be "
+            "handled in the e2e evaluation layer."
+        )
+    if policy == RoutingPolicyName.ORACLE_CLASSIFICATION:
+        raise ValueError(
+            "oracle-classification decisions are computed from oracle_scores and must be "
             "handled in the e2e evaluation layer."
         )
     if policy in (RoutingPolicyName.HARD_ROUTING, RoutingPolicyName.HYBRID):

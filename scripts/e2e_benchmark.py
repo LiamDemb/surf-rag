@@ -30,7 +30,7 @@ from surf_rag.evaluation.e2e_runner import (
     make_e2e_run_paths,
 )
 from surf_rag.evaluation.e2e_policies import (
-    ORACLE_UPPER_BOUND_POLICY,
+    ORACLE_E2E_POLICIES,
     parse_routing_policy,
 )
 from surf_rag.evaluation.router_dataset_artifacts import (
@@ -59,7 +59,7 @@ def _add_common(p: argparse.ArgumentParser) -> None:
         default=None,
         help=(
             "Routing policy: learned-soft, hard-routing, hybrid, 50-50, rrf, "
-            "dense-only, graph-only, oracle-upper-bound"
+            "dense-only, graph-only, oracle-upper-bound, oracle-classification"
         ),
     )
     p.add_argument("--retrieval-asset-dir", type=Path, default=None)
@@ -96,14 +96,14 @@ def cmd_prepare(args: argparse.Namespace) -> int:
     except ValueError as e:
         log.error("%s", e)
         return 2
-    if policy == ORACLE_UPPER_BOUND_POLICY:
+    if policy in ORACLE_E2E_POLICIES:
         if not args.router_id or not str(args.router_id).strip():
             log.error(
-                "oracle-upper-bound requires --router-id (or config paths.router_id)."
+                "Oracle e2e policies require --router-id (or config paths.router_id)."
             )
             return 2
         if str(args.split).strip().lower() != "test":
-            log.error("oracle-upper-bound is test-only; use --split test.")
+            log.error("%s is test-only; use --split test.", policy)
             return 2
     bb = args.benchmark_base or default_benchmark_base()
     return e2e_prepare_and_submit(
