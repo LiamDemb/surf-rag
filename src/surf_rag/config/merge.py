@@ -359,6 +359,8 @@ def merge_e2e_prepare_args(
         args.router_base = rb
     if not argv_provides(argv, "--fusion-keep-k"):
         args.fusion_keep_k = e.fusion_keep_k
+    if not argv_provides(argv, "--rrf-k"):
+        args.rrf_k = e.rrf_k
     if not argv_provides(argv, "--branch-top-k"):
         args.branch_top_k = e.branch_top_k
     if not argv_provides(argv, "--reranker"):
@@ -416,6 +418,23 @@ def merge_e2e_prepare_args(
         argv, "--router-embedding-cache-writeback"
     ) and not argv_provides(argv, "--no-router-embedding-cache-writeback"):
         args.router_embedding_cache_writeback = e.router_embedding_cache_writeback
+    bc = e.branch_cache
+    if not argv_provides(argv, "--branch-cache-mode"):
+        args.branch_cache_mode = bc.mode
+    if not argv_provides(argv, "--branch-cache-oracle-router-id"):
+        args.branch_cache_oracle_router_id = bc.oracle_router_id
+    if not argv_provides(argv, "--branch-cache-dense-jsonl"):
+        args.branch_cache_dense_jsonl = bc.dense_jsonl
+    if not argv_provides(argv, "--branch-cache-graph-jsonl"):
+        args.branch_cache_graph_jsonl = bc.graph_jsonl
+    if not argv_provides(argv, "--branch-cache-strict-manifest") and not argv_provides(
+        argv, "--no-branch-cache-strict-manifest"
+    ):
+        args.branch_cache_strict_manifest = bc.strict_manifest
+    if not argv_provides(
+        argv, "--branch-cache-sequential-retrieval-total"
+    ) and not argv_provides(argv, "--no-branch-cache-sequential-retrieval-total"):
+        args.branch_cache_sequential_retrieval_total = bc.sequential_retrieval_total
     rd = cfg.router.dataset
     args.router_embedding_cache_mode = resolve_router_e2e_embedding_cache_mode(
         str(rd.embedding_provider),

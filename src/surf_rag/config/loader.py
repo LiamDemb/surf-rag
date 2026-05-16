@@ -344,6 +344,8 @@ def config_to_resolved_dict(cfg: PipelineConfig, rp: ResolvedPaths) -> dict[str,
 
 
 def validate_e2e_config(cfg: PipelineConfig) -> None:
+    from surf_rag.evaluation.frozen_branch_cache import _normalize_cache_mode
+
     pol = (cfg.e2e.policy or "").strip().lower().replace("_", "-")
     if pol in ("learned-soft", "hard-routing", "hybrid", "oracle-upper-bound"):
         if not str(cfg.paths.router_id).strip():
@@ -363,3 +365,25 @@ def validate_e2e_config(cfg: PipelineConfig) -> None:
         )
     if pol == "hybrid" and not str(cfg.e2e.router_fallback_regressor_id or "").strip():
         raise ValueError("e2e policy hybrid requires e2e.router_fallback_regressor_id")
+
+    bc = cfg.e2e.branch_cache
+    mode = _normalize_cache_mode(bc.mode)
+    if mode not in ("off", "router_oracle", "explicit_jsonl"):
+        raise ValueError(
+            f"e2e.branch_cache.mode must be off, router_oracle, or explicit_jsonl; got {bc.mode!r}"
+        )
+    if mode == "router_oracle":
+        rid = str(bc.oracle_router_id or cfg.paths.router_id or "").strip()
+        if not rid:
+            raise ValueError(
+                "e2e.branch_cache mode router_oracle requires paths.router_id or "
+                "e2e.branch_cache.oracle_router_id"
+            )
+    if mode == "explicit_jsonl":
+        if (
+            not str(bc.dense_jsonl or "").strip()
+            or not str(bc.graph_jsonl or "").strip()
+        ):
+            raise ValueError(
+                "e2e.branch_cache mode explicit_jsonl requires dense_jsonl and graph_jsonl"
+            )

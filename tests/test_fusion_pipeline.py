@@ -6,14 +6,25 @@ from typing import List
 
 import pytest
 
+from surf_rag.evaluation.latency_metrics import (
+    PIPE_TOTAL_EXCLUDES_ROUTER_PREDICT_KEY,
+    canonicalize_latency_ms,
+)
 from surf_rag.retrieval.base import BranchRetriever
 from surf_rag.retrieval.fusion import (
     FUSED_RETRIEVER_NAME,
     FusionPipeline,
+    branch_retrieval_wall_ms,
     build_fused_retrieval_result,
+    build_rrf_fused_retrieval_result,
     fuse_branch_results,
+    fuse_branch_results_rrf,
     fuse_cached_results,
     min_max_normalize,
+)
+from surf_rag.retrieval.routed import (
+    dual_branch_rrf_fusion_output,
+    dual_branch_weighted_fusion_output,
 )
 from surf_rag.retrieval.types import RetrievalResult, RetrievedChunk
 
@@ -211,6 +222,85 @@ def test_fuse_rejects_invalid_weight_and_keep_k():
         fuse_branch_results(dense, graph, dense_weight=0.5, fusion_keep_k=0)
 
 
+def test_fuse_rrf_tie_breaks_on_chunk_id_when_scores_equal():
+    """k=1: ranks 1 and 2 give 0.5 and 1/3 each way; symmetric total → lex id order."""
+    dense = _mk_result("Dense", "OK", [_chunk("b", 1.0), _chunk("a", 0.9)])
+    graph = _mk_result("Graph", "OK", [_chunk("a", 1.0), _chunk("b", 0.9)])
+    cands = fuse_branch_results_rrf(dense, graph, rrf_k=1, fusion_keep_k=10)
+    assert [c.chunk_id for c in cands[:2]] == ["a", "b"]
+    assert cands[0].rrf_score == pytest.approx(cands[1].rrf_score)
+
+
+def test_fuse_rrf_rejects_invalid_k_and_keep_k():
+    dense = _mk_result("Dense", "OK", [_chunk("a", 1.0)])
+    graph = _mk_result("Graph", "OK", [_chunk("b", 1.0)])
+    with pytest.raises(ValueError):
+        fuse_branch_results_rrf(dense, graph, rrf_k=0, fusion_keep_k=5)
+    with pytest.raises(ValueError):
+        fuse_branch_results_rrf(dense, graph, rrf_k=60, fusion_keep_k=0)
+
+
+def test_build_rrf_fused_metadata_and_one_error_branch():
+    dense = _mk_result("Dense", "OK", [_chunk("a", 1.0)])
+    graph = _mk_result("Graph", "ERROR", [], error="x")
+    res = build_rrf_fused_retrieval_result(
+        "q",
+        dense,
+        graph,
+        rrf_k=60,
+        fusion_keep_k=5,
+        fusion_ms=0.1,
+        total_ms=0.2,
+    )
+    assert res.status == "OK"
+    md = res.chunks[0].metadata
+    assert md["fusion_method"] == "rrf"
+    assert md["rrf_k"] == 60
+    assert md["dense_rank"] == 1
+    assert md["graph_rank"] is None
+
+
+def test_build_rrf_both_error_branches():
+    dense = _mk_result("Dense", "ERROR", [], error="d")
+    graph = _mk_result("Graph", "ERROR", [], error="g")
+    res = build_rrf_fused_retrieval_result(
+        "q",
+        dense,
+        graph,
+        rrf_k=60,
+        fusion_keep_k=5,
+        fusion_ms=0.0,
+        total_ms=0.0,
+    )
+    assert res.status == "ERROR"
+
+
+def test_dual_branch_rrf_sequential_fusion_total_matches_branch_sum():
+    dense = _mk_result("Dense", "OK", [_chunk("a", 1.0)])
+    dense.latency_ms["total"] = 10.0
+    graph = _mk_result("Graph", "OK", [_chunk("b", 1.0)])
+    graph.latency_ms["total"] = 20.0
+    out = dual_branch_rrf_fusion_output(
+        query="q",
+        dense_result=dense,
+        graph_result=graph,
+        fusion_keep_k=5,
+        rrf_k=60,
+        routing_predict_ms=0.0,
+        t_route_start=0.0,
+        debug={},
+        sequential_fusion_total=True,
+    )
+    fusion_ms = float(out.pretrunc_result.latency_ms.get("fusion", 0.0))
+    total_ms = float(out.pretrunc_result.latency_ms.get("total", 0.0))
+    assert fusion_ms > 0.0
+    assert total_ms == pytest.approx(10.0 + 20.0 + fusion_ms)
+    assert (
+        out.pretrunc_result.latency_ms.get(PIPE_TOTAL_EXCLUDES_ROUTER_PREDICT_KEY)
+        == 1.0
+    )
+
+
 def test_fusion_pipeline_runs_both_branches_by_default():
     dense = _mk_result("Dense", "OK", [_chunk("a", 1.0)])
     graph = _mk_result("Graph", "OK", [_chunk("b", 1.0)])
@@ -226,6 +316,33 @@ def test_fusion_pipeline_runs_both_branches_by_default():
     assert {c.chunk_id for c in res.chunks} == {"a", "b"}
     assert "fusion" in res.latency_ms
     assert "total" in res.latency_ms
+
+
+def test_dual_branch_rrf_sequential_canonical_reported_adds_router_predict() -> None:
+    dense = _mk_result("Dense", "OK", [_chunk("a", 1.0)])
+    dense.latency_ms["total"] = 10.0
+    graph = _mk_result("Graph", "OK", [_chunk("b", 1.0)])
+    graph.latency_ms["total"] = 20.0
+    out = dual_branch_rrf_fusion_output(
+        query="q",
+        dense_result=dense,
+        graph_result=graph,
+        fusion_keep_k=5,
+        rrf_k=60,
+        routing_predict_ms=2.5,
+        t_route_start=0.0,
+        debug={},
+        sequential_fusion_total=True,
+    )
+    canon = canonicalize_latency_ms(
+        retriever_name="Fused",
+        latency_ms=dict(out.pretrunc_result.latency_ms),
+        routing_input_ms=1.0,
+    )
+    assert PIPE_TOTAL_EXCLUDES_ROUTER_PREDICT_KEY not in canon
+    assert canon["retrieval_reported_total_ms"] == pytest.approx(
+        canon["retrieval_stage_total_ms"] + 2.5
+    )
 
 
 def test_fusion_pipeline_can_reuse_provided_branch_results():
@@ -251,3 +368,36 @@ def test_fuse_cached_results_wrapper_produces_fused_result():
     )
     assert res.retriever_name == FUSED_RETRIEVER_NAME
     assert res.status == "OK"
+
+
+def test_branch_retrieval_wall_ms_prefers_total():
+    dense = _mk_result("Dense", "OK", [_chunk("a", 1.0)])
+    dense.latency_ms.clear()
+    dense.latency_ms["total"] = 12.5
+    assert branch_retrieval_wall_ms(dense) == pytest.approx(12.5)
+
+
+def test_dual_branch_sequential_fusion_total_matches_branch_sum():
+    dense = _mk_result("Dense", "OK", [_chunk("a", 1.0)])
+    dense.latency_ms["total"] = 10.0
+    graph = _mk_result("Graph", "OK", [_chunk("b", 1.0)])
+    graph.latency_ms["total"] = 20.0
+    out = dual_branch_weighted_fusion_output(
+        query="q",
+        dense_result=dense,
+        graph_result=graph,
+        fusion_keep_k=5,
+        dense_weight=0.5,
+        routing_predict_ms=0.0,
+        t_route_start=0.0,
+        debug={},
+        sequential_fusion_total=True,
+    )
+    fusion_ms = float(out.pretrunc_result.latency_ms.get("fusion", 0.0))
+    total_ms = float(out.pretrunc_result.latency_ms.get("total", 0.0))
+    assert fusion_ms > 0.0
+    assert total_ms == pytest.approx(10.0 + 20.0 + fusion_ms)
+    assert (
+        out.pretrunc_result.latency_ms.get(PIPE_TOTAL_EXCLUDES_ROUTER_PREDICT_KEY)
+        == 1.0
+    )
