@@ -272,6 +272,53 @@ class FiguresSection:
 
 
 @dataclass
+class ResultsPolicyEntry:
+    run_id: str
+    router_role: str | None = None
+
+
+@dataclass
+class ResultsRouterArch:
+    architecture_id: str = ""
+    input_mode: str = "embedding"
+    task_type: str = "regression"
+
+
+@dataclass
+class ResultsOracleConfig:
+    metric: str = "stateful_ndcg"
+    k: int = 5
+    diagnostic_ks: list[int] = field(default_factory=lambda: [5, 10, 20])
+    plateau_tau: float = 1e-6
+
+
+@dataclass
+class ResultsArtifactSpec:
+    id: str
+    kind: str = "table"
+    enabled: bool = True
+    figure: str | None = None
+    x_policy: str | None = None
+    y_policy: str | None = None
+    metric: str | None = None
+    k: int | None = None
+    exclude_policies: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ResultsSection:
+    bundle_id: str = "default"
+    output_root: str = "results"
+    split: str = "test"
+    theme: FiguresThemeSection = field(default_factory=FiguresThemeSection)
+    image_format: str = "pdf"
+    oracle: ResultsOracleConfig = field(default_factory=ResultsOracleConfig)
+    router: dict[str, ResultsRouterArch] = field(default_factory=dict)
+    policies: dict[str, ResultsPolicyEntry] = field(default_factory=dict)
+    artifacts: list[ResultsArtifactSpec] = field(default_factory=list)
+
+
+@dataclass
 class GraphRetrievalSweepSection:
     """Optional grid-search settings for ``scripts/dev/graph_retrieval_grid_search.py``.
 
@@ -309,3 +356,4 @@ class PipelineConfig:
         default_factory=GraphRetrievalSweepSection
     )
     figures: FiguresSection = field(default_factory=FiguresSection)
+    results: ResultsSection = field(default_factory=ResultsSection)

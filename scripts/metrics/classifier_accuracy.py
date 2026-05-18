@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-"""Compute accuracy and confusion matrix for a hard routing classifier."""
+"""Compute accuracy and confusion matrix for a hard routing classifier.
+
+.. deprecated:: Use ``classifier_metrics`` via ``make results-build``.
+"""
 
 import argparse
+import warnings
 import json
 import logging
 from pathlib import Path
@@ -56,6 +60,11 @@ def compute_metrics(predictions):
 
 
 def main():
+    warnings.warn(
+        "classifier_accuracy is deprecated; use make results-build",
+        DeprecationWarning,
+        stacklevel=1,
+    )
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--config",

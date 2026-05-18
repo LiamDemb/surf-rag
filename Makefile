@@ -5,6 +5,7 @@
 	router-train router-eval router-train-ablations router-evaluate-ablations \
 	router-calibrate-threshold \
 	figures-render \
+	results-build \
 	validate-oracle-config validate-router-config validate-router-train \
 	e2e-print-config e2e-prepare e2e-submit e2e-submit-batch e2e-collect e2e-evaluate e2e-run \
 	e2e-run-all-policies e2e-collect-all-policies e2e-evaluate-all-policies e2e-smoke-test-v01 \
@@ -159,6 +160,10 @@ router-evaluate: validate-router-train
 FIGURES_EXTRA ?= --force
 figures-render:
 	$(PY) -m scripts.figures.render_figures --config "$(CONFIG)" $(FIGURES_EXTRA)
+
+CONFIG ?= configs/results/example.yaml
+results-build:
+	$(PY) -m scripts.results.build --config "$(CONFIG)"
 
 router-evaluate-ablations: validate-router-train
 	@for m in $(ROUTER_INPUT_MODES); do \

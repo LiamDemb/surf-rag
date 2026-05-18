@@ -6,7 +6,15 @@ matplotlib.use("Agg")
 
 import matplotlib as mpl
 
-from surf_rag.viz.theme import PALETTE, apply_theme
+from surf_rag.config.schema import FiguresThemeSection
+from surf_rag.viz.theme import (
+    DATASET_SOURCE_COLORS,
+    PALETTE,
+    POLICY_COLORS,
+    apply_figures_theme,
+    apply_theme,
+    policy_color,
+)
 
 
 def test_apply_theme_sets_savefig_dpi() -> None:
@@ -27,3 +35,20 @@ def test_palette_keys_complete() -> None:
     for key in ("primary", "identity_line", "grid", "text", "face"):
         assert key in PALETTE
         assert isinstance(PALETTE[key], str)
+
+
+def test_dataset_source_colors() -> None:
+    assert DATASET_SOURCE_COLORS["nq"] == PALETTE["secondary"]
+    assert DATASET_SOURCE_COLORS["2wiki"] == PALETTE["primary"]
+    assert DATASET_SOURCE_COLORS["nq"] != DATASET_SOURCE_COLORS["2wiki"]
+
+
+def test_policy_color_cycles() -> None:
+    assert policy_color(0) == POLICY_COLORS[0]
+    assert policy_color(len(POLICY_COLORS)) == POLICY_COLORS[0]
+
+
+def test_apply_figures_theme_returns_format() -> None:
+    fmt = apply_figures_theme(FiguresThemeSection(dpi=120), image_format="pdf")
+    assert fmt == "pdf"
+    assert mpl.rcParams["savefig.dpi"] == 120.0

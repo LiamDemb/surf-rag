@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
-"""Compile a summary of an end-to-end run's test set performance."""
+"""Compile a summary of an end-to-end run's test set performance.
+
+.. deprecated::
+    Use ``make results-build`` with ``pipeline_retrieval`` and ``pipeline_answers``
+    artefacts in ``configs/results/*.yaml``.
+"""
 
 import argparse
+import warnings
 import json
 import logging
 from pathlib import Path
@@ -21,6 +27,12 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 
 def main():
+    warnings.warn(
+        "compile_e2e_results is deprecated; use: make results-build "
+        "RESULTS_CONFIG=configs/results/example.yaml",
+        DeprecationWarning,
+        stacklevel=1,
+    )
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--config",
