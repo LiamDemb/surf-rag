@@ -15,7 +15,7 @@ from surf_rag.viz.renderers.benchmark_oracle_ndcg_heatmap import (
     _package_versions,
 )
 from surf_rag.viz.specs import BaseFigureSpec, OracleArgmaxWeightHistogramSpec
-from surf_rag.viz.theme import PALETTE
+from surf_rag.viz.theme import BAR_ALPHA, PALETTE
 from surf_rag.viz.types import FigureOutput
 
 _COLOR_SINGLE = PALETTE["dark-blue"]
@@ -143,6 +143,7 @@ def render_oracle_argmax_weight_histogram(
             color=_COLOR_SINGLE,
             edgecolor="white",
             linewidth=0.4,
+            alpha=BAR_ALPHA,
         )
         ax.bar(
             x,
@@ -154,6 +155,7 @@ def render_oracle_argmax_weight_histogram(
             color=_COLOR_TIE,
             edgecolor="white",
             linewidth=0.4,
+            alpha=BAR_ALPHA,
         )
         ax.set_xlabel("Dense weight")
         ax.set_ylabel("Count (queries can add >1 if tied)")

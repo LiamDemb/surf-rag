@@ -8,11 +8,13 @@ import matplotlib as mpl
 
 from surf_rag.config.schema import FiguresThemeSection
 from surf_rag.viz.theme import (
+    BAR_ALPHA,
     DATASET_SOURCE_COLORS,
     PALETTE,
     POLICY_COLORS,
     apply_figures_theme,
     apply_theme,
+    bar_style,
     policy_color,
 )
 
@@ -46,6 +48,12 @@ def test_dataset_source_colors() -> None:
 def test_policy_color_cycles() -> None:
     assert policy_color(0) == POLICY_COLORS[0]
     assert policy_color(len(POLICY_COLORS)) == POLICY_COLORS[0]
+
+
+def test_bar_style_defaults() -> None:
+    style = bar_style()
+    assert style["alpha"] == BAR_ALPHA
+    assert style["color"] == PALETTE["light-blue"]
 
 
 def test_apply_figures_theme_returns_format() -> None:

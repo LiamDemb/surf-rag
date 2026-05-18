@@ -304,6 +304,8 @@ class ResultsArtifactSpec:
     k: int | None = None
     ks: list[int] | None = None
     exclude_policies: list[str] = field(default_factory=list)
+    ylim_min: float | None = None
+    ylim_max: float | None = None
 
 
 @dataclass

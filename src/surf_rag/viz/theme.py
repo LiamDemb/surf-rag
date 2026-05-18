@@ -17,7 +17,7 @@ PALETTE: Final[dict[str, str]] = {
     "grid": "#B0B0B0",
     "text": "#1A1A1A",
     "face": "#FFFFFF",
-    "light-blue": "#56B4E9",
+    "light-blue": "#CED2FE",
     "dark-blue": "#0072B2",
 }
 
@@ -39,6 +39,9 @@ DATASET_SOURCE_LABELS: Final[dict[str, str]] = {
     "2wiki": "2Wiki",
     "all": "All",
 }
+
+# Default opacity for bar charts so grid lines remain visible through fills.
+BAR_ALPHA: Final[float] = 0.85
 
 POLICY_COLORS: Final[tuple[str, ...]] = (
     "#0072B2",
@@ -112,6 +115,20 @@ def apply_theme(
 def policy_color(index: int) -> str:
     """Cycle palette color for grouped policy bar charts."""
     return POLICY_COLORS[index % len(POLICY_COLORS)]
+
+
+def bar_style(
+    *,
+    color: str | None = None,
+    edgecolor: str | None = None,
+) -> dict[str, Any]:
+    """Shared kwargs for ``Axes.bar`` (semi-transparent fill, themed edge)."""
+    return {
+        "color": color or PALETTE["light-blue"],
+        "alpha": BAR_ALPHA,
+        "edgecolor": edgecolor or PALETTE["text"],
+        "linewidth": 0.4,
+    }
 
 
 def apply_figures_theme(
