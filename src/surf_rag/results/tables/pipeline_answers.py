@@ -8,12 +8,15 @@ from surf_rag.results.bundle import ResultsBundle, policy_list
 from surf_rag.results.loaders import load_answerability, load_policy_metrics
 from surf_rag.results.tables.writer import write_table
 
+# Classification oracle is compared only in oracle_policy_comparison.
+_PIPELINE_ANSWERS_EXCLUDE = ("oracle-classification",)
+
 
 def build_pipeline_answers(bundle: ResultsBundle) -> tuple[pd.DataFrame, dict]:
     answerable = load_answerability(bundle.answerability_path)
     rows: list[dict] = []
 
-    for policy in policy_list(bundle):
+    for policy in policy_list(bundle, exclude=list(_PIPELINE_ANSWERS_EXCLUDE)):
         metrics = load_policy_metrics(bundle.policies[policy].metrics_path)
         per_q = metrics.get("per_question") or []
         buckets: dict[tuple[str, str], list[bool]] = {
@@ -56,5 +59,10 @@ def build_pipeline_answers(bundle: ResultsBundle) -> tuple[pd.DataFrame, dict]:
             )
 
     df = pd.DataFrame(rows)
-    paths = write_table(bundle, "pipeline_answers", df)
+    paths = write_table(
+        bundle,
+        "pipeline_answers",
+        df,
+        {"exclude_policies": list(_PIPELINE_ANSWERS_EXCLUDE)},
+    )
     return df, {"csv": str(paths[0]), "meta": str(paths[1])}

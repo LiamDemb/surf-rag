@@ -29,6 +29,9 @@ from surf_rag.results.manifest import (
 from surf_rag.results.tables.bench_splits import build_bench_splits
 from surf_rag.results.tables.branch_retrieval import build_branch_retrieval
 from surf_rag.results.tables.classifier_metrics import build_classifier_metrics
+from surf_rag.results.tables.oracle_policy_comparison import (
+    build_oracle_policy_comparison,
+)
 from surf_rag.results.tables.oracle_stats import build_oracle_stats
 from surf_rag.results.tables.pipeline_answers import build_pipeline_answers
 from surf_rag.results.tables.pairwise_wilcoxon import build_pairwise_wilcoxon
@@ -60,6 +63,7 @@ TABLE_BUILDERS: dict[str, Callable] = {
     "pipeline_retrieval_full": lambda b, s: build_pipeline_retrieval(b, s),
     "pipeline_answers": lambda b, s: build_pipeline_answers(b),
     "pairwise_wilcoxon": lambda b, s: build_pairwise_wilcoxon(b, s),
+    "oracle_policy_comparison": lambda b, s: build_oracle_policy_comparison(b, s),
 }
 
 DEFAULT_ARTIFACT_IDS: list[tuple[str, str, str | None]] = [
@@ -75,6 +79,7 @@ DEFAULT_ARTIFACT_IDS: list[tuple[str, str, str | None]] = [
     ("pipeline_retrieval", "table", None),
     ("pipeline_answers", "table", None),
     ("pairwise_wilcoxon", "table", None),
+    ("oracle_policy_comparison", "table", None),
     ("retrieval_by_policy_ci", "figure", "retrieval_by_policy_ci"),
     ("retrieval_answer_gain", "figure", "retrieval_answer_gain"),
 ]
