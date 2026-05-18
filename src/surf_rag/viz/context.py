@@ -10,6 +10,7 @@ from surf_rag.config.schema import PipelineConfig
 from surf_rag.evaluation.router_model_artifacts import (
     RouterModelPaths,
     make_router_model_paths_for_cli,
+    parse_router_task_type,
 )
 from surf_rag.router.model import parse_router_input_mode
 from surf_rag.viz.paths_layout import canonical_router_figure_dir
@@ -57,11 +58,13 @@ class FigureRunContext:
             else None
         )
         arch_id = arch if arch else None
+        task_type = parse_router_task_type(str(rt.task_type or "regression"))
         m_paths = make_router_model_paths_for_cli(
             rid,
             router_base=rp.router_base,
             input_mode=input_mode,
             router_architecture_id=arch_id,
+            router_task_type=task_type,
         )
         if resolved_output_dir is not None:
             out = Path(resolved_output_dir).expanduser().resolve()
