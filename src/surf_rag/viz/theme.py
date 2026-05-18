@@ -40,7 +40,7 @@ DATASET_SOURCE_LABELS: Final[dict[str, str]] = {
     "all": "All",
 }
 
-# Default opacity for bar charts so grid lines remain visible through fills.
+# Default opacity for bar chart fills.
 BAR_ALPHA: Final[float] = 0.85
 
 POLICY_COLORS: Final[tuple[str, ...]] = (
@@ -120,15 +120,22 @@ def policy_color(index: int) -> str:
 def bar_style(
     *,
     color: str | None = None,
-    edgecolor: str | None = None,
 ) -> dict[str, Any]:
-    """Shared kwargs for ``Axes.bar`` (semi-transparent fill, themed edge)."""
+    """Shared kwargs for ``Axes.bar`` (semi-transparent fill, no outline)."""
     return {
         "color": color or PALETTE["light-blue"],
         "alpha": BAR_ALPHA,
-        "edgecolor": edgecolor or PALETTE["text"],
-        "linewidth": 0.4,
+        "edgecolor": "none",
+        "linewidth": 0,
     }
+
+
+def style_bar_axes(ax: Any) -> None:
+    """Axes styling shared by bar charts: horizontal grid only, open top/right."""
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.yaxis.grid(True)
+    ax.xaxis.grid(False)
 
 
 def apply_figures_theme(

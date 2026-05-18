@@ -7,6 +7,8 @@ matplotlib.use("Agg")
 import matplotlib as mpl
 
 from surf_rag.config.schema import FiguresThemeSection
+import matplotlib.pyplot as plt
+
 from surf_rag.viz.theme import (
     BAR_ALPHA,
     DATASET_SOURCE_COLORS,
@@ -16,6 +18,7 @@ from surf_rag.viz.theme import (
     apply_theme,
     bar_style,
     policy_color,
+    style_bar_axes,
 )
 
 
@@ -54,6 +57,18 @@ def test_bar_style_defaults() -> None:
     style = bar_style()
     assert style["alpha"] == BAR_ALPHA
     assert style["color"] == PALETTE["light-blue"]
+    assert style["edgecolor"] == "none"
+    assert style["linewidth"] == 0
+
+
+def test_style_bar_axes() -> None:
+    _, ax = plt.subplots()
+    style_bar_axes(ax)
+    assert not ax.spines["top"].get_visible()
+    assert not ax.spines["right"].get_visible()
+    assert ax.yaxis._major_tick_kw.get("gridOn")  # noqa: SLF001
+    assert not ax.xaxis._major_tick_kw.get("gridOn")  # noqa: SLF001
+    plt.close()
 
 
 def test_apply_figures_theme_returns_format() -> None:

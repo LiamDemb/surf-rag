@@ -26,6 +26,8 @@ def test_bar_style_uses_light_blue_and_alpha() -> None:
     style = bar_style()
     assert style["color"] == PALETTE["light-blue"]
     assert style["alpha"] == BAR_ALPHA
+    assert style["edgecolor"] == "none"
+    assert style["linewidth"] == 0
 
 
 def test_mean_and_ci95_bootstrap_on_questions() -> None:
