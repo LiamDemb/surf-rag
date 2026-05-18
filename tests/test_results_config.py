@@ -41,6 +41,9 @@ def test_load_results_section(tmp_path: Path) -> None:
                             "id": "pairwise_a",
                             "kind": "figure",
                             "figure": "pairwise_retrieval",
+                            "metric": "recall",
+                            "k": 10,
+                            "ks": [5, 10],
                         },
                     ],
                 },
@@ -56,6 +59,10 @@ def test_load_results_section(tmp_path: Path) -> None:
     assert cfg.results.router["regressor"].architecture_id == "rg-001"
     assert len(cfg.results.artifacts) == 2
     assert cfg.results.artifacts[0].id == "bench_splits"
+    pairwise = cfg.results.artifacts[1]
+    assert pairwise.metric == "recall"
+    assert pairwise.k == 10
+    assert pairwise.ks == [5, 10]
 
 
 def test_results_section_defaults() -> None:

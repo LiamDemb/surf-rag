@@ -302,6 +302,7 @@ class ResultsArtifactSpec:
     y_policy: str | None = None
     metric: str | None = None
     k: int | None = None
+    ks: list[int] | None = None
     exclude_policies: list[str] = field(default_factory=list)
 
 
