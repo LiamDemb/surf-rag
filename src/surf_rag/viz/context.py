@@ -13,6 +13,7 @@ from surf_rag.evaluation.router_model_artifacts import (
     parse_router_task_type,
 )
 from surf_rag.router.model import parse_router_input_mode
+from surf_rag.viz.learning_curve_labels import resolve_oracle_objective
 from surf_rag.viz.paths_layout import canonical_router_figure_dir
 
 
@@ -31,6 +32,9 @@ class FigureRunContext:
     force: bool
     resolved_paths: ResolvedPaths
     router_dataset_parquet: Path
+    train_loss: str
+    oracle_metric: str
+    oracle_metric_k: int
 
     @staticmethod
     def from_pipeline(
@@ -89,6 +93,12 @@ class FigureRunContext:
                 f"figures.image_format must be png or pdf, got {img_fmt!r}"
             )
         ds_parquet = (rp.router_dataset_dir / "router_dataset.parquet").resolve()
+        oracle_metric, oracle_metric_k = resolve_oracle_objective(
+            router_id=rid,
+            config_metric=str(cfg.oracle.oracle_metric),
+            config_k=int(cfg.oracle.oracle_metric_k),
+            oracle_summary_path=rp.router_oracle_dir / "summary.json",
+        )
         return FigureRunContext(
             router_id=rid,
             router_architecture_id=arch_id,
@@ -103,4 +113,7 @@ class FigureRunContext:
             force=force,
             resolved_paths=rp,
             router_dataset_parquet=ds_parquet,
+            train_loss=str(rt.loss or "regret").strip() or "regret",
+            oracle_metric=oracle_metric,
+            oracle_metric_k=oracle_metric_k,
         )

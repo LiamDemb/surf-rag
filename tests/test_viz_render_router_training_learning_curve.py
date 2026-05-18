@@ -43,11 +43,14 @@ def _ctx(tmp_path: Path) -> FigureRunContext:
     return FigureRunContext.from_pipeline(cfg, force=True)
 
 
-def _write_training_history(path: Path) -> None:
+def _write_training_history(
+    path: Path, *, loss: str = "regret", loss_effective: str | None = None
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    effective = loss_effective if loss_effective is not None else loss
     payload = {
-        "loss": "regret",
-        "loss_effective": "regret",
+        "loss": loss,
+        "loss_effective": effective,
         "history": [
             {
                 "epoch": 1,
@@ -92,6 +95,7 @@ def test_render_router_training_learning_curve_writes_outputs(tmp_path: Path) ->
     assert meta["n_epochs"] == 2
     assert "train_loss" in meta["metrics_plotted"]
     assert "dev_loss" in meta["metrics_plotted"]
+    assert meta["y_axis_label"] == "NDCG@10 Regret Loss"
 
 
 def test_render_router_training_learning_curve_no_dev_when_disabled(
@@ -165,12 +169,15 @@ def test_render_router_training_learning_curve_classification(tmp_path: Path) ->
                 RouterTrainSection(),
                 input_mode="embedding",
                 task_type="classification",
+                loss="cross_entropy",
             ),
         ),
     )
     ctx = FigureRunContext.from_pipeline(cfg, force=True)
     mp = ctx.model_paths
-    _write_training_history(mp.training_history)
+    _write_training_history(
+        mp.training_history, loss="cross_entropy", loss_effective="cross_entropy"
+    )
     mp.manifest.write_text(
         json.dumps(
             {"task_type": "classification", "model": {"weight_grid": [0.0, 1.0]}}
@@ -186,4 +193,5 @@ def test_render_router_training_learning_curve_classification(tmp_path: Path) ->
     assert out.path_image.is_file()
     meta = json.loads(out.path_meta.read_text(encoding="utf-8"))
     assert meta["task_type"] == "classification"
+    assert meta["y_axis_label"] == "Cross Entropy Loss"
     assert "train_loss" in meta["metrics_plotted"]
