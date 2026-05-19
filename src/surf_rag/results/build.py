@@ -18,6 +18,10 @@ from surf_rag.results.figures.retrieval_by_policy_ci import (
     render_retrieval_by_policy_ci,
 )
 from surf_rag.results.figures.pairwise_retrieval import render_pairwise_retrieval
+from surf_rag.results.figures.pipeline_qa_calibration import (
+    render_pipeline_qa_calibration,
+    render_pipeline_qa_calibration_recall,
+)
 from surf_rag.results.figures.pipeline_retrieval_qa_scatter import (
     render_pipeline_retrieval_qa_scatter,
 )
@@ -63,6 +67,8 @@ FIGURE_RENDERERS: dict[str, Callable] = {
     "pairwise_retrieval": render_pairwise_retrieval,
     "retrieval_answer_gain": render_retrieval_answer_gain,
     "pipeline_retrieval_qa_scatter": render_pipeline_retrieval_qa_scatter,
+    "pipeline_qa_calibration": render_pipeline_qa_calibration,
+    "pipeline_qa_calibration_recall": render_pipeline_qa_calibration_recall,
     "router_training_learning_curve": render_router_training_learning_curve_results,
 }
 
@@ -99,6 +105,8 @@ DEFAULT_ARTIFACT_IDS: list[tuple[str, str, str | None]] = [
     ("retrieval_by_policy_ci", "figure", "retrieval_by_policy_ci"),
     ("retrieval_answer_gain", "figure", "retrieval_answer_gain"),
     ("pipeline_retrieval_qa_scatter", "figure", "pipeline_retrieval_qa_scatter"),
+    ("pipeline_qa_calibration", "figure", "pipeline_qa_calibration"),
+    ("pipeline_qa_calibration_recall", "figure", "pipeline_qa_calibration_recall"),
 ]
 
 
