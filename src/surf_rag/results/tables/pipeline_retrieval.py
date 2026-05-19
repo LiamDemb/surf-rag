@@ -14,7 +14,7 @@ from surf_rag.results.metric_fields import (
 )
 from surf_rag.results.tables.writer import write_table
 
-DEFAULT_EXCLUDE = ["oracle-classification"]
+DEFAULT_EXCLUDE: list[str] = []
 
 
 def _metric_column_name(metric: str) -> str:
