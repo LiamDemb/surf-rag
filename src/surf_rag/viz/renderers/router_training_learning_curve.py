@@ -17,7 +17,7 @@ from surf_rag.viz.learning_curve_labels import (
     resolve_training_loss_id,
 )
 from surf_rag.viz.specs import BaseFigureSpec, RouterTrainingLearningCurveSpec
-from surf_rag.viz.theme import PALETTE
+from surf_rag.viz.theme import LEARNING_CURVE_LINE_ALPHA, PALETTE
 from surf_rag.viz.types import FigureOutput
 
 
@@ -123,6 +123,7 @@ def render_router_training_learning_curve(
                     label="train loss",
                     color=PALETTE["primary"],
                     linewidth=1.8,
+                    alpha=LEARNING_CURVE_LINE_ALPHA,
                 )
                 plotted.append("train_loss")
         if spec.show_loss and spec.include_dev and "dev_loss" in df.columns:
@@ -132,9 +133,9 @@ def render_router_training_learning_curve(
                     x,
                     y,
                     label="dev loss",
-                    color=PALETTE["primary"],
-                    linewidth=1.6,
-                    linestyle="--",
+                    color=PALETTE["secondary"],
+                    linewidth=1.8,
+                    alpha=LEARNING_CURVE_LINE_ALPHA,
                 )
                 plotted.append("dev_loss")
         reg_label = "error" if task_type == "classification" else "regret"
@@ -145,8 +146,9 @@ def render_router_training_learning_curve(
                     x,
                     y,
                     label=f"train {reg_label}",
-                    color=PALETTE["dark-blue"],
+                    color=PALETTE["primary"],
                     linewidth=1.8,
+                    alpha=LEARNING_CURVE_LINE_ALPHA,
                 )
                 plotted.append("train_regret")
         if spec.show_regret and spec.include_dev and "dev_regret" in df.columns:
@@ -156,9 +158,9 @@ def render_router_training_learning_curve(
                     x,
                     y,
                     label=f"dev {reg_label}",
-                    color=PALETTE["dark-blue"],
-                    linewidth=1.6,
-                    linestyle="--",
+                    color=PALETTE["secondary"],
+                    linewidth=1.8,
+                    alpha=LEARNING_CURVE_LINE_ALPHA,
                 )
                 plotted.append("dev_regret")
 

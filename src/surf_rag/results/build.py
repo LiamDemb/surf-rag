@@ -20,6 +20,9 @@ from surf_rag.results.figures.retrieval_by_policy_ci import (
 from surf_rag.results.figures.pairwise_retrieval import render_pairwise_retrieval
 from surf_rag.results.figures.retrieval_answer_gain import render_retrieval_answer_gain
 from surf_rag.results.figures.route_confusion import render_route_confusion
+from surf_rag.results.figures.router_training_learning_curve import (
+    render_router_training_learning_curve_results,
+)
 from surf_rag.results.figures.weight_dists import render_weight_dists
 from surf_rag.results.manifest import (
     ArtifactRecord,
@@ -51,6 +54,7 @@ FIGURE_RENDERERS: dict[str, Callable] = {
     "retrieval_by_policy_ci": render_retrieval_by_policy_ci,
     "pairwise_retrieval": render_pairwise_retrieval,
     "retrieval_answer_gain": render_retrieval_answer_gain,
+    "router_training_learning_curve": render_router_training_learning_curve_results,
 }
 
 TABLE_BUILDERS: dict[str, Callable] = {

@@ -11,20 +11,21 @@ import matplotlib as mpl
 
 # Wong colorblind-friendly accents (https://www.nature.com/articles/nmeth.1618)
 PALETTE: Final[dict[str, str]] = {
-    "primary": "#0072B2",
-    "secondary": "#D55E00",
+    "primary": "#1F6EF5",  # light-blue
+    "secondary": "#FDCC40",  # light-green
     "identity_line": "#636363",
     "grid": "#B0B0B0",
     "text": "#1A1A1A",
     "face": "#FFFFFF",
     "light-blue": "#CED2FE",
     "dark-blue": "#0072B2",
+    "light-green": "#90BE91",
 }
 
 # Dataset colours: high contrast (orange vs blue), not two similar blues.
 DATASET_SOURCE_COLORS: Final[dict[str, str]] = {
-    "nq": "#D55E00",
-    "2wiki": "#0072B2",
+    "nq": PALETTE["primary"],
+    "2wiki": PALETTE["secondary"],
     "all": "#333333",
 }
 
@@ -42,6 +43,9 @@ DATASET_SOURCE_LABELS: Final[dict[str, str]] = {
 
 # Default opacity for bar chart fills.
 BAR_ALPHA: Final[float] = 0.85
+
+# Training / dev learning-curve lines (solid primary vs secondary).
+LEARNING_CURVE_LINE_ALPHA: Final[float] = 0.85
 
 POLICY_COLORS: Final[tuple[str, ...]] = (
     "#0072B2",

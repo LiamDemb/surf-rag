@@ -303,9 +303,17 @@ class ResultsArtifactSpec:
     metric: str | None = None
     k: int | None = None
     ks: list[int] | None = None
-    exclude_policies: list[str] = field(default_factory=list)
+    exclude_policies: list[str] | None = None
     ylim_min: float | None = None
     ylim_max: float | None = None
+    router_role: str | None = None
+    filename_stem: str | None = None
+    fig_width: float | None = None
+    fig_height: float | None = None
+    show_plot_subtitle: bool | None = None
+    include_dev: bool | None = None
+    show_loss: bool | None = None
+    show_regret: bool | None = None
 
 
 @dataclass

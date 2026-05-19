@@ -30,7 +30,10 @@ def build_pipeline_retrieval(
     bundle: ResultsBundle,
     spec: ResultsArtifactSpec,
 ) -> tuple[pd.DataFrame, dict]:
-    exclude = set(spec.exclude_policies or DEFAULT_EXCLUDE)
+    if spec.exclude_policies is not None:
+        exclude = set(spec.exclude_policies)
+    else:
+        exclude = set(DEFAULT_EXCLUDE)
     policies = policy_list(bundle, exclude=list(exclude))
     ks = resolve_retrieval_ks(spec, bundle)
     narrow_metric = spec.metric
