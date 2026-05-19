@@ -8,11 +8,13 @@ if TYPE_CHECKING:
     from surf_rag.config.schema import FiguresThemeSection
 
 import matplotlib as mpl
+import numpy as np
 
 # Wong colorblind-friendly accents (https://www.nature.com/articles/nmeth.1618)
 PALETTE: Final[dict[str, str]] = {
     "primary": "#1F6EF5",  # light-blue
     "secondary": "#FDCC40",  # light-green
+    "red": "#AD0909",  # regret / loss heatmaps
     "identity_line": "#636363",
     "grid": "#B0B0B0",
     "text": "#1A1A1A",
@@ -21,6 +23,16 @@ PALETTE: Final[dict[str, str]] = {
     "dark-blue": "#0072B2",
     "light-green": "#90BE91",
 }
+
+# Opacity steps for single-hue heatmaps (blend accent onto ``face``).
+HEATMAP_SHADE_ALPHAS: Final[tuple[float, ...]] = (
+    0.0,
+    0.7,
+    1.0,
+)
+
+# Cell annotation flips to face colour above this normalized heat level.
+HEATMAP_ANNOTATION_CONTRAST_THRESHOLD: Final[float] = 0.52
 
 # Dataset colours: high contrast (orange vs blue), not two similar blues.
 DATASET_SOURCE_COLORS: Final[dict[str, str]] = {
@@ -119,6 +131,38 @@ def apply_theme(
 def policy_color(index: int) -> str:
     """Cycle palette color for grouped policy bar charts."""
     return POLICY_COLORS[index % len(POLICY_COLORS)]
+
+
+def blend_on_face(
+    foreground_hex: str,
+    alpha: float,
+    *,
+    background_hex: str | None = None,
+) -> tuple[float, float, float]:
+    """Blend ``foreground_hex`` over ``background_hex`` (default ``face``) by ``alpha``."""
+    from matplotlib.colors import to_rgb
+
+    bg = to_rgb(background_hex or PALETTE["face"])
+    fg = to_rgb(foreground_hex)
+    a = float(np.clip(alpha, 0.0, 1.0))
+    return tuple((1.0 - a) * bg[i] + a * fg[i] for i in range(3))
+
+
+def sequential_cmap_from_palette(
+    palette_key: str,
+    *,
+    n_steps: int = 256,
+):
+    """Sequential colormap: white/face at low values, palette accent at high (opacity ramp)."""
+    from matplotlib.colors import LinearSegmentedColormap
+
+    accent = PALETTE.get(palette_key)
+    if accent is None:
+        raise KeyError(f"Unknown palette key: {palette_key!r}")
+    colors = [blend_on_face(accent, a) for a in np.linspace(0.0, 1.0, num=n_steps)]
+    return LinearSegmentedColormap.from_list(
+        f"surf_{palette_key}_sequential", colors, N=n_steps
+    )
 
 
 def bar_style(

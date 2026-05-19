@@ -19,6 +19,9 @@ from surf_rag.results.figures.retrieval_by_policy_ci import (
 )
 from surf_rag.results.figures.pairwise_retrieval import render_pairwise_retrieval
 from surf_rag.results.figures.retrieval_answer_gain import render_retrieval_answer_gain
+from surf_rag.results.figures.classifier_regret_confusion import (
+    render_classifier_regret_confusion,
+)
 from surf_rag.results.figures.route_confusion import render_route_confusion
 from surf_rag.results.figures.router_training_learning_curve import (
     render_router_training_learning_curve_results,
@@ -52,6 +55,7 @@ FIGURE_RENDERERS: dict[str, Callable] = {
     "dispersion_curve": render_dispersion_curve,
     "weight_dists": render_weight_dists,
     "route_confusion": render_route_confusion,
+    "classifier_regret_confusion": render_classifier_regret_confusion,
     "retrieval_by_policy_ci": render_retrieval_by_policy_ci,
     "pairwise_retrieval": render_pairwise_retrieval,
     "retrieval_answer_gain": render_retrieval_answer_gain,
@@ -82,6 +86,7 @@ DEFAULT_ARTIFACT_IDS: list[tuple[str, str, str | None]] = [
     ("classifier_metrics", "table", None),
     ("weight_dists", "figure", "weight_dists"),
     ("route_confusion", "figure", "route_confusion"),
+    ("classifier_regret_confusion", "figure", "classifier_regret_confusion"),
     ("branch_retrieval", "table", None),
     ("pipeline_retrieval", "table", None),
     ("pipeline_answers", "table", None),
