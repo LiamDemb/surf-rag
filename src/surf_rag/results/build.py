@@ -18,6 +18,9 @@ from surf_rag.results.figures.retrieval_by_policy_ci import (
     render_retrieval_by_policy_ci,
 )
 from surf_rag.results.figures.pairwise_retrieval import render_pairwise_retrieval
+from surf_rag.results.figures.pipeline_retrieval_qa_scatter import (
+    render_pipeline_retrieval_qa_scatter,
+)
 from surf_rag.results.figures.retrieval_answer_gain import render_retrieval_answer_gain
 from surf_rag.results.figures.classifier_regret_confusion import (
     render_classifier_regret_confusion,
@@ -59,6 +62,7 @@ FIGURE_RENDERERS: dict[str, Callable] = {
     "retrieval_by_policy_ci": render_retrieval_by_policy_ci,
     "pairwise_retrieval": render_pairwise_retrieval,
     "retrieval_answer_gain": render_retrieval_answer_gain,
+    "pipeline_retrieval_qa_scatter": render_pipeline_retrieval_qa_scatter,
     "router_training_learning_curve": render_router_training_learning_curve_results,
 }
 
@@ -94,6 +98,7 @@ DEFAULT_ARTIFACT_IDS: list[tuple[str, str, str | None]] = [
     ("oracle_policy_comparison", "table", None),
     ("retrieval_by_policy_ci", "figure", "retrieval_by_policy_ci"),
     ("retrieval_answer_gain", "figure", "retrieval_answer_gain"),
+    ("pipeline_retrieval_qa_scatter", "figure", "pipeline_retrieval_qa_scatter"),
 ]
 
 
