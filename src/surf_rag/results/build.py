@@ -43,6 +43,7 @@ from surf_rag.results.tables.regressor_metrics import (
     SkippedArtifact,
     build_regressor_metrics,
 )
+from surf_rag.results.tables.regressor_test_summary import build_regressor_test_summary
 
 log = logging.getLogger(__name__)
 
@@ -61,6 +62,7 @@ TABLE_BUILDERS: dict[str, Callable] = {
     "bench_splits": lambda b, s: build_bench_splits(b),
     "oracle_stats": lambda b, s: build_oracle_stats(b, s),
     "regressor_metrics": lambda b, s: build_regressor_metrics(b),
+    "regressor_test_summary": lambda b, s: build_regressor_test_summary(b),
     "classifier_metrics": lambda b, s: build_classifier_metrics(b),
     "branch_retrieval": lambda b, s: build_branch_retrieval(b, s),
     "pipeline_retrieval": lambda b, s: build_pipeline_retrieval(b, s),
@@ -76,6 +78,7 @@ DEFAULT_ARTIFACT_IDS: list[tuple[str, str, str | None]] = [
     ("endpoint_pref", "figure", "endpoint_pref"),
     ("dispersion_curve", "figure", "dispersion_curve"),
     ("regressor_metrics", "table", None),
+    ("regressor_test_summary", "table", None),
     ("classifier_metrics", "table", None),
     ("weight_dists", "figure", "weight_dists"),
     ("route_confusion", "figure", "route_confusion"),

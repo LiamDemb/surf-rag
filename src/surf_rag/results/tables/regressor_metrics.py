@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -44,7 +45,10 @@ def _curve_regret(curve: list[float], grid: list[float], w: float) -> float:
     return float(c_star - c_hat)
 
 
-def build_regressor_metrics(bundle: ResultsBundle) -> tuple[pd.DataFrame, dict]:
+def collect_regressor_split_buckets(
+    bundle: ResultsBundle,
+) -> tuple[str, dict[str, list[dict[str, Any]]]]:
+    """Per-query regret stats on the configured split, keyed by ``nq`` / ``2wiki`` / ``all``."""
     arch = get_router_arch(bundle, "regressor")
     if arch is None or not arch.architecture_id.strip():
         raise SkippedArtifact("results.router.regressor not configured")
@@ -61,11 +65,14 @@ def build_regressor_metrics(bundle: ResultsBundle) -> tuple[pd.DataFrame, dict]:
 
     split = bundle.results.split
     pred_path = paths.predictions(split)
+    if not pred_path.is_file():
+        raise SkippedArtifact(f"Missing predictions: {pred_path}")
+
     fallback_grid = load_router_weight_grid(
         bundle.resolved.router_dataset_dir / "router_dataset.parquet",
         model_paths=paths,
     )
-    buckets: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    buckets: dict[str, list[dict[str, Any]]] = defaultdict(list)
 
     for row in iter_predictions_jsonl(pred_path):
         qid = str(row.get("question_id", "")).strip()
@@ -81,30 +88,38 @@ def build_regressor_metrics(bundle: ResultsBundle) -> tuple[pd.DataFrame, dict]:
         pred_w = float(row.get("predicted_weight", 0.5))
         wg = np.asarray(grid, dtype=float)
         idx_05 = int(np.argmin(np.abs(wg - 0.5)))
-        buckets[(split, "all")].append(
-            {
-                "regret": _curve_regret(curve, grid, pred_w),
-                "pred": pred_w,
-                "baseline_05": _curve_regret(curve, grid, float(grid[idx_05])),
-            }
-        )
+        item = {
+            "regret": _curve_regret(curve, grid, pred_w),
+            "pred": pred_w,
+            "baseline_05": _curve_regret(curve, grid, float(grid[idx_05])),
+            "fusion_50_50": _curve_regret(curve, grid, 0.5),
+            "curve": list(curve),
+            "grid": list(grid),
+        }
+        buckets["all"].append(item)
         if src in ("nq", "2wiki"):
-            buckets[(split, src)].append(
-                {
-                    "regret": _curve_regret(curve, grid, pred_w),
-                    "pred": pred_w,
-                    "baseline_05": _curve_regret(curve, grid, float(grid[idx_05])),
-                }
-            )
+            buckets[src].append(item)
 
+    if not buckets.get("all"):
+        raise SkippedArtifact(f"No regressor predictions on split {split!r}")
+    return split, dict(buckets)
+
+
+def build_regressor_metrics(bundle: ResultsBundle) -> tuple[pd.DataFrame, dict]:
+    arch = get_router_arch(bundle, "regressor")
+    if arch is None or not arch.architecture_id.strip():
+        raise SkippedArtifact("results.router.regressor not configured")
+
+    split, buckets = collect_regressor_split_buckets(bundle)
     rows: list[dict] = []
-    for (sp, src), items in sorted(buckets.items()):
+    for src in ("2wiki", "all", "nq"):
+        items = buckets.get(src) or []
         if not items:
             continue
         preds = [x["pred"] for x in items]
         rows.append(
             {
-                "split": sp,
+                "split": split,
                 "dataset_source": src,
                 "mean_regret": float(np.mean([x["regret"] for x in items])),
                 "mean_predicted_weight": float(np.mean(preds)),
