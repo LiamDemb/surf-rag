@@ -49,6 +49,9 @@ from surf_rag.results.tables.oracle_stats import build_oracle_stats
 from surf_rag.results.tables.pipeline_answers import build_pipeline_answers
 from surf_rag.results.tables.pairwise_wilcoxon import build_pairwise_wilcoxon
 from surf_rag.results.tables.pipeline_retrieval import build_pipeline_retrieval
+from surf_rag.results.tables.pipeline_retrieval_perfect_rates import (
+    build_pipeline_retrieval_perfect_rates,
+)
 from surf_rag.results.tables.regressor_metrics import (
     SkippedArtifact,
     build_regressor_metrics,
@@ -81,6 +84,9 @@ TABLE_BUILDERS: dict[str, Callable] = {
     "branch_retrieval": lambda b, s: build_branch_retrieval(b, s),
     "pipeline_retrieval": lambda b, s: build_pipeline_retrieval(b, s),
     "pipeline_retrieval_full": lambda b, s: build_pipeline_retrieval(b, s),
+    "pipeline_retrieval_perfect_rates": lambda b, s: build_pipeline_retrieval_perfect_rates(
+        b, s
+    ),
     "pipeline_answers": lambda b, s: build_pipeline_answers(b),
     "pairwise_wilcoxon": lambda b, s: build_pairwise_wilcoxon(b, s),
     "oracle_policy_comparison": lambda b, s: build_oracle_policy_comparison(b, s),
@@ -99,6 +105,7 @@ DEFAULT_ARTIFACT_IDS: list[tuple[str, str, str | None]] = [
     ("classifier_regret_confusion", "figure", "classifier_regret_confusion"),
     ("branch_retrieval", "table", None),
     ("pipeline_retrieval", "table", None),
+    ("pipeline_retrieval_perfect_rates", "table", None),
     ("pipeline_answers", "table", None),
     ("pairwise_wilcoxon", "table", None),
     ("oracle_policy_comparison", "table", None),
