@@ -105,8 +105,8 @@ def test_missing_branch_score_is_zero_and_fusion_uses_weights():
     assert by_id["a"].fused_score == pytest.approx(0.0)
 
 
-def test_graph_log_before_normalize_changes_pure_graph_ranking() -> None:
-    """Log graph scores before min-max so steep decay spreads more linearly."""
+def test_default_fusion_applies_graph_log_before_normalize() -> None:
+    """Weighted fusion always log-transforms graph scores before min-max."""
     import math
 
     dense = _mk_result("Dense", "NO_CONTEXT", [])
@@ -119,26 +119,15 @@ def test_graph_log_before_normalize_changes_pure_graph_ranking() -> None:
             _chunk("high", 1.0),
         ],
     )
-    plain = fuse_branch_results(dense, graph, dense_weight=0.0, fusion_keep_k=10)
-    logged = fuse_branch_results(
-        dense,
-        graph,
-        dense_weight=0.0,
-        fusion_keep_k=10,
-        graph_log_before_normalize=True,
-    )
-    plain_order = [c.chunk_id for c in plain]
-    logged_order = [c.chunk_id for c in logged]
-    assert plain_order == ["high", "mid", "low"]
-    assert logged_order == ["high", "mid", "low"]
-    plain_scores = {c.chunk_id: c.graph_norm_score for c in plain}
-    logged_scores = {c.chunk_id: c.graph_norm_score for c in logged}
-    assert plain_scores["high"] == pytest.approx(1.0)
-    assert logged_scores["high"] == pytest.approx(1.0)
-    assert logged_scores["mid"] > plain_scores["mid"]
-    assert plain_scores["low"] == pytest.approx(0.0)
-    assert logged_scores["low"] == pytest.approx(0.0)
-    for c in logged:
+    cands = fuse_branch_results(dense, graph, dense_weight=0.0, fusion_keep_k=10)
+    order = [c.chunk_id for c in cands]
+    assert order == ["high", "mid", "low"]
+    scores = {c.chunk_id: c.graph_norm_score for c in cands}
+    assert scores["high"] == pytest.approx(1.0)
+    assert scores["low"] == pytest.approx(0.0)
+    # Log spreads the mid tail vs raw linear min-max (~0.01).
+    assert scores["mid"] > 0.5
+    for c in cands:
         assert c.graph_raw_score == pytest.approx(
             {"low": 1e-8, "mid": 0.01, "high": 1.0}[c.chunk_id]
         )

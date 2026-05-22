@@ -685,7 +685,6 @@ def e2e_prepare_and_submit(
 
     if policy in (
         RoutingPolicyName.LEARNED_SOFT.value,
-        RoutingPolicyName.LEARNED_SOFT_LOG.value,
         RoutingPolicyName.HARD_ROUTING.value,
         RoutingPolicyName.HYBRID.value,
         *ORACLE_E2E_POLICIES,
@@ -693,15 +692,8 @@ def e2e_prepare_and_submit(
         raise ValueError(
             "router_id is required for learned routing policies and oracle e2e policies"
         )
-    if (
-        policy
-        in (
-            RoutingPolicyName.LEARNED_SOFT.value,
-            RoutingPolicyName.LEARNED_SOFT_LOG.value,
-        )
-        and task_type != "regression"
-    ):
-        raise ValueError(f"Policy {policy!r} requires router_task_type=regression.")
+    if policy == RoutingPolicyName.LEARNED_SOFT.value and task_type != "regression":
+        raise ValueError("Policy 'learned-soft' requires router_task_type=regression.")
     if (
         policy
         in (
@@ -819,20 +811,16 @@ def e2e_prepare_and_submit(
     need_dense = policy in (
         RoutingPolicyName.DENSE_ONLY.value,
         RoutingPolicyName.EQUAL_50_50.value,
-        RoutingPolicyName.EQUAL_50_50_LOG.value,
         RoutingPolicyName.RRF.value,
         RoutingPolicyName.LEARNED_SOFT.value,
-        RoutingPolicyName.LEARNED_SOFT_LOG.value,
         RoutingPolicyName.HARD_ROUTING.value,
         RoutingPolicyName.HYBRID.value,
     )
     need_graph = policy in (
         RoutingPolicyName.GRAPH_ONLY.value,
         RoutingPolicyName.EQUAL_50_50.value,
-        RoutingPolicyName.EQUAL_50_50_LOG.value,
         RoutingPolicyName.RRF.value,
         RoutingPolicyName.LEARNED_SOFT.value,
-        RoutingPolicyName.LEARNED_SOFT_LOG.value,
         RoutingPolicyName.HARD_ROUTING.value,
         RoutingPolicyName.HYBRID.value,
     )
@@ -860,7 +848,6 @@ def e2e_prepare_and_submit(
     router_ctx = None
     if policy in (
         RoutingPolicyName.LEARNED_SOFT.value,
-        RoutingPolicyName.LEARNED_SOFT_LOG.value,
         RoutingPolicyName.HARD_ROUTING.value,
         RoutingPolicyName.HYBRID.value,
     ):

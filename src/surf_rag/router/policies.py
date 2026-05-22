@@ -9,11 +9,9 @@ from typing import Any, Dict, Literal, Optional
 
 class RoutingPolicyName(str, Enum):
     LEARNED_SOFT = "learned-soft"
-    LEARNED_SOFT_LOG = "learned-soft-log"
     HARD_ROUTING = "hard-routing"
     HYBRID = "hybrid"
     EQUAL_50_50 = "50-50"
-    EQUAL_50_50_LOG = "50-50-log"
     RRF = "rrf"
     DENSE_ONLY = "dense-only"
     GRAPH_ONLY = "graph-only"
@@ -49,7 +47,7 @@ def decide_routing(
     fallback_weight: Optional[float] = None,
 ) -> RoutingDecision:
     """Return branch flags and fusion weight (for soft fusion when both run)."""
-    if policy in (RoutingPolicyName.EQUAL_50_50, RoutingPolicyName.EQUAL_50_50_LOG):
+    if policy == RoutingPolicyName.EQUAL_50_50:
         return RoutingDecision(
             policy=policy,
             dense_weight=0.5,
@@ -197,7 +195,7 @@ def decide_routing(
         raise ValueError(f"{policy.value} requires predicted_weight")
     ev = float(predicted_weight)
     clipped = float(max(0.0, min(1.0, ev)))
-    if policy in (RoutingPolicyName.LEARNED_SOFT, RoutingPolicyName.LEARNED_SOFT_LOG):
+    if policy == RoutingPolicyName.LEARNED_SOFT:
         return RoutingDecision(
             policy=policy,
             dense_weight=clipped,
