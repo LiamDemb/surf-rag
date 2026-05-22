@@ -13,6 +13,7 @@ class RoutingPolicyName(str, Enum):
     HARD_ROUTING = "hard-routing"
     HYBRID = "hybrid"
     EQUAL_50_50 = "50-50"
+    EQUAL_50_50_LOG = "50-50-log"
     RRF = "rrf"
     DENSE_ONLY = "dense-only"
     GRAPH_ONLY = "graph-only"
@@ -48,7 +49,7 @@ def decide_routing(
     fallback_weight: Optional[float] = None,
 ) -> RoutingDecision:
     """Return branch flags and fusion weight (for soft fusion when both run)."""
-    if policy == RoutingPolicyName.EQUAL_50_50:
+    if policy in (RoutingPolicyName.EQUAL_50_50, RoutingPolicyName.EQUAL_50_50_LOG):
         return RoutingDecision(
             policy=policy,
             dense_weight=0.5,

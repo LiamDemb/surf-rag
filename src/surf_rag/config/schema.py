@@ -193,6 +193,7 @@ class E2ESection:
             "dense-only",
             "graph-only",
             "50-50",
+            "50-50-log",
             "rrf",
             "learned-soft",
             "learned-soft-log",

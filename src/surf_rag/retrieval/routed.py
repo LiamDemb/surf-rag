@@ -448,5 +448,9 @@ class RoutedFusionPipeline:
             t_route_start=t0,
             debug=debug,
             sequential_fusion_total=self.sequential_fusion_retrieval_total,
-            graph_log_before_normalize=(policy == RoutingPolicyName.LEARNED_SOFT_LOG),
+            graph_log_before_normalize=policy
+            in (
+                RoutingPolicyName.LEARNED_SOFT_LOG,
+                RoutingPolicyName.EQUAL_50_50_LOG,
+            ),
         )

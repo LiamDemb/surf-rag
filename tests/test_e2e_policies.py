@@ -14,6 +14,7 @@ from surf_rag.router.policies import RoutingPolicyName
 def test_parse_routing_policy_aliases() -> None:
     assert parse_routing_policy("dense") == RoutingPolicyName.DENSE_ONLY.value
     assert parse_routing_policy("50_50") == RoutingPolicyName.EQUAL_50_50.value
+    assert parse_routing_policy("50-50-log") == RoutingPolicyName.EQUAL_50_50_LOG.value
     assert parse_routing_policy("learned-soft") == RoutingPolicyName.LEARNED_SOFT.value
     assert (
         parse_routing_policy("learned-soft-log")

@@ -819,6 +819,7 @@ def e2e_prepare_and_submit(
     need_dense = policy in (
         RoutingPolicyName.DENSE_ONLY.value,
         RoutingPolicyName.EQUAL_50_50.value,
+        RoutingPolicyName.EQUAL_50_50_LOG.value,
         RoutingPolicyName.RRF.value,
         RoutingPolicyName.LEARNED_SOFT.value,
         RoutingPolicyName.LEARNED_SOFT_LOG.value,
@@ -828,6 +829,7 @@ def e2e_prepare_and_submit(
     need_graph = policy in (
         RoutingPolicyName.GRAPH_ONLY.value,
         RoutingPolicyName.EQUAL_50_50.value,
+        RoutingPolicyName.EQUAL_50_50_LOG.value,
         RoutingPolicyName.RRF.value,
         RoutingPolicyName.LEARNED_SOFT.value,
         RoutingPolicyName.LEARNED_SOFT_LOG.value,

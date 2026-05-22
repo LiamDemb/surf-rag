@@ -13,6 +13,9 @@ from surf_rag.router.policies import (
 def test_equal_and_single_branch() -> None:
     d50 = decide_routing(RoutingPolicyName.EQUAL_50_50)
     assert d50.dense_weight == 0.5 and d50.run_dense and d50.run_graph
+    d50_log = decide_routing(RoutingPolicyName.EQUAL_50_50_LOG)
+    assert d50_log.policy == RoutingPolicyName.EQUAL_50_50_LOG
+    assert d50_log.dense_weight == 0.5 and d50_log.run_dense and d50_log.run_graph
     rrf = decide_routing(RoutingPolicyName.RRF)
     assert rrf.run_dense and rrf.run_graph
     assert rrf.dense_weight == 0.5
