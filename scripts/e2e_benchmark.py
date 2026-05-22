@@ -58,7 +58,8 @@ def _add_common(p: argparse.ArgumentParser) -> None:
         "--policy",
         default=None,
         help=(
-            "Routing policy: learned-soft, hard-routing, hybrid, 50-50, rrf, "
+            "Routing policy: learned-soft, learned-soft-log, hard-routing, hybrid, "
+            "50-50, rrf, "
             "dense-only, graph-only, oracle-upper-bound, oracle-classification"
         ),
     )

@@ -9,6 +9,7 @@ from typing import Any, Dict, Literal, Optional
 
 class RoutingPolicyName(str, Enum):
     LEARNED_SOFT = "learned-soft"
+    LEARNED_SOFT_LOG = "learned-soft-log"
     HARD_ROUTING = "hard-routing"
     HYBRID = "hybrid"
     EQUAL_50_50 = "50-50"
@@ -192,10 +193,10 @@ def decide_routing(
             tie_break="class_graph",
         )
     if predicted_weight is None:
-        raise ValueError("learned-soft requires predicted_weight")
+        raise ValueError(f"{policy.value} requires predicted_weight")
     ev = float(predicted_weight)
     clipped = float(max(0.0, min(1.0, ev)))
-    if policy == RoutingPolicyName.LEARNED_SOFT:
+    if policy in (RoutingPolicyName.LEARNED_SOFT, RoutingPolicyName.LEARNED_SOFT_LOG):
         return RoutingDecision(
             policy=policy,
             dense_weight=clipped,

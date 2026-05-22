@@ -195,6 +195,7 @@ class E2ESection:
             "50-50",
             "rrf",
             "learned-soft",
+            "learned-soft-log",
             "hard-routing",
             "hybrid",
             "oracle-upper-bound",

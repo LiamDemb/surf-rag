@@ -71,6 +71,7 @@ def dual_branch_weighted_fusion_output(
     t_route_start: float,
     debug: Dict[str, Any],
     sequential_fusion_total: bool,
+    graph_log_before_normalize: bool = False,
 ) -> RoutedRunOutput:
     """Fuse dense+graph with weighted score normalization and linear blend.
 
@@ -87,6 +88,7 @@ def dual_branch_weighted_fusion_output(
             fusion_keep_k=None,
             fusion_ms=0.0,
             total_ms=0.0,
+            graph_log_before_normalize=graph_log_before_normalize,
         )
         fusion_ms = (time.perf_counter() - t_fuse) * 1000.0
         lat = dict(fused_pre.latency_ms)
@@ -107,6 +109,7 @@ def dual_branch_weighted_fusion_output(
             fusion_keep_k=None,
             fusion_ms=(time.perf_counter() - f0) * 1000.0,
             total_ms=(time.perf_counter() - t_route_start) * 1000.0,
+            graph_log_before_normalize=graph_log_before_normalize,
         )
     fused_gen = trim_retrieval_top_k(fused_pre, fusion_keep_k)
     pre_di = _merge_debug(fused_pre.debug_info, {"routing": debug})
@@ -284,6 +287,7 @@ class RoutedFusionPipeline:
         routing_predict_ms = 0.0
         if policy in (
             RoutingPolicyName.LEARNED_SOFT,
+            RoutingPolicyName.LEARNED_SOFT_LOG,
             RoutingPolicyName.HARD_ROUTING,
             RoutingPolicyName.HYBRID,
         ):
@@ -444,4 +448,5 @@ class RoutedFusionPipeline:
             t_route_start=t0,
             debug=debug,
             sequential_fusion_total=self.sequential_fusion_retrieval_total,
+            graph_log_before_normalize=(policy == RoutingPolicyName.LEARNED_SOFT_LOG),
         )

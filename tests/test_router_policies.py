@@ -29,6 +29,13 @@ def test_learned_soft() -> None:
     assert abs(d.dense_weight - 0.7) < 0.01
 
 
+def test_learned_soft_log_matches_learned_soft_routing() -> None:
+    d = decide_routing(RoutingPolicyName.LEARNED_SOFT_LOG, predicted_weight=0.7)
+    assert d.policy == RoutingPolicyName.LEARNED_SOFT_LOG
+    assert d.run_dense and d.run_graph
+    assert abs(d.dense_weight - 0.7) < 0.01
+
+
 def test_hard_routing_dense() -> None:
     d = decide_routing(
         RoutingPolicyName.HARD_ROUTING,

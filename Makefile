@@ -26,7 +26,7 @@ E2E_RUN_ID ?=
 E2E_POLICY ?=
 E2E_SPLIT ?=
 E2E_DEV_SYNC ?=
-E2E_POLICIES ?= dense-only graph-only 50-50 learned-soft hard-routing hybrid oracle-upper-bound oracle-classification
+E2E_POLICIES ?= dense-only graph-only 50-50 learned-soft learned-soft-log hard-routing hybrid oracle-upper-bound oracle-classification
 ROUTER_INPUT_MODES ?= both query-features embedding
 ROUTER_TASK_TYPE ?=
 ENTITY_MATCHING_FORCE ?=
@@ -63,6 +63,7 @@ help:
 	@echo "  make answerability-submit / answerability-collect / answerability-balance (CONFIG=configs/audit/....yaml)"
 	@echo "  make llm-judge-submit / collect / merge (optional E2E_RUN_ID= E2E_POLICY=; else from CONFIG)"
 	@echo "  make gen-debug          (CONFIG=configs/gen-debug/….yaml)"
+	@echo "  make results-build      (CONFIG=configs/results/….yaml; optional RESULTS_ONLY=id …)"
 	@echo ""
 	@echo "Full reference: docs/config-driven-workflows.md"
 
@@ -162,8 +163,13 @@ figures-render:
 	$(PY) -m scripts.figures.render_figures --config "$(CONFIG)" $(FIGURES_EXTRA)
 
 CONFIG ?= configs/results/example.yaml
+# Space-separated artifact ids from results.artifacts (e.g. RESULTS_ONLY=pipeline_retrieval).
+RESULTS_ONLY ?=
+RESULTS_EXTRA ?=
 results-build:
-	$(PY) -m scripts.results.build --config "$(CONFIG)"
+	$(PY) -m scripts.results.build --config "$(CONFIG)" \
+		$(foreach id,$(RESULTS_ONLY),--only $(id)) \
+		$(RESULTS_EXTRA)
 
 router-evaluate-ablations: validate-router-train
 	@for m in $(ROUTER_INPUT_MODES); do \

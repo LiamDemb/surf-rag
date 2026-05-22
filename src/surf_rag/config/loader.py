@@ -429,6 +429,7 @@ def validate_e2e_config(cfg: PipelineConfig) -> None:
     pol = (cfg.e2e.policy or "").strip().lower().replace("_", "-")
     if pol in (
         "learned-soft",
+        "learned-soft-log",
         "hard-routing",
         "hybrid",
         "oracle-upper-bound",
@@ -438,10 +439,11 @@ def validate_e2e_config(cfg: PipelineConfig) -> None:
             raise ValueError(
                 "e2e learned/hybrid policies and oracle e2e policies require paths.router_id"
             )
-    if pol == "learned-soft" and cfg.e2e.router_task_type != "regression":
-        raise ValueError(
-            "e2e policy learned-soft requires e2e.router_task_type=regression"
-        )
+    if (
+        pol in ("learned-soft", "learned-soft-log")
+        and cfg.e2e.router_task_type != "regression"
+    ):
+        raise ValueError(f"e2e policy {pol} requires e2e.router_task_type=regression")
     if (
         pol in ("hard-routing", "hybrid")
         and cfg.e2e.router_task_type != "classification"
