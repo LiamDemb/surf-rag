@@ -75,7 +75,7 @@ def render_weight_dists(
 
     ax.set_xlabel("Predicted dense weight")
     ax.set_ylabel("Count")
-    ax.set_title(f"Predicted weight by dataset ({split} split)")
+    # ax.set_title(f"Predicted weight by dataset ({split} split)")
     ax.set_xticks(bin_centers)
     ax.set_xticklabels([f"{x:.1f}" for x in bins[:-1]])
     ax.legend(title="Dataset")

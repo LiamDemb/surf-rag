@@ -277,7 +277,7 @@ def _render_pipeline_qa_calibration_impl(
 
     _plot_series_on_axes(ax, series)
     ax.set_xlabel(f"{_retrieval_axis_label(metric, k)} bin")
-    ax.set_title(f"QA calibration by retrieval quality ({split} split)")
+    # ax.set_title(f"QA calibration by retrieval quality ({split} split)")
 
     legend_handles = [
         _legend_proxy(str(s["policy"]), str(s["label"]))

@@ -45,7 +45,7 @@ def render_dispersion_curve(
         )
     ax.set_xlabel("Query rank (by dispersion)")
     ax.set_ylabel(r"$\delta_i$")
-    ax.set_title("Oracle dispersion (sorted)")
+    # ax.set_title("Oracle dispersion (sorted)")
     ax.legend()
     fig.tight_layout()
     fig.savefig(img_path, format=bundle.image_format)

@@ -92,7 +92,7 @@ def render_binary_confusion_heatmap(
     ax.set_yticks([0, 1], labels=list(BRANCH_LABELS))
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
-    ax.set_title(title)
+    # ax.set_title(title)
 
     norm = Normalize(vmin=vmin_use, vmax=vmax_use)
     threshold = HEATMAP_ANNOTATION_CONTRAST_THRESHOLD

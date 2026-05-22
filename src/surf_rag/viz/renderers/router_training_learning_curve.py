@@ -173,7 +173,7 @@ def render_router_training_learning_curve(
 
         ax.set_xlabel("Epoch")
         ax.set_ylabel(y_label)
-        ax.set_title("Router training learning curves", color=PALETTE["text"])
+        # ax.set_title("Router training learning curves", color=PALETTE["text"])
         if spec.show_plot_subtitle:
             sub = (
                 f"router_id={ctx.router_id}"

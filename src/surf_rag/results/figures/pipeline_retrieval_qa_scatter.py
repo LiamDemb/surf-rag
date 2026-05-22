@@ -107,7 +107,7 @@ def render_pipeline_retrieval_qa_scatter(
 
     ax.set_xlabel(_retrieval_axis_label(metric, k))
     ax.set_ylabel("QA accuracy (LLM judge)")
-    ax.set_title(f"Retrieval vs answer quality ({split} split)")
+    # ax.set_title(f"Retrieval vs answer quality ({split} split)")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 

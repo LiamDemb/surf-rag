@@ -108,7 +108,7 @@ def render_pairwise_retrieval(
     ax.set_ylim(lo - pad, hi + pad)
     ax.set_xlabel(f"{x_policy} — {metric}@{k}")
     ax.set_ylabel(f"{y_policy} — {metric}@{k}")
-    ax.set_title(f"Per-query: {y_policy} vs {x_policy}")
+    # ax.set_title(f"Per-query: {y_policy} vs {x_policy}")
     ax.legend(title="Dataset", loc="lower right", framealpha=0.95)
     ax.set_aspect("equal", adjustable="box")
     fig.tight_layout()

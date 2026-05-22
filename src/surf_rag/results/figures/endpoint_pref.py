@@ -61,7 +61,7 @@ def render_endpoint_pref(
     )
     ax.set_xlabel(r"$\Delta_i$ (NDCG@k dense $-$ graph)")
     ax.set_ylabel("Count")
-    ax.set_title("Endpoint preference by dataset")
+    # ax.set_title("Endpoint preference by dataset")
     ax.legend(title="Dataset")
     style_bar_axes(ax)
     fig.tight_layout()

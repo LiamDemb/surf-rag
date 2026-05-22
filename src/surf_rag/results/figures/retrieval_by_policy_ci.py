@@ -120,7 +120,7 @@ def render_retrieval_by_policy_ci(
 
     ax.set_xticks(x, policies, rotation=30, ha="right")
     ax.set_ylabel(_metric_axis_label(metric, k))
-    ax.set_title("Retrieval by policy (95% bootstrap CI)")
+    # ax.set_title("Retrieval by policy (95% bootstrap CI)")
     y_min, y_max = _resolve_ylim(spec)
     ax.set_ylim(y_min, y_max)
     style_bar_axes(ax)

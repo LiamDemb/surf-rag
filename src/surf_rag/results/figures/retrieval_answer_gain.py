@@ -82,7 +82,7 @@ def render_retrieval_answer_gain(
     ax.axvline(0, color=PALETTE["grid"], linewidth=0.8, zorder=0)
     ax.set_xlabel(f"Δ {metric}@{k} vs {baseline}")
     ax.set_ylabel("Δ answer accuracy vs baseline")
-    ax.set_title("Retrieval vs answer gain")
+    # ax.set_title("Retrieval vs answer gain")
 
     policy_handles = [
         Line2D(
