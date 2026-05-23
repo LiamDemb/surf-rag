@@ -139,7 +139,7 @@ def test_sweep_missing_oracle_scores_skips_when_branch_cache_missing(tmp_path):
     paths = _paths(tmp_path)
     paths.ensure_dirs()
     rows = [{"question_id": "q1", "question": "a", "dataset_source": "nq"}]
-    n = sweep_missing_oracle_scores(
+    n, wall_s = sweep_missing_oracle_scores(
         rows,
         paths,
         weight_grid=DEFAULT_DENSE_WEIGHT_GRID,
@@ -149,6 +149,7 @@ def test_sweep_missing_oracle_scores_skips_when_branch_cache_missing(tmp_path):
         diagnostic_metric_ks=(5, 10, 20),
     )
     assert n == 0
+    assert wall_s >= 0.0
     assert read_oracle_score_rows(paths) == []
 
 
@@ -222,6 +223,7 @@ def test_prepare_oracle_run_end_to_end(tmp_path):
     assert summary["dense_cached"] == 2
     assert summary["graph_cached"] == 2
     assert summary["oracle_scored"] == 2
+    assert summary["oracle_sweep_wall_s"] >= 0.0
 
     # Dense cache round-trips.
     dense_cache = read_retrieval_cache(paths.retrieval_dense)
@@ -245,9 +247,12 @@ def test_prepare_oracle_run_end_to_end(tmp_path):
     assert summary2["newly_retrieved_dense"] == 0
     assert summary2["newly_retrieved_graph"] == 0
     assert summary2["newly_scored"] == 0
+    assert summary2["oracle_sweep_wall_s"] == 0.0
 
-    # Summary file round-trips.
-    assert read_summary(paths)["oracle_scored"] == 2
+    # Summary file round-trips (sweep wall time reflects the latest prepare call).
+    saved = read_summary(paths)
+    assert saved["oracle_scored"] == 2
+    assert saved["oracle_sweep_wall_s"] == summary2["oracle_sweep_wall_s"]
 
 
 def test_prepare_oracle_run_handles_retriever_error_gracefully(tmp_path):

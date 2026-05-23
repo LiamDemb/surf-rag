@@ -293,6 +293,7 @@ def main() -> int:
             "loss_effective": result.loss_effective,
             "loss_fallback": result.loss_fallback,
             "best_epoch": result.best_epoch,
+            "training_wall_s": round(float(result.training_wall_s), 3),
             "splits": result.metrics,
             "router_quality_filtering": dict(
                 result.metrics.get("router_quality_filtering") or {}
@@ -328,6 +329,7 @@ def main() -> int:
             "seed": cfg.seed,
             "device": cfg.device,
             "best_epoch": result.best_epoch,
+            "training_wall_s": round(float(result.training_wall_s), 3),
             "loss": result.loss_requested,
             "loss_kwargs": dict(result.loss_kwargs),
             "loss_effective": result.loss_effective,
@@ -373,6 +375,7 @@ def main() -> int:
             resolve_paths(args._pipeline_cfg),
         )
     log.info("Wrote %s", out_paths.checkpoint)
+    log.info("training wall: %.3fs (%s)", result.training_wall_s, task_type)
     return 0
 
 

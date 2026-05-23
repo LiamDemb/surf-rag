@@ -27,6 +27,10 @@ def test_removed_policy_names_raise() -> None:
         parse_routing_policy("learned-hard")
     with pytest.raises(ValueError):
         parse_routing_policy("learned-soft-cls")
+    with pytest.raises(ValueError):
+        parse_routing_policy("50-50-log")
+    with pytest.raises(ValueError):
+        parse_routing_policy("learned-soft-log")
 
 
 def test_e2e_pipeline_manifest_name() -> None:

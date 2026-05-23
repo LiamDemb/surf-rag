@@ -2,15 +2,24 @@
 
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from surf_rag.retrieval.base import BranchRetriever
 from surf_rag.retrieval.types import RetrievalResult, RetrievedChunk
 
 FUSED_RETRIEVER_NAME = "Fused"
 DEFAULT_RRF_K = 60
+GRAPH_SCORE_LOG_EPS = 1e-9
+
+
+def graph_score_log_transform(
+    score: float, *, eps: float = GRAPH_SCORE_LOG_EPS
+) -> float:
+    """Log-transform a graph raw score before min-max normalization."""
+    return math.log(float(score) + eps)
 
 
 def min_max_normalize(values: Iterable[float]) -> List[float]:
@@ -37,12 +46,19 @@ def _chunk_lookup(chunks: Iterable[RetrievedChunk]) -> Dict[str, RetrievedChunk]
 
 def _normalized_scores(
     chunks: Iterable[RetrievedChunk],
+    *,
+    pre_normalize: Callable[[float], float] | None = None,
 ) -> Dict[str, float]:
     """Return chunk_id -> normalized score for a single branch."""
     items = list(chunks)
     if not items:
         return {}
-    norm = min_max_normalize(ch.score for ch in items)
+    raw = (
+        (pre_normalize(ch.score) for ch in items)
+        if pre_normalize is not None
+        else (ch.score for ch in items)
+    )
+    norm = min_max_normalize(raw)
     return {ch.chunk_id: n for ch, n in zip(items, norm)}
 
 
@@ -83,7 +99,9 @@ def fuse_branch_results(
     graph_by_id = _chunk_lookup(graph_chunks)
 
     dense_norm = _normalized_scores(dense_chunks)
-    graph_norm = _normalized_scores(graph_chunks)
+    graph_norm = _normalized_scores(
+        graph_chunks, pre_normalize=graph_score_log_transform
+    )
 
     all_ids = list(dict.fromkeys([*dense_by_id.keys(), *graph_by_id.keys()]))
     candidates: List[FusedCandidate] = []

@@ -14,12 +14,14 @@ from surf_rag.retrieval.base import BranchRetriever
 from surf_rag.retrieval.fusion import (
     FUSED_RETRIEVER_NAME,
     FusionPipeline,
+    GRAPH_SCORE_LOG_EPS,
     branch_retrieval_wall_ms,
     build_fused_retrieval_result,
     build_rrf_fused_retrieval_result,
     fuse_branch_results,
     fuse_branch_results_rrf,
     fuse_cached_results,
+    graph_score_log_transform,
     min_max_normalize,
 )
 from surf_rag.retrieval.routed import (
@@ -101,6 +103,37 @@ def test_missing_branch_score_is_zero_and_fusion_uses_weights():
     by_id = {c.chunk_id: c for c in cands_graph}
     assert by_id["c"].fused_score == pytest.approx(1.0)
     assert by_id["a"].fused_score == pytest.approx(0.0)
+
+
+def test_default_fusion_applies_graph_log_before_normalize() -> None:
+    """Weighted fusion always log-transforms graph scores before min-max."""
+    import math
+
+    dense = _mk_result("Dense", "NO_CONTEXT", [])
+    graph = _mk_result(
+        "Graph",
+        "OK",
+        [
+            _chunk("low", 1e-8),
+            _chunk("mid", 0.01),
+            _chunk("high", 1.0),
+        ],
+    )
+    cands = fuse_branch_results(dense, graph, dense_weight=0.0, fusion_keep_k=10)
+    order = [c.chunk_id for c in cands]
+    assert order == ["high", "mid", "low"]
+    scores = {c.chunk_id: c.graph_norm_score for c in cands}
+    assert scores["high"] == pytest.approx(1.0)
+    assert scores["low"] == pytest.approx(0.0)
+    # Log spreads the mid tail vs raw linear min-max (~0.01).
+    assert scores["mid"] > 0.5
+    for c in cands:
+        assert c.graph_raw_score == pytest.approx(
+            {"low": 1e-8, "mid": 0.01, "high": 1.0}[c.chunk_id]
+        )
+    assert graph_score_log_transform(0.0) == pytest.approx(
+        math.log(GRAPH_SCORE_LOG_EPS)
+    )
 
 
 def test_fuse_dedupes_shared_chunk_and_sums_weighted_contributions():

@@ -192,7 +192,7 @@ def decide_routing(
             tie_break="class_graph",
         )
     if predicted_weight is None:
-        raise ValueError("learned-soft requires predicted_weight")
+        raise ValueError(f"{policy.value} requires predicted_weight")
     ev = float(predicted_weight)
     clipped = float(max(0.0, min(1.0, ev)))
     if policy == RoutingPolicyName.LEARNED_SOFT:
