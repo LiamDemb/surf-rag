@@ -30,7 +30,7 @@ from surf_rag.evaluation.e2e_runner import (
     make_e2e_run_paths,
 )
 from surf_rag.evaluation.e2e_policies import (
-    ORACLE_UPPER_BOUND_POLICY,
+    ORACLE_E2E_POLICIES,
     parse_routing_policy,
 )
 from surf_rag.evaluation.router_dataset_artifacts import (
@@ -58,8 +58,8 @@ def _add_common(p: argparse.ArgumentParser) -> None:
         "--policy",
         default=None,
         help=(
-            "Routing policy: learned-soft, hard-routing, hybrid, 50-50, "
-            "dense-only, graph-only, oracle-upper-bound"
+            "Routing policy: learned-soft, hard-routing, hybrid, 50-50, rrf, "
+            "dense-only, graph-only, oracle-upper-bound, oracle-classification"
         ),
     )
     p.add_argument("--retrieval-asset-dir", type=Path, default=None)
@@ -96,14 +96,14 @@ def cmd_prepare(args: argparse.Namespace) -> int:
     except ValueError as e:
         log.error("%s", e)
         return 2
-    if policy == ORACLE_UPPER_BOUND_POLICY:
+    if policy in ORACLE_E2E_POLICIES:
         if not args.router_id or not str(args.router_id).strip():
             log.error(
-                "oracle-upper-bound requires --router-id (or config paths.router_id)."
+                "Oracle e2e policies require --router-id (or config paths.router_id)."
             )
             return 2
         if str(args.split).strip().lower() != "test":
-            log.error("oracle-upper-bound is test-only; use --split test.")
+            log.error("%s is test-only; use --split test.", policy)
             return 2
     bb = args.benchmark_base or default_benchmark_base()
     return e2e_prepare_and_submit(
@@ -119,6 +119,7 @@ def cmd_prepare(args: argparse.Namespace) -> int:
         router_architecture_id=getattr(args, "router_architecture_id", None),
         router_base=args.router_base,
         fusion_keep_k=args.fusion_keep_k,
+        rrf_k=int(getattr(args, "rrf_k", 60)),
         reranker_kind=args.reranker,
         rerank_top_k=args.rerank_top_k,
         cross_encoder_model=args.cross_encoder_model,
@@ -147,6 +148,31 @@ def cmd_prepare(args: argparse.Namespace) -> int:
         ),
         router_openai_embedding_dimensions=getattr(
             args, "router_openai_embedding_dimensions", None
+        ),
+        branch_top_k=int(getattr(args, "branch_top_k", 20)),
+        branch_cache_mode=str(getattr(args, "branch_cache_mode", "off")),
+        branch_cache_oracle_router_id=getattr(
+            args, "branch_cache_oracle_router_id", None
+        ),
+        branch_cache_dense_jsonl=(
+            str(args.branch_cache_dense_jsonl)
+            if getattr(args, "branch_cache_dense_jsonl", None)
+            else None
+        ),
+        branch_cache_graph_jsonl=(
+            str(args.branch_cache_graph_jsonl)
+            if getattr(args, "branch_cache_graph_jsonl", None)
+            else None
+        ),
+        branch_cache_strict_manifest=(
+            True
+            if getattr(args, "branch_cache_strict_manifest", None) is None
+            else bool(args.branch_cache_strict_manifest)
+        ),
+        branch_cache_sequential_retrieval_total=(
+            False
+            if getattr(args, "branch_cache_sequential_retrieval_total", None) is None
+            else bool(args.branch_cache_sequential_retrieval_total)
         ),
     )
 
@@ -302,6 +328,55 @@ def main() -> int:
         help=(
             "Generation-context retrieval depth before LLM prompting; pure retrieval "
             "metrics are sourced from pre-truncation retrieval artifacts."
+        ),
+    )
+    p_prep.add_argument(
+        "--rrf-k",
+        type=int,
+        default=60,
+        help="RRF smoothing constant k in 1/(k+rank) for policy rrf (default: 60).",
+    )
+    p_prep.add_argument(
+        "--branch-top-k",
+        type=int,
+        default=20,
+        help="Per-branch top-k for dense/graph retrievers (align with frozen oracle cache).",
+    )
+    p_prep.add_argument(
+        "--branch-cache-mode",
+        default="off",
+        help="Frozen replay: off | router_oracle | explicit_jsonl.",
+    )
+    p_prep.add_argument(
+        "--branch-cache-oracle-router-id",
+        default=None,
+        help="Override router id for router_oracle cache directory (default: paths.router_id).",
+    )
+    p_prep.add_argument(
+        "--branch-cache-dense-jsonl",
+        type=Path,
+        default=None,
+        help="Explicit dense retrieval JSONL (mode explicit_jsonl).",
+    )
+    p_prep.add_argument(
+        "--branch-cache-graph-jsonl",
+        type=Path,
+        default=None,
+        help="Explicit graph retrieval JSONL (mode explicit_jsonl).",
+    )
+    p_prep.add_argument(
+        "--branch-cache-strict-manifest",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Strictly validate oracle manifest vs benchmark/corpus (default: true from YAML).",
+    )
+    p_prep.add_argument(
+        "--branch-cache-sequential-retrieval-total",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "When using frozen dual-branch fusion, set fused total_ms to sum of cached "
+            "branch totals + fusion (default: false from YAML)."
         ),
     )
     p_prep.add_argument(

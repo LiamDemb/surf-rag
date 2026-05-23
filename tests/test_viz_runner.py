@@ -158,3 +158,56 @@ def test_render_figures_from_config_learning_curve(tmp_path: Path) -> None:
     outs = render_figures_from_config(cfg, force=True)
     assert len(outs) == 1
     assert outs[0].path_image.name.startswith("learning_curve")
+
+
+def test_render_figures_from_config_learning_curve_classification(
+    tmp_path: Path,
+) -> None:
+    rb = tmp_path / "router"
+    mp = make_router_model_paths_for_cli(
+        "rid",
+        router_base=rb,
+        input_mode="embedding",
+        router_architecture_id="cls-001",
+        router_task_type="classification",
+    )
+    mp.ensure_dirs()
+    write_json(
+        mp.manifest,
+        {"task_type": "classification", "model": {"weight_grid": [0, 1]}},
+    )
+    _write_training_history(mp.training_history)
+    figures = FiguresSection(
+        enabled=True,
+        plots=[
+            {
+                "kind": "router_training_learning_curve",
+                "filename_stem": "classifier_learning_curve",
+                "show_regret": False,
+            }
+        ],
+    )
+    cfg = replace(
+        PipelineConfig(),
+        paths=replace(
+            PathsSection(),
+            router_id="rid",
+            router_base=str(rb),
+            router_architecture_id="cls-001",
+            data_base=str(tmp_path),
+            figures_base=str(tmp_path / "figures"),
+        ),
+        router=replace(
+            RouterSection(),
+            train=replace(
+                RouterTrainSection(),
+                input_mode="embedding",
+                task_type="classification",
+            ),
+        ),
+        figures=figures,
+    )
+    outs = render_figures_from_config(cfg, force=True)
+    assert len(outs) == 1
+    assert outs[0].path_image.name.startswith("classifier_learning_curve")
+    assert "classification" in str(mp.training_history)

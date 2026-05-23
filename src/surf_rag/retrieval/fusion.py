@@ -2,14 +2,24 @@
 
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from surf_rag.retrieval.base import BranchRetriever
 from surf_rag.retrieval.types import RetrievalResult, RetrievedChunk
 
 FUSED_RETRIEVER_NAME = "Fused"
+DEFAULT_RRF_K = 60
+GRAPH_SCORE_LOG_EPS = 1e-9
+
+
+def graph_score_log_transform(
+    score: float, *, eps: float = GRAPH_SCORE_LOG_EPS
+) -> float:
+    """Log-transform a graph raw score before min-max normalization."""
+    return math.log(float(score) + eps)
 
 
 def min_max_normalize(values: Iterable[float]) -> List[float]:
@@ -36,12 +46,19 @@ def _chunk_lookup(chunks: Iterable[RetrievedChunk]) -> Dict[str, RetrievedChunk]
 
 def _normalized_scores(
     chunks: Iterable[RetrievedChunk],
+    *,
+    pre_normalize: Callable[[float], float] | None = None,
 ) -> Dict[str, float]:
     """Return chunk_id -> normalized score for a single branch."""
     items = list(chunks)
     if not items:
         return {}
-    norm = min_max_normalize(ch.score for ch in items)
+    raw = (
+        (pre_normalize(ch.score) for ch in items)
+        if pre_normalize is not None
+        else (ch.score for ch in items)
+    )
+    norm = min_max_normalize(raw)
     return {ch.chunk_id: n for ch, n in zip(items, norm)}
 
 
@@ -82,7 +99,9 @@ def fuse_branch_results(
     graph_by_id = _chunk_lookup(graph_chunks)
 
     dense_norm = _normalized_scores(dense_chunks)
-    graph_norm = _normalized_scores(graph_chunks)
+    graph_norm = _normalized_scores(
+        graph_chunks, pre_normalize=graph_score_log_transform
+    )
 
     all_ids = list(dict.fromkeys([*dense_by_id.keys(), *graph_by_id.keys()]))
     candidates: List[FusedCandidate] = []
@@ -162,6 +181,193 @@ def fused_candidates_to_chunks(
     return chunks
 
 
+def _first_occurrence_ranks(chunks: Iterable[RetrievedChunk]) -> Dict[str, int]:
+    """1-based rank from list order (first occurrence wins if ids repeat)."""
+    out: Dict[str, int] = {}
+    for i, ch in enumerate(chunks):
+        cid = ch.chunk_id
+        if cid not in out:
+            out[cid] = i + 1
+    return out
+
+
+@dataclass(frozen=True)
+class RRFusedCandidate:
+    """One RRF-fused candidate with per-branch rank provenance."""
+
+    chunk_id: str
+    text: str
+    rrf_score: float
+    dense_rank: Optional[int]
+    graph_rank: Optional[int]
+    dense_rrf_term: float
+    graph_rrf_term: float
+    dense_raw_score: Optional[float]
+    graph_raw_score: Optional[float]
+    dense_present: bool
+    graph_present: bool
+    source_metadata: Dict[str, Any]
+
+
+def fuse_branch_results_rrf(
+    dense: RetrievalResult,
+    graph: RetrievalResult,
+    *,
+    rrf_k: int,
+    fusion_keep_k: int | None,
+) -> List[RRFusedCandidate]:
+    """Merge dense+graph with Reciprocal Rank Fusion (static 1/(k+rank) sum)."""
+    if rrf_k <= 0:
+        raise ValueError(f"rrf_k must be > 0, got {rrf_k!r}")
+    if fusion_keep_k is not None and fusion_keep_k <= 0:
+        raise ValueError(f"fusion_keep_k must be > 0, got {fusion_keep_k!r}")
+
+    dense_chunks = list(dense.chunks) if dense.status == "OK" else []
+    graph_chunks = list(graph.chunks) if graph.status == "OK" else []
+
+    dense_by_id = _chunk_lookup(dense_chunks)
+    graph_by_id = _chunk_lookup(graph_chunks)
+    dense_ranks = _first_occurrence_ranks(dense_chunks)
+    graph_ranks = _first_occurrence_ranks(graph_chunks)
+
+    all_ids = list(dict.fromkeys([*dense_by_id.keys(), *graph_by_id.keys()]))
+    candidates: List[RRFusedCandidate] = []
+
+    for cid in all_ids:
+        d_ch = dense_by_id.get(cid)
+        g_ch = graph_by_id.get(cid)
+        dr = dense_ranks.get(cid)
+        gr = graph_ranks.get(cid)
+        d_term = 1.0 / (rrf_k + dr) if dr is not None else 0.0
+        g_term = 1.0 / (rrf_k + gr) if gr is not None else 0.0
+        score = d_term + g_term
+
+        text = ""
+        source_metadata: Dict[str, Any] = {}
+        if d_ch is not None:
+            text = d_ch.text
+            source_metadata = dict(d_ch.metadata)
+        if g_ch is not None:
+            if not text:
+                text = g_ch.text
+            graph_path_lines = g_ch.metadata.get("graph_path_lines")
+            if graph_path_lines is not None:
+                source_metadata.setdefault("graph_path_lines", graph_path_lines)
+
+        candidates.append(
+            RRFusedCandidate(
+                chunk_id=cid,
+                text=text,
+                rrf_score=float(score),
+                dense_rank=dr,
+                graph_rank=gr,
+                dense_rrf_term=float(d_term),
+                graph_rrf_term=float(g_term),
+                dense_raw_score=float(d_ch.score) if d_ch is not None else None,
+                graph_raw_score=float(g_ch.score) if g_ch is not None else None,
+                dense_present=d_ch is not None,
+                graph_present=g_ch is not None,
+                source_metadata=source_metadata,
+            )
+        )
+
+    candidates.sort(key=lambda c: (-c.rrf_score, c.chunk_id))
+    if fusion_keep_k is None:
+        return candidates
+    return candidates[:fusion_keep_k]
+
+
+def rrf_candidates_to_chunks(
+    candidates: Iterable[RRFusedCandidate],
+    *,
+    rrf_k: int,
+) -> List[RetrievedChunk]:
+    """Convert RRF candidates into RetrievedChunks with fusion metadata."""
+    chunks: List[RetrievedChunk] = []
+    for cand in candidates:
+        metadata: Dict[str, Any] = dict(cand.source_metadata)
+        metadata.update(
+            {
+                "branch": "fused",
+                "fusion_method": "rrf",
+                "rrf_k": int(rrf_k),
+                "dense_present": cand.dense_present,
+                "graph_present": cand.graph_present,
+                "dense_rank": cand.dense_rank,
+                "graph_rank": cand.graph_rank,
+                "dense_rrf_term": cand.dense_rrf_term,
+                "graph_rrf_term": cand.graph_rrf_term,
+                "dense_raw_score": cand.dense_raw_score,
+                "graph_raw_score": cand.graph_raw_score,
+                "rrf_score": cand.rrf_score,
+            }
+        )
+        chunks.append(
+            RetrievedChunk(
+                chunk_id=cand.chunk_id,
+                text=cand.text,
+                score=cand.rrf_score,
+                rank=0,
+                metadata=metadata,
+            )
+        )
+    return chunks
+
+
+def build_rrf_fused_retrieval_result(
+    query: str,
+    dense: RetrievalResult,
+    graph: RetrievalResult,
+    *,
+    rrf_k: int,
+    fusion_keep_k: int | None,
+    fusion_ms: float,
+    total_ms: float,
+) -> RetrievalResult:
+    """Build a fused RetrievalResult from two branch results using RRF."""
+    both_error = dense.status == "ERROR" and graph.status == "ERROR"
+    latency = _combined_latency(dense, graph, fusion_ms=fusion_ms, total_ms=total_ms)
+
+    if both_error:
+        error_msg = (
+            "; ".join(e for e in (dense.error, graph.error) if e)
+            or "Both dense and graph branches failed"
+        )
+        return RetrievalResult(
+            query=query,
+            retriever_name=FUSED_RETRIEVER_NAME,
+            status="ERROR",
+            chunks=[],
+            latency_ms=latency,
+            error=error_msg,
+        )
+
+    candidates = fuse_branch_results_rrf(
+        dense,
+        graph,
+        rrf_k=rrf_k,
+        fusion_keep_k=fusion_keep_k,
+    )
+    chunks = rrf_candidates_to_chunks(candidates, rrf_k=rrf_k)
+
+    if not chunks:
+        return RetrievalResult(
+            query=query,
+            retriever_name=FUSED_RETRIEVER_NAME,
+            status="NO_CONTEXT",
+            chunks=[],
+            latency_ms=latency,
+        )
+
+    return RetrievalResult(
+        query=query,
+        retriever_name=FUSED_RETRIEVER_NAME,
+        status="OK",
+        chunks=chunks,
+        latency_ms=latency,
+    )
+
+
 def _combined_latency(
     *branches: RetrievalResult,
     fusion_ms: float,
@@ -176,6 +382,18 @@ def _combined_latency(
         for key, val in br.latency_ms.items():
             out[f"{prefix}_{key}"] = float(val)
     return out
+
+
+def branch_retrieval_wall_ms(result: RetrievalResult) -> float:
+    """Approximate single-branch wall time from ``RetrievalResult.latency_ms`` (persisted JSONL)."""
+    lat = dict(result.latency_ms or {})
+    for key in ("total_ms", "total"):
+        if key in lat:
+            try:
+                return float(lat[key])
+            except (TypeError, ValueError):
+                continue
+    return 0.0
 
 
 def build_fused_retrieval_result(

@@ -143,7 +143,15 @@ def aggregate_e2e_report(
                         if "retrieval_stage_total_ms" in r.latency_ms
                     ],
                     total_count=len(bucket),
-                )
+                ),
+                "retrieval_reported_total": summarize_latency(
+                    [
+                        float(r.latency_ms.get("retrieval_reported_total_ms"))
+                        for r in bucket
+                        if "retrieval_reported_total_ms" in r.latency_ms
+                    ],
+                    total_count=len(bucket),
+                ),
             },
         }
     return report

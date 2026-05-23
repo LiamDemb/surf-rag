@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from surf_rag.router.policies import (
     RoutingPolicyName,
     decide_routing,
@@ -11,6 +13,10 @@ from surf_rag.router.policies import (
 def test_equal_and_single_branch() -> None:
     d50 = decide_routing(RoutingPolicyName.EQUAL_50_50)
     assert d50.dense_weight == 0.5 and d50.run_dense and d50.run_graph
+    rrf = decide_routing(RoutingPolicyName.RRF)
+    assert rrf.run_dense and rrf.run_graph
+    assert rrf.dense_weight == 0.5
+    assert rrf.predicted_weight is None
     dd = decide_routing(RoutingPolicyName.DENSE_ONLY)
     assert dd.run_dense and not dd.run_graph
     dg = decide_routing(RoutingPolicyName.GRAPH_ONLY)
@@ -66,3 +72,10 @@ def test_hybrid_low_confidence_falls_back_to_regressor_weight() -> None:
     assert d.run_dense and d.run_graph
     assert d.fallback_triggered
     assert d.tie_break == "low_confidence_fallback"
+
+
+def test_oracle_policies_raise_in_decide_routing() -> None:
+    with pytest.raises(ValueError, match="oracle-upper-bound"):
+        decide_routing(RoutingPolicyName.ORACLE_UPPER_BOUND)
+    with pytest.raises(ValueError, match="oracle-classification"):
+        decide_routing(RoutingPolicyName.ORACLE_CLASSIFICATION)

@@ -43,11 +43,14 @@ def _ctx(tmp_path: Path) -> FigureRunContext:
     return FigureRunContext.from_pipeline(cfg, force=True)
 
 
-def _write_training_history(path: Path) -> None:
+def _write_training_history(
+    path: Path, *, loss: str = "regret", loss_effective: str | None = None
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    effective = loss_effective if loss_effective is not None else loss
     payload = {
-        "loss": "regret",
-        "loss_effective": "regret",
+        "loss": loss,
+        "loss_effective": effective,
         "history": [
             {
                 "epoch": 1,
@@ -92,6 +95,7 @@ def test_render_router_training_learning_curve_writes_outputs(tmp_path: Path) ->
     assert meta["n_epochs"] == 2
     assert "train_loss" in meta["metrics_plotted"]
     assert "dev_loss" in meta["metrics_plotted"]
+    assert meta["y_axis_label"] == "NDCG@10 Regret Loss"
 
 
 def test_render_router_training_learning_curve_no_dev_when_disabled(
@@ -121,3 +125,73 @@ def test_render_router_training_learning_curve_no_dev_when_disabled(
     meta = json.loads(out.path_meta.read_text(encoding="utf-8"))
     assert "train_loss" in meta["metrics_plotted"]
     assert "dev_loss" not in meta["metrics_plotted"]
+
+
+def test_figure_context_resolves_classification_model_paths(tmp_path: Path) -> None:
+    cfg = replace(
+        PipelineConfig(),
+        paths=replace(
+            PathsSection(),
+            data_base=str(tmp_path),
+            router_base=str(tmp_path / "router"),
+            router_id="rid",
+            router_architecture_id="cls-001",
+        ),
+        router=replace(
+            RouterSection(),
+            train=replace(
+                RouterTrainSection(),
+                input_mode="embedding",
+                task_type="classification",
+            ),
+        ),
+    )
+    ctx = FigureRunContext.from_pipeline(cfg, force=True)
+    assert ctx.model_paths.run_root.name == "embedding"
+    assert ctx.model_paths.run_root.parent.name == "classification"
+
+
+def test_render_router_training_learning_curve_classification(tmp_path: Path) -> None:
+    apply_theme(dpi=100)
+    cfg = replace(
+        PipelineConfig(),
+        paths=replace(
+            PathsSection(),
+            data_base=str(tmp_path),
+            router_base=str(tmp_path / "router"),
+            router_id="rid",
+            router_architecture_id="cls-001",
+            figures_base=str(tmp_path / "figures"),
+        ),
+        router=replace(
+            RouterSection(),
+            train=replace(
+                RouterTrainSection(),
+                input_mode="embedding",
+                task_type="classification",
+                loss="cross_entropy",
+            ),
+        ),
+    )
+    ctx = FigureRunContext.from_pipeline(cfg, force=True)
+    mp = ctx.model_paths
+    _write_training_history(
+        mp.training_history, loss="cross_entropy", loss_effective="cross_entropy"
+    )
+    mp.manifest.write_text(
+        json.dumps(
+            {"task_type": "classification", "model": {"weight_grid": [0.0, 1.0]}}
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    spec = RouterTrainingLearningCurveSpec(
+        kind="router_training_learning_curve",
+        show_regret=False,
+    )
+    out = render_router_training_learning_curve(spec, ctx)
+    assert out.path_image.is_file()
+    meta = json.loads(out.path_meta.read_text(encoding="utf-8"))
+    assert meta["task_type"] == "classification"
+    assert meta["y_axis_label"] == "Cross Entropy Loss"
+    assert "train_loss" in meta["metrics_plotted"]

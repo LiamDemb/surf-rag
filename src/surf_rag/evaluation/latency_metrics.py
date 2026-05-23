@@ -7,7 +7,11 @@ import random
 from statistics import mean, median, stdev
 from typing import Iterable, Mapping, Sequence
 
-LATENCY_PROTOCOL_VERSION = "v1"
+LATENCY_PROTOCOL_VERSION = "v2"
+
+# Set on fused dual-branch results when pipe ``total`` omits ``routing_predict_ms``
+# (sequential frozen branch totals + replay fusion); see ``canonicalize_latency_ms``.
+PIPE_TOTAL_EXCLUDES_ROUTER_PREDICT_KEY = "pipe_total_excludes_router_predict"
 
 
 def canonicalize_latency_ms(
@@ -20,11 +24,18 @@ def canonicalize_latency_ms(
 
     Canonical keys:
     - retrieval_stage_total_ms
+    - retrieval_reported_total_ms (comparable frozen vs live; see docstring below)
     - routing_input_ms
     - router_predict_ms
     - dense_branch_ms (when dense branch ran)
     - graph_branch_ms (when graph branch ran)
     - fusion_ms (when both branches ran)
+
+    ``retrieval_reported_total_ms`` is ``retrieval_stage_total_ms`` plus
+    ``router_predict_ms`` only when ``pipe_total_excludes_router_predict`` is set
+    on the raw latency (dual-branch sequential frozen fusion). Otherwise it equals
+    ``retrieval_stage_total_ms`` so MLP is not double-counted when already in the
+    pipe total. The marker is never returned in ``out``.
     """
     raw = dict(latency_ms or {})
 
@@ -38,6 +49,9 @@ def canonicalize_latency_ms(
     pipe_total = _get("total_ms", _get("total", 0.0))
     router_predict = _get("routing_predict_ms", 0.0)
     routing_input = float(max(0.0, routing_input_ms))
+    pipe_excludes_router_predict = (
+        _get(PIPE_TOTAL_EXCLUDES_ROUTER_PREDICT_KEY, 0.0) > 0.0
+    )
 
     out: dict[str, float] = {
         "routing_input_ms": routing_input,
@@ -57,7 +71,32 @@ def canonicalize_latency_ms(
             out["graph_branch_ms"] = _get("graph_total")
 
     out["retrieval_stage_total_ms"] = max(0.0, pipe_total + routing_input)
+    stage = float(out["retrieval_stage_total_ms"])
+    if pipe_excludes_router_predict:
+        out["retrieval_reported_total_ms"] = max(0.0, stage + router_predict)
+    else:
+        out["retrieval_reported_total_ms"] = stage
     return out
+
+
+def reported_latency_ms_from_question_row(latency_ms: object) -> float | None:
+    """Comparable retrieval latency from a ``per_question``/JSONL ``latency_ms`` map.
+
+    Prefers ``retrieval_reported_total_ms``; falls back to ``retrieval_stage_total_ms``
+    for artifacts produced before protocol v2.
+    """
+    if not isinstance(latency_ms, Mapping):
+        return None
+    for key in ("retrieval_reported_total_ms", "retrieval_stage_total_ms"):
+        if key in latency_ms:
+            try:
+                v = float(latency_ms[key])
+            except (TypeError, ValueError):
+                return None
+            if math.isfinite(v):
+                return v
+            return None
+    return None
 
 
 def latency_values(

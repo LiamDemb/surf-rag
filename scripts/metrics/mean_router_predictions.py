@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-"""Compute the mean predictions of the router for a given benchmark."""
+"""Compute the mean predictions of the router for a given benchmark.
+
+.. deprecated:: Use ``regressor_metrics`` via ``make results-build``.
+"""
 
 import argparse
+import warnings
 import json
 import logging
 from pathlib import Path
@@ -19,6 +23,11 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 
 def main():
+    warnings.warn(
+        "mean_router_predictions is deprecated; use make results-build",
+        DeprecationWarning,
+        stacklevel=1,
+    )
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--config",

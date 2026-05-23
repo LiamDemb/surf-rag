@@ -1,4 +1,4 @@
-"""Routing policies for learned-soft, hard-routing, and hybrid fallback."""
+"""Routing policies for learned-soft, hard-routing, hybrid, static fusion, and oracle."""
 
 from __future__ import annotations
 
@@ -12,9 +12,11 @@ class RoutingPolicyName(str, Enum):
     HARD_ROUTING = "hard-routing"
     HYBRID = "hybrid"
     EQUAL_50_50 = "50-50"
+    RRF = "rrf"
     DENSE_ONLY = "dense-only"
     GRAPH_ONLY = "graph-only"
     ORACLE_UPPER_BOUND = "oracle-upper-bound"
+    ORACLE_CLASSIFICATION = "oracle-classification"
 
 
 @dataclass(frozen=True)
@@ -60,6 +62,21 @@ def decide_routing(
             hard_branch=None,
             tie_break=None,
         )
+    if policy == RoutingPolicyName.RRF:
+        return RoutingDecision(
+            policy=policy,
+            dense_weight=0.5,
+            run_dense=True,
+            run_graph=True,
+            predicted_weight=None,
+            predicted_class_id=None,
+            confidence=None,
+            confidence_threshold=None,
+            fallback_triggered=False,
+            fallback_weight=None,
+            hard_branch=None,
+            tie_break=None,
+        )
     if policy == RoutingPolicyName.DENSE_ONLY:
         return RoutingDecision(
             policy=policy,
@@ -93,6 +110,11 @@ def decide_routing(
     if policy == RoutingPolicyName.ORACLE_UPPER_BOUND:
         raise ValueError(
             "oracle-upper-bound decisions are computed from oracle_scores and must be "
+            "handled in the e2e evaluation layer."
+        )
+    if policy == RoutingPolicyName.ORACLE_CLASSIFICATION:
+        raise ValueError(
+            "oracle-classification decisions are computed from oracle_scores and must be "
             "handled in the e2e evaluation layer."
         )
     if policy in (RoutingPolicyName.HARD_ROUTING, RoutingPolicyName.HYBRID):
@@ -170,7 +192,7 @@ def decide_routing(
             tie_break="class_graph",
         )
     if predicted_weight is None:
-        raise ValueError("learned-soft requires predicted_weight")
+        raise ValueError(f"{policy.value} requires predicted_weight")
     ev = float(predicted_weight)
     clipped = float(max(0.0, min(1.0, ev)))
     if policy == RoutingPolicyName.LEARNED_SOFT:

@@ -14,21 +14,30 @@ def test_aggregate_e2e_report_overlap_buckets() -> None:
             [RankedMetricSuite(k=5, ndcg=1.0, hit=1.0, recall=1.0)],
             em=1.0,
             f1=1.0,
-            latency_ms={"retrieval_stage_total_ms": 10.0},
+            latency_ms={
+                "retrieval_stage_total_ms": 10.0,
+                "retrieval_reported_total_ms": 10.0,
+            },
         ),
         PerQuestionEval(
             "q_test",
             [RankedMetricSuite(k=5, ndcg=0.0, hit=0.0, recall=0.0)],
             em=0.0,
             f1=0.0,
-            latency_ms={"retrieval_stage_total_ms": 20.0},
+            latency_ms={
+                "retrieval_stage_total_ms": 20.0,
+                "retrieval_reported_total_ms": 20.0,
+            },
         ),
         PerQuestionEval(
             "q_unseen",
             [RankedMetricSuite(k=5, ndcg=0.5, hit=0.5, recall=0.5)],
             em=0.5,
             f1=0.5,
-            latency_ms={"retrieval_stage_total_ms": 30.0},
+            latency_ms={
+                "retrieval_stage_total_ms": 30.0,
+                "retrieval_reported_total_ms": 30.0,
+            },
         ),
     ]
     splits = RouterSplitSets(train={"q_train"}, dev=set(), test={"q_test"})
@@ -40,6 +49,7 @@ def test_aggregate_e2e_report_overlap_buckets() -> None:
     assert rep["train"]["qa"]["em"] == 1.0
     assert rep["test"]["qa"]["em"] == 0.0
     assert rep["all"]["latency_ms"]["retrieval_stage_total"]["mean_ms"] == 20.0
+    assert rep["all"]["latency_ms"]["retrieval_reported_total"]["mean_ms"] == 20.0
 
 
 def test_load_benchmark_index(tmp_path) -> None:
@@ -60,7 +70,10 @@ def test_aggregate_e2e_report_without_splits_only_populates_all() -> None:
             [RankedMetricSuite(k=10, ndcg=0.8, hit=1.0, recall=0.8)],
             em=0.0,
             f1=0.0,
-            latency_ms={"retrieval_stage_total_ms": 5.0},
+            latency_ms={
+                "retrieval_stage_total_ms": 5.0,
+                "retrieval_reported_total_ms": 5.0,
+            },
         )
     ]
     rep = aggregate_e2e_report(rows, split_sets=None, ks=[10])
@@ -82,8 +95,39 @@ def test_aggregate_e2e_report_default_k_keys_are_5_10_20() -> None:
             ],
             em=1.0,
             f1=1.0,
-            latency_ms={"retrieval_stage_total_ms": 1.0},
+            latency_ms={
+                "retrieval_stage_total_ms": 1.0,
+                "retrieval_reported_total_ms": 1.0,
+            },
         )
     ]
     rep = aggregate_e2e_report(rows, split_sets=None)
     assert set(rep["all"]["retrieval_at_k"].keys()) == {"5", "10", "20"}
+
+
+def test_aggregate_e2e_report_retrieval_reported_mean_can_differ_from_stage() -> None:
+    rows = [
+        PerQuestionEval(
+            "q1",
+            [RankedMetricSuite(k=5, ndcg=1.0, hit=1.0, recall=1.0)],
+            em=1.0,
+            f1=1.0,
+            latency_ms={
+                "retrieval_stage_total_ms": 10.0,
+                "retrieval_reported_total_ms": 15.0,
+            },
+        ),
+        PerQuestionEval(
+            "q2",
+            [RankedMetricSuite(k=5, ndcg=1.0, hit=1.0, recall=1.0)],
+            em=1.0,
+            f1=1.0,
+            latency_ms={
+                "retrieval_stage_total_ms": 20.0,
+                "retrieval_reported_total_ms": 25.0,
+            },
+        ),
+    ]
+    rep = aggregate_e2e_report(rows, split_sets=None, ks=[5])
+    assert rep["all"]["latency_ms"]["retrieval_stage_total"]["mean_ms"] == 15.0
+    assert rep["all"]["latency_ms"]["retrieval_reported_total"]["mean_ms"] == 20.0

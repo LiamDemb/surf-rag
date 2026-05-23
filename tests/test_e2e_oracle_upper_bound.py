@@ -82,7 +82,7 @@ def _write_oracle_bundle(
             "question_id": qid,
             "question": "What is alpha?",
             "dataset_source": "nq",
-            "weight_grid": [0.0, 0.5, 1.0],
+            "weight_grid": [0.0, 0.7, 1.0],
             "oracle_metric": "stateful_ndcg",
             "oracle_metric_k": 10,
             "scores": [
@@ -98,16 +98,25 @@ def _write_oracle_bundle(
                 {
                     "dense_weight": 0.7,
                     "graph_weight": 0.3,
-                    "ndcg_primary": 0.9,
-                    "diagnostic_ndcg": {"5": 0.9, "10": 0.9, "20": 0.9},
+                    "ndcg_primary": 0.95,
+                    "diagnostic_ndcg": {"5": 0.95, "10": 0.95, "20": 0.95},
                     "diagnostic_hit": {"5": 1.0, "10": 1.0, "20": 1.0},
                     "diagnostic_recall": {"5": 1.0, "10": 1.0, "20": 1.0},
                     "fused_chunk_ids": ["d1", "g1"],
                 },
+                {
+                    "dense_weight": 1.0,
+                    "graph_weight": 0.0,
+                    "ndcg_primary": 0.3,
+                    "diagnostic_ndcg": {"5": 0.3, "10": 0.3, "20": 0.3},
+                    "diagnostic_hit": {"5": 1.0, "10": 1.0, "20": 1.0},
+                    "diagnostic_recall": {"5": 1.0, "10": 1.0, "20": 1.0},
+                    "fused_chunk_ids": ["d1"],
+                },
             ],
             "best_bin_index": 1,
             "best_dense_weight": 0.7,
-            "best_score": 0.9,
+            "best_score": 0.95,
             "dense_status": "OK",
             "graph_status": "OK",
         }
@@ -292,6 +301,242 @@ def test_oracle_upper_bound_prepare_strict_invalid_best_bin(
             split="test",
             run_id="r1",
             routing_policy="oracle-upper-bound",
+            retrieval_asset_dir=tmp_path,
+            router_id=router_id,
+            router_base=router_base,
+            dry_run=True,
+            run_paths_override=out,
+        )
+
+
+def _write_oracle_scores_two_bins_no_dense_endpoint(
+    router_base: Path, router_id: str
+) -> None:
+    """Oracle row missing dense_weight 1.0 (invalid for oracle-classification)."""
+    oracle = router_base / router_id / "oracle"
+    oracle.mkdir(parents=True, exist_ok=True)
+    qid = "q1"
+    score_row = {
+        "question_id": qid,
+        "question": "What is alpha?",
+        "dataset_source": "nq",
+        "weight_grid": [0.0, 0.7],
+        "oracle_metric": "stateful_ndcg",
+        "oracle_metric_k": 10,
+        "scores": [
+            {
+                "dense_weight": 0.0,
+                "graph_weight": 1.0,
+                "ndcg_primary": 0.2,
+                "diagnostic_ndcg": {"5": 0.2, "10": 0.2, "20": 0.2},
+                "diagnostic_hit": {"5": 1.0, "10": 1.0, "20": 1.0},
+                "diagnostic_recall": {"5": 1.0, "10": 1.0, "20": 1.0},
+                "fused_chunk_ids": ["g1"],
+            },
+            {
+                "dense_weight": 0.7,
+                "graph_weight": 0.3,
+                "ndcg_primary": 0.95,
+                "diagnostic_ndcg": {"5": 0.95, "10": 0.95, "20": 0.95},
+                "diagnostic_hit": {"5": 1.0, "10": 1.0, "20": 1.0},
+                "diagnostic_recall": {"5": 1.0, "10": 1.0, "20": 1.0},
+                "fused_chunk_ids": ["d1", "g1"],
+            },
+        ],
+        "best_bin_index": 1,
+        "best_dense_weight": 0.7,
+        "best_score": 0.95,
+        "dense_status": "OK",
+        "graph_status": "OK",
+    }
+    (oracle / "oracle_scores.jsonl").write_text(
+        json.dumps(score_row) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_oracle_bundle_tie_endpoints(router_base: Path, router_id: str) -> None:
+    oracle = router_base / router_id / "oracle"
+    oracle.mkdir(parents=True, exist_ok=True)
+    qid = "q1"
+    (oracle / "retrieval_dense.jsonl").write_text(
+        json.dumps(_retrieval_row(qid, "d1", "dense chunk", 0.9)) + "\n",
+        encoding="utf-8",
+    )
+    graph_row = _retrieval_row(qid, "g1", "graph chunk", 0.8)
+    graph_row["retriever_name"] = "Graph"
+    (oracle / "retrieval_graph.jsonl").write_text(
+        json.dumps(graph_row) + "\n",
+        encoding="utf-8",
+    )
+    score_row = {
+        "question_id": qid,
+        "question": "What is alpha?",
+        "dataset_source": "nq",
+        "weight_grid": [0.0, 1.0],
+        "oracle_metric": "stateful_ndcg",
+        "oracle_metric_k": 10,
+        "scores": [
+            {
+                "dense_weight": 0.0,
+                "graph_weight": 1.0,
+                "ndcg_primary": 0.5,
+                "diagnostic_ndcg": {"5": 0.5, "10": 0.5, "20": 0.5},
+                "diagnostic_hit": {"5": 1.0, "10": 1.0, "20": 1.0},
+                "diagnostic_recall": {"5": 1.0, "10": 1.0, "20": 1.0},
+                "fused_chunk_ids": ["g1"],
+            },
+            {
+                "dense_weight": 1.0,
+                "graph_weight": 0.0,
+                "ndcg_primary": 0.5,
+                "diagnostic_ndcg": {"5": 0.5, "10": 0.5, "20": 0.5},
+                "diagnostic_hit": {"5": 1.0, "10": 1.0, "20": 1.0},
+                "diagnostic_recall": {"5": 1.0, "10": 1.0, "20": 1.0},
+                "fused_chunk_ids": ["d1"],
+            },
+        ],
+        "best_bin_index": 0,
+        "best_dense_weight": 0.0,
+        "best_score": 0.5,
+        "dense_status": "OK",
+        "graph_status": "OK",
+    }
+    (oracle / "oracle_scores.jsonl").write_text(
+        json.dumps(score_row) + "\n",
+        encoding="utf-8",
+    )
+
+
+def test_oracle_classification_prepare_writes_artifacts(
+    monkeypatch, tmp_path: Path
+) -> None:
+    router_base = tmp_path / "router"
+    router_id = "rid"
+    _write_oracle_bundle(router_base, router_id, include_score=True)
+    split_ids = router_base / router_id / "dataset" / "split_question_ids.json"
+    _write_split_ids(split_ids, ["q1"])
+    bench = tmp_path / "bench.jsonl"
+    _write_benchmark(bench)
+    out = RunArtifactPaths(run_root=tmp_path / "run")
+
+    monkeypatch.setattr(
+        "surf_rag.evaluation.e2e_runner.get_generator_prompt", lambda: "p"
+    )
+    monkeypatch.setattr(
+        "surf_rag.evaluation.e2e_runner.finalize_batch_submission",
+        lambda *args, **kwargs: 0,
+    )
+
+    rc = e2e_prepare_and_submit(
+        bench,
+        benchmark_base=tmp_path,
+        benchmark_name="b",
+        benchmark_id="id",
+        split="test",
+        run_id="r1",
+        routing_policy="oracle-classification",
+        retrieval_asset_dir=tmp_path,
+        router_id=router_id,
+        router_base=router_base,
+        dry_run=True,
+        run_paths_override=out,
+        fusion_keep_k=1,
+    )
+    assert rc == 0
+    pre = json.loads(
+        out.retrieval_results_pretrunc_jsonl()
+        .read_text(encoding="utf-8")
+        .strip()
+        .splitlines()[0]
+    )
+    assert pre["debug_info"]["routing"]["routing_policy"] == "oracle-classification"
+    assert pre["debug_info"]["routing"]["oracle_dense_weight"] == pytest.approx(1.0)
+    assert pre["debug_info"]["routing"]["oracle_best_bin_index"] == 2
+    assert pre["debug_info"]["routing"]["oracle_binary_class"] == "dense"
+
+
+def test_oracle_classification_tie_prefers_dense_endpoint(
+    monkeypatch, tmp_path: Path
+) -> None:
+    router_base = tmp_path / "router"
+    router_id = "rid"
+    _write_oracle_bundle_tie_endpoints(router_base, router_id)
+    split_ids = router_base / router_id / "dataset" / "split_question_ids.json"
+    _write_split_ids(split_ids, ["q1"])
+    bench = tmp_path / "bench.jsonl"
+    _write_benchmark(bench)
+    out = RunArtifactPaths(run_root=tmp_path / "run")
+    monkeypatch.setattr(
+        "surf_rag.evaluation.e2e_runner.get_generator_prompt", lambda: "p"
+    )
+    monkeypatch.setattr(
+        "surf_rag.evaluation.e2e_runner.finalize_batch_submission",
+        lambda *args, **kwargs: 0,
+    )
+    rc = e2e_prepare_and_submit(
+        bench,
+        benchmark_base=tmp_path,
+        benchmark_name="b",
+        benchmark_id="id",
+        split="test",
+        run_id="r1",
+        routing_policy="oracle-classification",
+        retrieval_asset_dir=tmp_path,
+        router_id=router_id,
+        router_base=router_base,
+        dry_run=True,
+        run_paths_override=out,
+        fusion_keep_k=1,
+    )
+    assert rc == 0
+    pre = json.loads(
+        out.retrieval_results_pretrunc_jsonl()
+        .read_text(encoding="utf-8")
+        .strip()
+        .splitlines()[0]
+    )
+    assert pre["debug_info"]["routing"]["oracle_dense_weight"] == pytest.approx(1.0)
+    assert pre["debug_info"]["routing"]["oracle_binary_class"] == "dense"
+
+
+def test_oracle_classification_strict_missing_dense_endpoint(
+    monkeypatch, tmp_path: Path
+) -> None:
+    router_base = tmp_path / "router"
+    router_id = "rid"
+    _write_oracle_scores_two_bins_no_dense_endpoint(router_base, router_id)
+    (router_base / router_id / "oracle" / "retrieval_dense.jsonl").write_text(
+        json.dumps(_retrieval_row("q1", "d1", "dense chunk", 0.9)) + "\n",
+        encoding="utf-8",
+    )
+    graph_row = _retrieval_row("q1", "g1", "graph chunk", 0.8)
+    graph_row["retriever_name"] = "Graph"
+    (router_base / router_id / "oracle" / "retrieval_graph.jsonl").write_text(
+        json.dumps(graph_row) + "\n",
+        encoding="utf-8",
+    )
+    split_ids = router_base / router_id / "dataset" / "split_question_ids.json"
+    _write_split_ids(split_ids, ["q1"])
+    bench = tmp_path / "bench.jsonl"
+    _write_benchmark(bench)
+    out = RunArtifactPaths(run_root=tmp_path / "run")
+    monkeypatch.setattr(
+        "surf_rag.evaluation.e2e_runner.get_generator_prompt", lambda: "p"
+    )
+    monkeypatch.setattr(
+        "surf_rag.evaluation.e2e_runner.finalize_batch_submission",
+        lambda *args, **kwargs: 0,
+    )
+    with pytest.raises(ValueError, match="0.0 and 1.0"):
+        e2e_prepare_and_submit(
+            bench,
+            benchmark_base=tmp_path,
+            benchmark_name="b",
+            benchmark_id="id",
+            split="test",
+            run_id="r1",
+            routing_policy="oracle-classification",
             retrieval_asset_dir=tmp_path,
             router_id=router_id,
             router_base=router_base,

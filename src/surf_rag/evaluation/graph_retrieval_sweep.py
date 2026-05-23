@@ -409,6 +409,7 @@ def run_retrieval_only_trial(
         graph_retriever,
         fusion_keep_k=e.fusion_keep_k,
         router=None,
+        rrf_k=int(e.rrf_k),
     )
     reranker = build_reranker(
         e.reranker,

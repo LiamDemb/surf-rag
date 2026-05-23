@@ -12,8 +12,12 @@ import pandas as pd
 
 from surf_rag.evaluation.router_model_artifacts import read_json
 from surf_rag.viz.context import FigureRunContext
+from surf_rag.viz.learning_curve_labels import (
+    format_learning_curve_ylabel,
+    resolve_training_loss_id,
+)
 from surf_rag.viz.specs import BaseFigureSpec, RouterTrainingLearningCurveSpec
-from surf_rag.viz.theme import PALETTE
+from surf_rag.viz.theme import LEARNING_CURVE_LINE_ALPHA, PALETTE
 from surf_rag.viz.types import FigureOutput
 
 
@@ -35,7 +39,7 @@ def _package_versions() -> dict[str, str]:
     return out
 
 
-def _load_training_history(path: Path) -> pd.DataFrame:
+def _load_training_history(path: Path) -> tuple[pd.DataFrame, dict[str, object]]:
     if not path.is_file():
         raise FileNotFoundError(
             f"Router training history not found: {path}. Run router training first."
@@ -59,7 +63,7 @@ def _load_training_history(path: Path) -> pd.DataFrame:
     for c in ("train_loss", "dev_loss", "train_regret", "dev_regret"):
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
-    return df.sort_values("epoch", kind="mergesort").reset_index(drop=True)
+    return df.sort_values("epoch", kind="mergesort").reset_index(drop=True), payload
 
 
 def _task_type_from_manifest(path: Path) -> str:
@@ -80,8 +84,19 @@ def render_router_training_learning_curve(
 
     history_path = ctx.model_paths.training_history
     manifest_path = ctx.model_paths.manifest
-    df = _load_training_history(history_path)
+    df, history_payload = _load_training_history(history_path)
     task_type = _task_type_from_manifest(manifest_path)
+    loss_id = resolve_training_loss_id(
+        config_loss=ctx.train_loss,
+        history_payload=history_payload,
+        manifest_path=manifest_path,
+    )
+    y_label = format_learning_curve_ylabel(
+        loss_id,
+        task_type=task_type,
+        oracle_metric=ctx.oracle_metric,
+        oracle_metric_k=ctx.oracle_metric_k,
+    )
 
     ctx.output_dir.mkdir(parents=True, exist_ok=True)
     ext = ctx.image_format
@@ -108,6 +123,7 @@ def render_router_training_learning_curve(
                     label="train loss",
                     color=PALETTE["primary"],
                     linewidth=1.8,
+                    alpha=LEARNING_CURVE_LINE_ALPHA,
                 )
                 plotted.append("train_loss")
         if spec.show_loss and spec.include_dev and "dev_loss" in df.columns:
@@ -117,9 +133,9 @@ def render_router_training_learning_curve(
                     x,
                     y,
                     label="dev loss",
-                    color=PALETTE["primary"],
-                    linewidth=1.6,
-                    linestyle="--",
+                    color=PALETTE["secondary"],
+                    linewidth=1.8,
+                    alpha=LEARNING_CURVE_LINE_ALPHA,
                 )
                 plotted.append("dev_loss")
         reg_label = "error" if task_type == "classification" else "regret"
@@ -130,8 +146,9 @@ def render_router_training_learning_curve(
                     x,
                     y,
                     label=f"train {reg_label}",
-                    color=PALETTE["dark-blue"],
+                    color=PALETTE["primary"],
                     linewidth=1.8,
+                    alpha=LEARNING_CURVE_LINE_ALPHA,
                 )
                 plotted.append("train_regret")
         if spec.show_regret and spec.include_dev and "dev_regret" in df.columns:
@@ -141,9 +158,9 @@ def render_router_training_learning_curve(
                     x,
                     y,
                     label=f"dev {reg_label}",
-                    color=PALETTE["dark-blue"],
-                    linewidth=1.6,
-                    linestyle="--",
+                    color=PALETTE["secondary"],
+                    linewidth=1.8,
+                    alpha=LEARNING_CURVE_LINE_ALPHA,
                 )
                 plotted.append("dev_regret")
 
@@ -155,8 +172,8 @@ def render_router_training_learning_curve(
             )
 
         ax.set_xlabel("Epoch")
-        ax.set_ylabel("Metric value")
-        ax.set_title("Router training learning curves", color=PALETTE["text"])
+        ax.set_ylabel(y_label)
+        # ax.set_title("Router training learning curves", color=PALETTE["text"])
         if spec.show_plot_subtitle:
             sub = (
                 f"router_id={ctx.router_id}"
@@ -185,6 +202,10 @@ def render_router_training_learning_curve(
         "router_architecture_id": ctx.router_architecture_id,
         "input_mode": ctx.input_mode,
         "task_type": task_type,
+        "loss_id": loss_id,
+        "y_axis_label": y_label,
+        "oracle_metric": ctx.oracle_metric,
+        "oracle_metric_k": ctx.oracle_metric_k,
         "n_epochs": int(len(df)),
         "metrics_plotted": plotted,
         "include_dev": spec.include_dev,

@@ -69,4 +69,5 @@ prompts/dev
 .file_tree.txt
 
 # Figures
-figures/
+/figures
+/results

@@ -168,6 +168,22 @@ class GenerationSection:
 
 
 @dataclass
+class E2EBranchCacheSection:
+    """Optional frozen dense/graph JSONL replay for fair e2e ablations."""
+
+    mode: str = "off"
+    """off | router_oracle | explicit_jsonl"""
+    oracle_router_id: str | None = None
+    """When mode is router_oracle, override ``paths.router_id`` for cache directory."""
+    dense_jsonl: str | None = None
+    graph_jsonl: str | None = None
+    strict_manifest: bool = True
+    """When True, oracle manifest must match benchmark_path, corpus dir, branch_top_k."""
+    sequential_retrieval_total: bool = False
+    """When True with dual-branch fusion, fused ``total_ms`` uses cached branch totals + fusion."""
+
+
+@dataclass
 class E2ESection:
     run_id: str | None = None
     split: str = "test"
@@ -177,14 +193,18 @@ class E2ESection:
             "dense-only",
             "graph-only",
             "50-50",
+            "rrf",
             "learned-soft",
             "hard-routing",
             "hybrid",
             "oracle-upper-bound",
+            "oracle-classification",
         ]
     )
     branch_top_k: int = 20
     fusion_keep_k: int = 20
+    rrf_k: int = 60
+    """RRF smoothing constant for policy ``rrf`` (``1/(rrf_k + rank)``)."""
     reranker: str = "none"
     rerank_top_k: int = 5
     cross_encoder_model: str | None = None
@@ -211,6 +231,7 @@ class E2ESection:
     include_graph_provenance: bool = False
     completion_window: str | None = None
     apply_answerability_audit: bool = False
+    branch_cache: E2EBranchCacheSection = field(default_factory=E2EBranchCacheSection)
 
 
 @dataclass
@@ -251,6 +272,64 @@ class FiguresSection:
 
 
 @dataclass
+class ResultsPolicyEntry:
+    run_id: str
+    router_role: str | None = None
+
+
+@dataclass
+class ResultsRouterArch:
+    architecture_id: str = ""
+    input_mode: str = "embedding"
+    task_type: str = "regression"
+
+
+@dataclass
+class ResultsOracleConfig:
+    metric: str = "stateful_ndcg"
+    k: int = 5
+    diagnostic_ks: list[int] = field(default_factory=lambda: [5, 10, 20])
+    plateau_tau: float = 1e-6
+
+
+@dataclass
+class ResultsArtifactSpec:
+    id: str
+    kind: str = "table"
+    enabled: bool = True
+    figure: str | None = None
+    x_policy: str | None = None
+    y_policy: str | None = None
+    metric: str | None = None
+    k: int | None = None
+    ks: list[int] | None = None
+    exclude_policies: list[str] | None = None
+    ylim_min: float | None = None
+    ylim_max: float | None = None
+    router_role: str | None = None
+    filename_stem: str | None = None
+    fig_width: float | None = None
+    fig_height: float | None = None
+    show_plot_subtitle: bool | None = None
+    include_dev: bool | None = None
+    show_loss: bool | None = None
+    show_regret: bool | None = None
+
+
+@dataclass
+class ResultsSection:
+    bundle_id: str = "default"
+    output_root: str = "results"
+    split: str = "test"
+    theme: FiguresThemeSection = field(default_factory=FiguresThemeSection)
+    image_format: str = "pdf"
+    oracle: ResultsOracleConfig = field(default_factory=ResultsOracleConfig)
+    router: dict[str, ResultsRouterArch] = field(default_factory=dict)
+    policies: dict[str, ResultsPolicyEntry] = field(default_factory=dict)
+    artifacts: list[ResultsArtifactSpec] = field(default_factory=list)
+
+
+@dataclass
 class GraphRetrievalSweepSection:
     """Optional grid-search settings for ``scripts/dev/graph_retrieval_grid_search.py``.
 
@@ -288,3 +367,4 @@ class PipelineConfig:
         default_factory=GraphRetrievalSweepSection
     )
     figures: FiguresSection = field(default_factory=FiguresSection)
+    results: ResultsSection = field(default_factory=ResultsSection)

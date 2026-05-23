@@ -97,6 +97,36 @@ def test_e2e_branch_top_k_inherits_oracle_when_unset() -> None:
     assert cfg.e2e.branch_top_k == 15
 
 
+def test_e2e_branch_cache_yaml_roundtrip() -> None:
+    cfg = pipeline_config_from_dict(
+        {
+            "paths": {"router_id": "r1"},
+            "e2e": {
+                "branch_cache": {
+                    "mode": "router_oracle",
+                    "oracle_router_id": "r2",
+                    "strict_manifest": False,
+                    "sequential_retrieval_total": True,
+                }
+            },
+        }
+    )
+    assert cfg.e2e.branch_cache.mode == "router_oracle"
+    assert cfg.e2e.branch_cache.oracle_router_id == "r2"
+    assert cfg.e2e.branch_cache.strict_manifest is False
+    assert cfg.e2e.branch_cache.sequential_retrieval_total is True
+
+
+def test_validate_e2e_branch_cache_explicit_requires_jsonl() -> None:
+    cfg = pipeline_config_from_dict(
+        {
+            "e2e": {"branch_cache": {"mode": "explicit_jsonl"}},
+        }
+    )
+    with pytest.raises(ValueError, match="dense_jsonl"):
+        validate_e2e_config(cfg)
+
+
 def test_router_train_midpoint_balance_fields_roundtrip() -> None:
     cfg = pipeline_config_from_dict(
         {
@@ -143,6 +173,17 @@ def test_validate_e2e_oracle_upper_bound_requires_router_id() -> None:
         {
             "paths": {"router_id": ""},
             "e2e": {"policy": "oracle-upper-bound"},
+        }
+    )
+    with pytest.raises(ValueError, match="router_id"):
+        validate_e2e_config(cfg)
+
+
+def test_validate_e2e_oracle_classification_requires_router_id() -> None:
+    cfg = pipeline_config_from_dict(
+        {
+            "paths": {"router_id": ""},
+            "e2e": {"policy": "oracle-classification"},
         }
     )
     with pytest.raises(ValueError, match="router_id"):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -244,22 +245,26 @@ def sweep_missing_oracle_scores(
     oracle_metric_k: int,
     diagnostic_metric_ks: Sequence[int],
     progress: ProgressFn = None,
-) -> int:
+) -> Tuple[int, float]:
     """Compute oracle score rows for any question_id missing from oracle_scores.
 
     Both retrieval caches are read once, then the sweep runs in-memory over
     cached branch results.
+
+    Returns ``(newly_scored, oracle_sweep_wall_s)`` where wall time covers the
+    per-question fusion/metric loop (after cache load, before append).
     """
     existing = read_question_ids(paths.oracle_scores)
     pending = _filter_rows_missing_qids(rows, existing)
     if not pending:
-        return 0
+        return 0, 0.0
 
     dense_cache = read_retrieval_cache(paths.retrieval_dense)
     graph_cache = read_retrieval_cache(paths.retrieval_graph)
 
     new_rows: List[OracleScoreRow] = []
     total = len(pending)
+    sweep_start = time.perf_counter()
     for idx, row in enumerate(pending, start=1):
         qid = str(row.get("question_id", "")).strip()
         dense = dense_cache.get(qid)
@@ -288,8 +293,9 @@ def sweep_missing_oracle_scores(
         if progress is not None:
             progress("oracle_sweep", idx, total)
 
+    oracle_sweep_wall_s = time.perf_counter() - sweep_start
     append_oracle_score_rows(paths, new_rows)
-    return len(new_rows)
+    return len(new_rows), oracle_sweep_wall_s
 
 
 def build_summary(
@@ -300,6 +306,7 @@ def build_summary(
     newly_retrieved_dense: int,
     newly_retrieved_graph: int,
     newly_scored: int,
+    oracle_sweep_wall_s: float,
 ) -> Dict[str, Any]:
     dense_qids = read_question_ids(paths.retrieval_dense)
     graph_qids = read_question_ids(paths.retrieval_graph)
@@ -318,6 +325,7 @@ def build_summary(
         "newly_retrieved_dense": newly_retrieved_dense,
         "newly_retrieved_graph": newly_retrieved_graph,
         "newly_scored": newly_scored,
+        "oracle_sweep_wall_s": round(float(oracle_sweep_wall_s), 3),
         "weight_grid": list(cfg.weight_grid),
         "branch_top_k": cfg.branch_top_k,
         "fusion_keep_k": cfg.fusion_keep_k,
@@ -397,7 +405,7 @@ def prepare_oracle_run(
         label="graph_retrieval",
     )
 
-    newly_scored = sweep_missing_oracle_scores(
+    newly_scored, oracle_sweep_wall_s = sweep_missing_oracle_scores(
         rows,
         paths,
         weight_grid=cfg.weight_grid,
@@ -415,6 +423,7 @@ def prepare_oracle_run(
         newly_retrieved_dense=newly_dense,
         newly_retrieved_graph=newly_graph,
         newly_scored=newly_scored,
+        oracle_sweep_wall_s=oracle_sweep_wall_s,
     )
     write_summary(paths, summary)
     return summary

@@ -7,6 +7,7 @@ from surf_rag.retrieval.fusion import (
     fuse_branch_results,
     fuse_cached_results,
     fused_candidates_to_chunks,
+    graph_score_log_transform,
     min_max_normalize,
 )
 from surf_rag.retrieval.pipeline import SingleBranchPipeline
@@ -24,6 +25,7 @@ __all__ = [
     "fuse_branch_results",
     "fuse_cached_results",
     "fused_candidates_to_chunks",
+    "graph_score_log_transform",
     "min_max_normalize",
     "RoutedFusionPipeline",
     "trim_retrieval_top_k",

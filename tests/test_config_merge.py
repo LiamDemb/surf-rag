@@ -147,6 +147,7 @@ def test_e2e_prepare_cli_run_id_overrides_config() -> None:
     assert args.run_id == "from-cli"
     assert args.latency_warmup_questions == cfg.e2e.latency_warmup_questions
     assert args.router_architecture_id == cfg.paths.router_architecture_id
+    assert args.rrf_k == cfg.e2e.rrf_k
 
 
 def test_e2e_common_fills_benchmark_path() -> None:

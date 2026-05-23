@@ -43,7 +43,7 @@ def test_e2e_prepare_dense_only_setup_isolation(monkeypatch, tmp_path: Path) -> 
     out = RunArtifactPaths(run_root=tmp_path / "run")
     calls = {"dense": 0, "graph": 0}
 
-    def _dense_factory(output_dir: str):
+    def _dense_factory(output_dir: str, top_k: int = 10, **_: object):
         calls["dense"] += 1
         return _FakeRetriever("Dense")
 
@@ -89,6 +89,7 @@ def test_e2e_prepare_dense_only_setup_isolation(monkeypatch, tmp_path: Path) -> 
     assert "dense_branch_ms" in lat
     assert "graph_branch_ms" not in lat
     assert "retrieval_stage_total_ms" in lat
+    assert "retrieval_reported_total_ms" in lat
 
 
 def test_evaluate_e2e_run_includes_startup_latency(tmp_path: Path) -> None:
@@ -106,7 +107,11 @@ def test_evaluate_e2e_run_includes_startup_latency(tmp_path: Path) -> None:
                 "retriever_name": "Dense",
                 "status": "NO_CONTEXT",
                 "chunks": [],
-                "latency_ms": {"retrieval_stage_total_ms": 9.0, "dense_branch_ms": 9.0},
+                "latency_ms": {
+                    "retrieval_stage_total_ms": 9.0,
+                    "retrieval_reported_total_ms": 9.0,
+                    "dense_branch_ms": 9.0,
+                },
                 "error": None,
                 "debug_info": None,
             }
@@ -125,6 +130,12 @@ def test_evaluate_e2e_run_includes_startup_latency(tmp_path: Path) -> None:
         ]
         == 9.0
     )
+    assert (
+        rep["overlap_breakdown"]["all"]["latency_ms"]["retrieval_reported_total"][
+            "mean_ms"
+        ]
+        == 9.0
+    )
 
 
 def test_prepare_writes_pretrunc_and_generation_retrieval_artifacts(
@@ -139,7 +150,7 @@ def test_prepare_writes_pretrunc_and_generation_retrieval_artifacts(
     )
     monkeypatch.setattr(
         "surf_rag.evaluation.e2e_runner.build_dense_retriever",
-        lambda output_dir: _FakeRetriever("Dense"),
+        lambda output_dir, top_k=10, **kwargs: _FakeRetriever("Dense"),
     )
     monkeypatch.setattr(
         "surf_rag.evaluation.e2e_runner.build_graph_retriever",
@@ -193,7 +204,11 @@ def test_evaluate_outputs_retrieval_blocks_and_no_fallback(tmp_path: Path) -> No
                 "retriever_name": "Dense",
                 "status": "NO_CONTEXT",
                 "chunks": [],
-                "latency_ms": {"retrieval_stage_total_ms": 9.0, "dense_branch_ms": 9.0},
+                "latency_ms": {
+                    "retrieval_stage_total_ms": 9.0,
+                    "retrieval_reported_total_ms": 9.0,
+                    "dense_branch_ms": 9.0,
+                },
                 "error": None,
                 "debug_info": None,
             }
@@ -231,7 +246,11 @@ def test_evaluate_post_ce_k_filter_respects_rerank_top_k(tmp_path: Path) -> None
         "chunks": [
             {"chunk_id": "c1", "text": "a", "score": 1.0, "rank": 0, "metadata": {}}
         ],
-        "latency_ms": {"retrieval_stage_total_ms": 9.0, "dense_branch_ms": 9.0},
+        "latency_ms": {
+            "retrieval_stage_total_ms": 9.0,
+            "retrieval_reported_total_ms": 9.0,
+            "dense_branch_ms": 9.0,
+        },
         "error": None,
         "debug_info": None,
     }

@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
-"""Compile a summary of an end-to-end run's test set performance."""
+"""Compile a summary of an end-to-end run's test set performance.
+
+.. deprecated::
+    Use ``make results-build`` with ``pipeline_retrieval`` and ``pipeline_answers``
+    artefacts in ``configs/results/*.yaml``.
+"""
 
 import argparse
+import warnings
 import json
 import logging
 from pathlib import Path
 from collections import defaultdict
 
 from surf_rag.config.loader import load_pipeline_config
+from surf_rag.evaluation.latency_metrics import reported_latency_ms_from_question_row
 from surf_rag.evaluation.oracle_artifacts import (
     make_run_paths_for_cli,
     read_oracle_score_rows,
@@ -20,6 +27,12 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 
 def main():
+    warnings.warn(
+        "compile_e2e_results is deprecated; use: make results-build "
+        "RESULTS_CONFIG=configs/results/example.yaml",
+        DeprecationWarning,
+        stacklevel=1,
+    )
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--config",
@@ -184,6 +197,8 @@ def main():
                 )
                 is_answerable = qid in answerable_qids
 
+                lat_rep = reported_latency_ms_from_question_row(item.get("latency_ms"))
+
                 for g in groups:
                     metrics_sum[g]["qa_em"] += qa_em
                     metrics_count[g]["qa_em"] += 1
@@ -225,10 +240,21 @@ def main():
                         metrics_sum[g]["judge_correct_answerable"] += judge_correct
                         metrics_count[g]["judge_correct_answerable"] += 1
 
+                    if lat_rep is not None:
+                        metrics_sum[g]["latency_retrieval_reported_ms"] += lat_rep
+                        metrics_count[g]["latency_retrieval_reported_ms"] += 1
+
             results = {}
             for g, m_sums in metrics_sum.items():
                 results[g] = {}
                 for m_name, val in m_sums.items():
+                    if m_name == "latency_retrieval_reported_ms":
+                        nlat = metrics_count[g].get(m_name, 0)
+                        if nlat > 0:
+                            results[g]["latency_retrieval_reported_mean_ms"] = (
+                                val / nlat
+                            )
+                        continue
                     count = metrics_count[g][m_name]
                     results[g][m_name] = val / count if count > 0 else 0.0
                 results[g]["count"] = metrics_count[g]["qa_em"]  # general count

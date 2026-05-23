@@ -22,6 +22,7 @@ from surf_rag.config.schema import (
     E2ESection,
     EntityMatchingSection,
     FiguresSection,
+    FiguresThemeSection,
     GenerationSection,
     GraphRetrievalSweepSection,
     ModelSetupSection,
@@ -32,6 +33,11 @@ from surf_rag.config.schema import (
     RetrievalSection,
     RouterDatasetSection,
     RouterSection,
+    ResultsArtifactSpec,
+    ResultsOracleConfig,
+    ResultsPolicyEntry,
+    ResultsRouterArch,
+    ResultsSection,
     RouterTrainSection,
     SecretsSection,
 )
@@ -65,6 +71,64 @@ def _merge_dataclass(cls: Type[T], data: dict[str, Any] | None, defaults: T) -> 
         else:
             kwargs[f.name] = val
     return replace(defaults, **kwargs)
+
+
+def _merge_results_section(
+    data: dict[str, Any] | None, base: ResultsSection
+) -> ResultsSection:
+    if not data:
+        return base
+    policies: dict[str, ResultsPolicyEntry] = dict(base.policies)
+    raw_policies = data.get("policies")
+    if isinstance(raw_policies, dict):
+        policies = {}
+        for name, entry in raw_policies.items():
+            if isinstance(entry, str):
+                policies[str(name)] = ResultsPolicyEntry(run_id=entry.strip())
+            elif isinstance(entry, dict):
+                policies[str(name)] = ResultsPolicyEntry(
+                    run_id=str(entry.get("run_id", "")).strip(),
+                    router_role=(
+                        str(entry["router_role"]).strip()
+                        if entry.get("router_role") is not None
+                        else None
+                    ),
+                )
+    router: dict[str, ResultsRouterArch] = dict(base.router)
+    raw_router = data.get("router")
+    if isinstance(raw_router, dict):
+        router = {}
+        for role, arch in raw_router.items():
+            if isinstance(arch, dict):
+                router[str(role)] = _merge_dataclass(
+                    ResultsRouterArch, arch, ResultsRouterArch()
+                )
+    artifacts: list[ResultsArtifactSpec] = []
+    for item in data.get("artifacts") or []:
+        if not isinstance(item, dict):
+            continue
+        aid = str(item.get("id", "")).strip()
+        if not aid:
+            continue
+        artifacts.append(
+            _merge_dataclass(
+                ResultsArtifactSpec,
+                item,
+                ResultsArtifactSpec(id=aid, kind=str(item.get("kind", "table"))),
+            )
+        )
+    return replace(
+        base,
+        bundle_id=str(data.get("bundle_id", base.bundle_id)),
+        output_root=str(data.get("output_root", base.output_root)),
+        split=str(data.get("split", base.split)),
+        theme=_merge_dataclass(FiguresThemeSection, data.get("theme"), base.theme),
+        image_format=str(data.get("image_format", base.image_format)),
+        oracle=_merge_dataclass(ResultsOracleConfig, data.get("oracle"), base.oracle),
+        router=router,
+        policies=policies,
+        artifacts=artifacts if artifacts else base.artifacts,
+    )
 
 
 def pipeline_config_from_dict(raw: dict[str, Any]) -> PipelineConfig:
@@ -125,6 +189,10 @@ def pipeline_config_from_dict(raw: dict[str, Any]) -> PipelineConfig:
             base.graph_retrieval_sweep,
         ),
         figures=_merge_dataclass(FiguresSection, raw.get("figures"), base.figures),
+        results=_merge_results_section(
+            raw.get("results") if isinstance(raw.get("results"), dict) else None,
+            base.results,
+        ),
     )
     e2e = out.e2e
     if e2e.completion_window is None:
@@ -204,6 +272,18 @@ def _coerce_yaml_scalar_types(cfg: PipelineConfig) -> PipelineConfig:
         figures=replace(
             fg,
             image_format=str(fg.image_format or "png").strip().lower(),
+        ),
+    )
+    rs = out.results
+    diag = rs.oracle.diagnostic_ks
+    if diag and not all(isinstance(x, int) for x in diag):
+        diag = [int(x) for x in diag]
+    out = replace(
+        out,
+        results=replace(
+            rs,
+            image_format=str(rs.image_format or "pdf").strip().lower(),
+            oracle=replace(rs.oracle, diagnostic_ks=diag or rs.oracle.diagnostic_ks),
         ),
     )
     return out
@@ -344,11 +424,19 @@ def config_to_resolved_dict(cfg: PipelineConfig, rp: ResolvedPaths) -> dict[str,
 
 
 def validate_e2e_config(cfg: PipelineConfig) -> None:
+    from surf_rag.evaluation.frozen_branch_cache import _normalize_cache_mode
+
     pol = (cfg.e2e.policy or "").strip().lower().replace("_", "-")
-    if pol in ("learned-soft", "hard-routing", "hybrid", "oracle-upper-bound"):
+    if pol in (
+        "learned-soft",
+        "hard-routing",
+        "hybrid",
+        "oracle-upper-bound",
+        "oracle-classification",
+    ):
         if not str(cfg.paths.router_id).strip():
             raise ValueError(
-                "e2e learned/hybrid policies and oracle-upper-bound require paths.router_id"
+                "e2e learned/hybrid policies and oracle e2e policies require paths.router_id"
             )
     if pol == "learned-soft" and cfg.e2e.router_task_type != "regression":
         raise ValueError(
@@ -363,3 +451,25 @@ def validate_e2e_config(cfg: PipelineConfig) -> None:
         )
     if pol == "hybrid" and not str(cfg.e2e.router_fallback_regressor_id or "").strip():
         raise ValueError("e2e policy hybrid requires e2e.router_fallback_regressor_id")
+
+    bc = cfg.e2e.branch_cache
+    mode = _normalize_cache_mode(bc.mode)
+    if mode not in ("off", "router_oracle", "explicit_jsonl"):
+        raise ValueError(
+            f"e2e.branch_cache.mode must be off, router_oracle, or explicit_jsonl; got {bc.mode!r}"
+        )
+    if mode == "router_oracle":
+        rid = str(bc.oracle_router_id or cfg.paths.router_id or "").strip()
+        if not rid:
+            raise ValueError(
+                "e2e.branch_cache mode router_oracle requires paths.router_id or "
+                "e2e.branch_cache.oracle_router_id"
+            )
+    if mode == "explicit_jsonl":
+        if (
+            not str(bc.dense_jsonl or "").strip()
+            or not str(bc.graph_jsonl or "").strip()
+        ):
+            raise ValueError(
+                "e2e.branch_cache mode explicit_jsonl requires dense_jsonl and graph_jsonl"
+            )
