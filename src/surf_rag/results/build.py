@@ -57,6 +57,13 @@ from surf_rag.results.tables.regressor_metrics import (
     build_regressor_metrics,
 )
 from surf_rag.results.tables.regressor_test_summary import build_regressor_test_summary
+from surf_rag.results.tables.latency_tables import (
+    build_e2e_startup_latency,
+    build_oracle_ops_summary,
+    build_pipeline_latency_summary,
+    build_pipeline_ops_timing,
+    build_router_training_timing,
+)
 
 log = logging.getLogger(__name__)
 
@@ -90,6 +97,11 @@ TABLE_BUILDERS: dict[str, Callable] = {
     "pipeline_answers": lambda b, s: build_pipeline_answers(b),
     "pairwise_wilcoxon": lambda b, s: build_pairwise_wilcoxon(b, s),
     "oracle_policy_comparison": lambda b, s: build_oracle_policy_comparison(b, s),
+    "oracle_ops_summary": lambda b, s: build_oracle_ops_summary(b, s),
+    "pipeline_ops_timing": lambda b, s: build_pipeline_ops_timing(b, s),
+    "router_training_timing": lambda b, s: build_router_training_timing(b, s),
+    "e2e_startup_latency": lambda b, s: build_e2e_startup_latency(b, s),
+    "pipeline_latency_summary": lambda b, s: build_pipeline_latency_summary(b, s),
 }
 
 DEFAULT_ARTIFACT_IDS: list[tuple[str, str, str | None]] = [

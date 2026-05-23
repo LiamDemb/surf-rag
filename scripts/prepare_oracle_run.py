@@ -205,6 +205,7 @@ def main() -> int:
     log.info("newly retrieved dense: %d", summary["newly_retrieved_dense"])
     log.info("newly retrieved graph: %d", summary["newly_retrieved_graph"])
     log.info("newly scored: %d", summary["newly_scored"])
+    log.info("oracle sweep wall: %.3fs", summary["oracle_sweep_wall_s"])
     return 0
 
 

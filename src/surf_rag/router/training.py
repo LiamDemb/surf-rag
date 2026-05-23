@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -193,6 +194,7 @@ class TrainRunResult:
     loss_fallback: bool = False
     loss_kwargs: Dict[str, Any] = field(default_factory=dict)
     midpoint_balance_report: Dict[str, Any] | None = None
+    training_wall_s: float = 0.0
 
 
 def train_router(cfg: RouterTrainConfig) -> TrainRunResult:
@@ -287,6 +289,7 @@ def train_router(cfg: RouterTrainConfig) -> TrainRunResult:
     best_epoch = 0
     bad_epochs = 0
 
+    training_start = time.perf_counter()
     for epoch in range(cfg.epochs):
         model.train()
         epoch_train_losses: List[float] = []
@@ -379,6 +382,8 @@ def train_router(cfg: RouterTrainConfig) -> TrainRunResult:
             best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
             best_epoch = epoch
 
+    training_wall_s = time.perf_counter() - training_start
+
     if best_state is not None:
         model.load_state_dict({k: v.to(cfg.device) for k, v in best_state.items()})
 
@@ -395,6 +400,7 @@ def train_router(cfg: RouterTrainConfig) -> TrainRunResult:
         loss_fallback=loss_fallback,
         loss_kwargs=loss_kw,
         midpoint_balance_report=midpoint_balance_report,
+        training_wall_s=training_wall_s,
     )
 
 

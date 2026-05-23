@@ -93,6 +93,7 @@ def test_train_smoke(tmp_path: Path) -> None:
         input_mode="both",
     )
     result = train_router(cfg)
+    assert result.training_wall_s >= 0.0
     assert result.history
     assert result.history[-1]["train_loss"] == pytest.approx(
         result.history[-1]["train_regret"], rel=0, abs=1e-5
