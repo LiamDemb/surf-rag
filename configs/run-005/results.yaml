@@ -1,0 +1,145 @@
+schema_version: surf-rag/pipeline/v1
+experiment_id: results
+
+paths:
+    data_base: data
+    benchmark_base: data/benchmarks
+    router_base: data/orchestrator
+    benchmark_name: surf-bench
+    benchmark_id: main
+    router_id: ndcg@10
+    router_architecture_id: rg
+
+results:
+    bundle_id: "005"
+    output_root: results
+    split: test
+    image_format: pdf
+    theme:
+        dpi: 300
+        font_size: 11
+    oracle:
+        metric: stateful_ndcg
+        k: 10
+        diagnostic_ks: [5, 10, 20]
+        plateau_tau: 1.0e-6
+    router:
+        regressor:
+            architecture_id: rg
+            input_mode: embedding
+            task_type: regression
+        classifier:
+            architecture_id: cls
+            input_mode: embedding
+            task_type: classification
+    policies:
+        dense-only:
+            run_id: "005"
+        graph-only:
+            run_id: "005"
+        50-50:
+            run_id: "005"
+        learned-soft:
+            run_id: "005"
+            router_role: regressor
+        hard-routing:
+            run_id: "005"
+            router_role: classifier
+        rrf:
+            run_id: "005"
+            router_role: regressor
+        oracle-upper-bound:
+            run_id: "005"
+        oracle-classification:
+            run_id: "005"
+            router_role: classifier
+    artifacts:
+        - id: bench_splits
+          kind: table
+        - id: oracle_ops_summary
+          kind: table
+        - id: pipeline_ops_timing
+          kind: table
+        - id: router_training_timing
+          kind: table
+        - id: e2e_startup_latency
+          kind: table
+        - id: pipeline_latency_summary
+          kind: table
+        - id: oracle_stats
+          kind: table
+        - id: endpoint_pref
+          kind: figure
+          figure: endpoint_pref
+        - id: dispersion_curve
+          kind: figure
+          figure: dispersion_curve
+        - id: regressor_metrics
+          kind: table
+        - id: regressor_test_summary
+          kind: table
+        - id: classifier_metrics
+          kind: table
+        - id: regressor_learning_curve
+          kind: figure
+          figure: router_training_learning_curve
+          router_role: regressor
+          show_loss: true
+          show_regret: false
+          include_dev: true
+          show_plot_subtitle: false
+        - id: classifier_learning_curve
+          kind: figure
+          figure: router_training_learning_curve
+          router_role: classifier
+          show_loss: true
+          show_regret: false
+          include_dev: true
+          show_plot_subtitle: false
+        - id: weight_dists
+          kind: figure
+          figure: weight_dists
+        - id: route_confusion
+          kind: figure
+          figure: route_confusion
+        - id: classifier_regret_confusion
+          kind: figure
+          figure: classifier_regret_confusion
+        - id: branch_retrieval
+          kind: table
+        - id: pipeline_retrieval
+          kind: table
+        - id: pipeline_retrieval_perfect_rates
+          kind: table
+          k: 10
+        - id: pipeline_answers
+          kind: table
+        - id: oracle_policy_comparison
+          kind: table
+        - id: pairwise_wilcoxon
+          kind: table
+          k: 10
+        - id: retrieval_by_policy_ci
+          kind: figure
+          figure: retrieval_by_policy_ci
+          ylim_min: 0.5
+          ylim_max: 0.85
+        - id: pairwise_ls_vs_5050
+          kind: figure
+          figure: pairwise_retrieval
+          x_policy: 50-50
+          y_policy: learned-soft
+        - id: retrieval_answer_gain
+          kind: figure
+          figure: retrieval_answer_gain
+        - id: pipeline_retrieval_qa_scatter
+          kind: figure
+          figure: pipeline_retrieval_qa_scatter
+        - id: pipeline_qa_calibration
+          kind: figure
+          figure: pipeline_qa_calibration
+        - id: pipeline_qa_calibration_recall
+          kind: figure
+          figure: pipeline_qa_calibration_recall
+          metric: recall
+          k: 10

@@ -16,7 +16,7 @@
 	build-entity-matching-artifacts corpus-ie-run corpus-ie-retry corpus-finalize corpus-ie-retry-and-finalize
 
 # Default experiment recipe (override per run: make build-corpus CONFIG=configs/e2e/.../x.yaml)
-CONFIG ?= configs/pipelines/surf-bench-200.yaml
+CONFIG ?= configs/run-005/orchestrator-dataset.yaml
 
 -include .env
 export OPENAI_API_KEY

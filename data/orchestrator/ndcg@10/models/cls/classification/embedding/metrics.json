@@ -1,0 +1,73 @@
+{
+  "router_id": "ndcg@10",
+  "router_architecture_id": "cls",
+  "architecture": "mlp-v2",
+  "architecture_kwargs": {
+    "hidden_dim_1": 32,
+    "hidden_dim_2": 8,
+    "dropout_1": 0.25,
+    "dropout_2": 0.1,
+    "activation": "gelu"
+  },
+  "input_mode": "embedding",
+  "task_type": "classification",
+  "loss": "cross_entropy",
+  "loss_kwargs": {},
+  "loss_effective": "cross_entropy",
+  "loss_fallback": false,
+  "best_epoch": 12,
+  "training_wall_s": 1.806,
+  "splits": {
+    "train": {
+      "classification_accuracy": 0.7839536007733204,
+      "classification_error": 0.21604639922667956,
+      "num_rows": 2069.0,
+      "num_rows_total": 2160.0,
+      "num_rows_router_eligible": 2069.0,
+      "num_rows_router_ignored_all_zero": 91.0
+    },
+    "dev": {
+      "classification_accuracy": 0.7528901734104047,
+      "classification_error": 0.24710982658959538,
+      "num_rows": 692.0,
+      "num_rows_total": 720.0,
+      "num_rows_router_eligible": 692.0,
+      "num_rows_router_ignored_all_zero": 28.0
+    },
+    "test": {
+      "classification_accuracy": 0.7923976608187134,
+      "classification_error": 0.20760233918128654,
+      "num_rows": 684.0,
+      "num_rows_total": 720.0,
+      "num_rows_router_eligible": 684.0,
+      "num_rows_router_ignored_all_zero": 36.0
+    },
+    "router_quality_filtering": {
+      "reason": "all_zero_oracle_score",
+      "num_rows_total": 3600.0,
+      "num_rows_router_eligible": 3445.0,
+      "num_rows_router_ignored_all_zero": 155.0
+    },
+    "config_summary": {
+      "architecture": "mlp-v2",
+      "model_config": {
+        "embedding_dim": 256,
+        "input_mode": "embedding",
+        "hidden_dim_1": 32,
+        "hidden_dim_2": 8,
+        "dropout_1": 0.25,
+        "dropout_2": 0.1,
+        "activation": "gelu",
+        "task_type": "classification"
+      },
+      "task_type": "classification"
+    }
+  },
+  "router_quality_filtering": {
+    "reason": "all_zero_oracle_score",
+    "num_rows_total": 3600.0,
+    "num_rows_router_eligible": 3445.0,
+    "num_rows_router_ignored_all_zero": 155.0
+  },
+  "midpoint_balance_masking": null
+}

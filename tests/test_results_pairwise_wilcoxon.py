@@ -11,12 +11,12 @@ from surf_rag.results.bundle import ResultsBundle
 from surf_rag.results.tables.pairwise_wilcoxon import build_pairwise_wilcoxon
 
 
-def _metrics_row(qid: str, ndcg: float) -> dict:
+def _metrics_row(qid: str, ndcg: float, *, recall: float = 0.5) -> dict:
     return {
         "question_id": qid,
         "retrieval_before_ce": {
             "retrieval": {
-                "10": {"ndcg": ndcg, "hit": 1.0, "recall": 0.5},
+                "10": {"ndcg": ndcg, "hit": 1.0, "recall": recall},
             }
         },
     }
@@ -115,3 +115,45 @@ def test_pairwise_wilcoxon_three_comparisons(tmp_path: Path) -> None:
     )
     assert float(rrf_row["p_value"]) >= 0.0
     assert float(rrf_row["p_value"]) <= 1.0
+    assert int(rrf_row["n_ndcg_win"]) == 2
+    assert int(rrf_row["n_ndcg_loss"]) == 1
+    assert int(rrf_row["n_ndcg_tie"]) == 0
+    assert float(rrf_row["pct_ndcg_win"]) == 100.0 * 2 / 3
+    assert int(rrf_row["n_recall_perfect_baseline_only"]) == 0
+    assert int(rrf_row["n_recall_perfect_comparison_only"]) == 0
+    assert int(rrf_row["n_recall_perfect_both"]) == 0
+    assert int(rrf_row["n_recall_perfect_neither"]) == 3
+
+
+def test_pairwise_wilcoxon_recall_coverage(tmp_path: Path) -> None:
+    cfg_path, root = _write_fixture(tmp_path)
+    bench = root / "benchmarks" / "bench" / "v1" / "evaluations"
+    ls_rows = [
+        _metrics_row("q1", 0.5, recall=1.0),
+        _metrics_row("q2", 0.5, recall=0.5),
+        _metrics_row("q3", 0.5, recall=1.0),
+    ]
+    rrf_rows = [
+        _metrics_row("q1", 0.5, recall=0.5),
+        _metrics_row("q2", 0.5, recall=1.0),
+        _metrics_row("q3", 0.5, recall=0.5),
+    ]
+    (bench / "learned-soft" / "run1" / "metrics.json").write_text(
+        json.dumps({"per_question": ls_rows}), encoding="utf-8"
+    )
+    (bench / "rrf" / "run1" / "metrics.json").write_text(
+        json.dumps({"per_question": rrf_rows}), encoding="utf-8"
+    )
+
+    cfg = load_pipeline_config(cfg_path)
+    bundle = ResultsBundle.from_config(cfg)
+    spec = ResultsArtifactSpec(id="pairwise_wilcoxon", kind="table", k=10)
+    df, _ = build_pairwise_wilcoxon(bundle, spec)
+
+    rrf_row = df[
+        (df["dataset_source"] == "all") & (df["comparison_policy"] == "rrf")
+    ].iloc[0]
+    assert int(rrf_row["n_recall_perfect_baseline_only"]) == 2
+    assert int(rrf_row["n_recall_perfect_comparison_only"]) == 1
+    assert int(rrf_row["n_recall_perfect_both"]) == 0
+    assert int(rrf_row["n_recall_perfect_neither"]) == 0

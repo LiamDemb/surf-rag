@@ -1,0 +1,91 @@
+{
+  "router_id": "ndcg@10",
+  "router_architecture_id": "rg",
+  "architecture": "mlp-v2",
+  "architecture_kwargs": {
+    "hidden_dim_1": 32,
+    "hidden_dim_2": 8,
+    "dropout_1": 0.25,
+    "dropout_2": 0.1,
+    "activation": "gelu"
+  },
+  "input_mode": "embedding",
+  "task_type": "regression",
+  "loss": "regret",
+  "loss_kwargs": {},
+  "loss_effective": "regret",
+  "loss_fallback": false,
+  "best_epoch": 41,
+  "training_wall_s": 4.117,
+  "splits": {
+    "train": {
+      "mean_regret": 0.034330978989601135,
+      "normalized_regret": 0.03991491495827036,
+      "argmax_interval_distance_mae": 0.049169223645765925,
+      "argmax_interval_distance_rmse": 0.13591850411003273,
+      "stratified_regret_q1": 0.0012570002249308995,
+      "stratified_regret_q2": 0.030142096993540427,
+      "stratified_regret_q3": 0.052086301879305213,
+      "stratified_regret_q4": 0.0539024792453076,
+      "num_rows": 2069.0,
+      "num_rows_total": 2160.0,
+      "num_rows_router_eligible": 2069.0,
+      "num_rows_router_ignored_all_zero": 91.0
+    },
+    "dev": {
+      "mean_regret": 0.050709184259176254,
+      "normalized_regret": 0.058839436213810756,
+      "argmax_interval_distance_mae": 0.06028713991144145,
+      "argmax_interval_distance_rmse": 0.14449231842130214,
+      "stratified_regret_q1": 0.0056087505610692015,
+      "stratified_regret_q2": 0.031064306983368935,
+      "stratified_regret_q3": 0.06328709717473888,
+      "stratified_regret_q4": 0.10287657328423737,
+      "num_rows": 692.0,
+      "num_rows_total": 720.0,
+      "num_rows_router_eligible": 692.0,
+      "num_rows_router_ignored_all_zero": 28.0
+    },
+    "test": {
+      "mean_regret": 0.034102436155080795,
+      "normalized_regret": 0.03971887895842757,
+      "argmax_interval_distance_mae": 0.04980143674850812,
+      "argmax_interval_distance_rmse": 0.1320091628095533,
+      "stratified_regret_q1": 0.0013703163604290164,
+      "stratified_regret_q2": 0.024615066790441325,
+      "stratified_regret_q3": 0.05593989131569165,
+      "stratified_regret_q4": 0.05448447346513034,
+      "num_rows": 684.0,
+      "num_rows_total": 720.0,
+      "num_rows_router_eligible": 684.0,
+      "num_rows_router_ignored_all_zero": 36.0
+    },
+    "router_quality_filtering": {
+      "reason": "all_zero_oracle_score",
+      "num_rows_total": 3600.0,
+      "num_rows_router_eligible": 3445.0,
+      "num_rows_router_ignored_all_zero": 155.0
+    },
+    "config_summary": {
+      "architecture": "mlp-v2",
+      "model_config": {
+        "embedding_dim": 256,
+        "input_mode": "embedding",
+        "hidden_dim_1": 32,
+        "hidden_dim_2": 8,
+        "dropout_1": 0.25,
+        "dropout_2": 0.1,
+        "activation": "gelu",
+        "task_type": "regression"
+      },
+      "task_type": "regression"
+    }
+  },
+  "router_quality_filtering": {
+    "reason": "all_zero_oracle_score",
+    "num_rows_total": 3600.0,
+    "num_rows_router_eligible": 3445.0,
+    "num_rows_router_ignored_all_zero": 155.0
+  },
+  "midpoint_balance_masking": null
+}

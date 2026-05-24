@@ -55,7 +55,7 @@ __pycache__/
 .pytest_cache
 
 # Development documentation
-/docs/dev
+docs/
 /docs/dissertation
 /scripts/dev
 prompts/dev

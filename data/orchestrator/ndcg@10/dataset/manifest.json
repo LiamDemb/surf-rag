@@ -1,0 +1,86 @@
+{
+  "schema_version": 3,
+  "created_at": "2026-05-22T19:59:24.928514+00:00",
+  "router_id": "ndcg@10",
+  "dataset_id": "ndcg@10",
+  "source_benchmark": {
+    "name": "surf-bench",
+    "id": "main",
+    "benchmark_path": "/Users/liamdemb/Projects/Honours Research/surf-rag/data/benchmarks/surf-bench/main/benchmark/benchmark.jsonl"
+  },
+  "source_corpus": {
+    "retrieval_asset_dir": "/Users/liamdemb/Projects/Honours Research/surf-rag/data/benchmarks/surf-bench/main/corpus"
+  },
+  "oracle": {
+    "router_id": "ndcg@10",
+    "run_root": "/Users/liamdemb/Projects/Honours Research/surf-rag/data/orchestrator/ndcg@10/oracle",
+    "router_labels": "/Users/liamdemb/Projects/Honours Research/surf-rag/data/orchestrator/ndcg@10/oracle/router_labels.jsonl",
+    "labeling_strategy": "oracle-curve-v1"
+  },
+  "supervision": {
+    "targets": {
+      "regression": {
+        "target": "oracle_curve",
+        "validity_flag": "is_valid_for_router_training"
+      },
+      "classification": {
+        "target": "oracle_binary_class_id",
+        "validity_flag": "is_valid_for_router_training_classification",
+        "class_names": [
+          "graph",
+          "dense"
+        ],
+        "class_to_weight_map": {
+          "graph": 0.0,
+          "dense": 1.0
+        },
+        "tie_break_order": [
+          "dense",
+          "graph"
+        ],
+        "target_version": "binary_v1"
+      }
+    }
+  },
+  "feature_set_version": "1",
+  "embedding_model": "text-embedding-3-large",
+  "split": {
+    "stratification": "dataset_source",
+    "seed": 42,
+    "train_ratio": 0.6,
+    "dev_ratio": 0.2,
+    "test_ratio": 0.2
+  },
+  "artifacts": {
+    "router_dataset": "router_dataset.parquet",
+    "split_summary": "split_summary.json",
+    "split_question_ids": "split_question_ids.json",
+    "feature_stats": "feature_stats.json",
+    "reports_dir": "reports"
+  },
+  "embedding_provider": "openai",
+  "embedding_dim": 256,
+  "openai_embedding_dimensions": 256,
+  "embedding_cache": {
+    "embedding_provider": "openai",
+    "embedding_model": "text-embedding-3-large",
+    "cache_mode": "required",
+    "hits": 3600,
+    "misses": 0,
+    "live_computed": 0,
+    "appended_rows": 0,
+    "openai_embedding_dimensions": 256,
+    "openai_dimensions": 256,
+    "cache_root": "/Users/liamdemb/Projects/Honours Research/surf-rag/data/benchmarks/surf-bench/main/query_embeddings/openai/text-embedding-3-large/dim-256/002",
+    "embedding_source": "cache",
+    "embedding_dim": 256,
+    "cache_id": "002",
+    "writeback": true,
+    "benchmark_path": "/Users/liamdemb/Projects/Honours Research/surf-rag/data/benchmarks/surf-bench/main/benchmark/benchmark.jsonl"
+  },
+  "row_count": 3600,
+  "row_count_total": 3600,
+  "row_count_router_eligible": 3445,
+  "row_count_router_ignored_all_zero": 155,
+  "ignored_questions_report": "ignored_router_questions.json"
+}
