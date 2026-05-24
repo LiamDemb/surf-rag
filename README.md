@@ -1,89 +1,146 @@
-# SuRF-RAG: Supervised Retrieval Fusion for Mixed-Reasoning QA
+# SuRF-RAG: Supervised Retrieval Fusion of DenseRAG and GraphRAG for Mixed-Reasoning QA
 
-## Router training (architectures + input ablations)
+SuRF-RAG is a research codebase for query-adaptive fusion of **dense** and **graph** retrieval over a Wikipedia corpus. A lightweight supervised router predicts, per question, how much weight to give each branch. Retrieved evidence is rescored and reranked according to this weight and passed to an LLM for answer generation. The goal is to improve mixed-reasoning QA relative to dense-only, graph-only, and fixed-fusion baselines.
 
-The router is trained on a Parquet dataset built from oracle performance curves. One router dataset id (`ROUTER_ID`) shares one `dataset/`; trained checkpoints, metrics, and per-split predictions are stored under architecture + input-mode folders:
+## How it works
 
 ```text
-$DATA_BASE/router/$ROUTER_ID/
-  oracle/
-  dataset/
-    router_dataset.parquet
-    manifest.json
-  models/
-    $ROUTER_ARCHITECTURE_ID/
-      both/            # default: query embedding + normalized query features
-      query-features/  # V1 query features only
-      embedding/       # query embedding only
-        model.pt
-        manifest.json
-        metrics.json
-        training_history.json
-        predictions_{train,dev,test}.jsonl
-  model/               # legacy single-model location (read fallback)
-    <input_mode>/
+Benchmark ingest → Wikipedia corpus + knowledge graph
+        ↓
+Oracle fusion sweep (dense/graph branch cache + weight grid)
+        ↓
+Orchestrator training (predict fusion weight or branch class)
+        ↓
+End-to-end evaluation (retrieval → generation → QA metrics)
 ```
 
-**Input modes**
+| Component        | Role                                                                         |
+| ---------------- | ---------------------------------------------------------------------------- |
+| **DenseRAG**     | Sentence-transformer embeddings + FAISS over corpus chunks                   |
+| **GraphRAG**     | Entity–relation graph from corpus IE; query-linked seeds + heterogeneous PPR |
+| **Orchestrator** | Supervised MLP trained on oracle labels                                      |
+| **E2E**          | Routed retrieval, OpenAI batch QA generation                                 |
 
-| Mode             | Uses                                                                      |
-| ---------------- | ------------------------------------------------------------------------- |
-| `both`           | `query_embedding` and `feature_vector_norm` (14-d normalized V1 features) |
-| `query-features` | `feature_vector_norm` only                                                |
-| `embedding`      | `query_embedding` only                                                    |
+All stages are driven by YAML configs and wrapped by the [Makefile](Makefile).
 
-**Makefile**
+## Requirements
 
-- One variant: set `ROUTER_INPUT_MODE` (default `both`), then `make router-train` / `make router-eval`.
-- All ablations: `make router-train-ablations` and `make router-evaluate-ablations` (modes listed in `ROUTER_INPUT_MODES`).
+- Python **3.12** (see `pyproject.toml` for supported patch exclusions)
+- [Poetry](https://python-poetry.org/)
+- **OpenAI API key** for corpus IE, optional OpenAI embeddings, and E2E generation (set in `.env`)
+- Hugging Face model cache (`HF_HOME` / `TRANSFORMERS_CACHE`, optional in `.env`)
+- **spaCy** English model for query features: `python -m spacy download en_core_web_sm`
+- Disk space for Wikipedia articles, indexes, graphs, and evaluation artifacts under `data/` (not shipped in git)
 
-**CLI** (see `poetry run python -m scripts.router.train_router --help`):
+## Installation
 
-- `--router-architecture-id` is required for training and maps to `models/<id>/...`.
-- `--architecture` selects implementation (`mlp-v1`, `logreg-v1`, `polyreg-v1`, or `tower_v01`).
-- `--architecture-kwargs` accepts a JSON object (validated per architecture).
-- `--input-mode` or env `ROUTER_INPUT_MODE` selects the branch-input ablation.
+```bash
+git clone <repo-url>
+cd surf-rag
+cp .env.example .env   # add OPENAI_API_KEY=...
+poetry install
+poetry run pre-commit install   # optional
+make setup-models               # warm embedding + cross-encoder weights
+make test
+```
 
-To compare runs, use `metrics.json` (and optional `predictions_*.jsonl`) under each `models/<router_architecture_id>/<input_mode>/` for the same `ROUTER_ID`.
+## Configuration
 
-Router **`metrics.json`** reports **`mean_regret`**, **`normalized_regret`**, and tie-aware weight calibration **`argmax_interval_distance_mae`** / **`argmax_interval_distance_rmse`** (distance from the predicted dense weight to the nearest point in the oracle **argmax interval**: all grid weights tied at the curve maximum). Prediction JSONL rows include **`oracle_curve`**, **`predicted_weight`**, and **`target_oracle_best_score`** (max over the curve); figures derive intervals using **`model.weight_grid`** from the model **`manifest.json`**. The router dataset is stratified by benchmark **`dataset_source`** (see **`manifest.json`** → **`split.stratification`**).
+Point every `make` target at a pipeline YAML:
 
-**Config keys**
+```bash
+export CONFIG=configs/run-005/orchestrator-dataset.yaml
+make print-resolved-config
+```
 
-- `paths.router_architecture_id`: chosen architecture artifact id for downstream learned-router inference.
-- `router.train.architecture`: architecture family (`mlp-v1`, `logreg-v1`, `polyreg-v1`, `tower_v01`).
-- **`router.train.excluded_features`**: optional list of V1 feature names removed before every architecture’s feature branch (`mlp-v1`, `logreg-v1`, `polyreg-v1`, `tower_v01`). Train-level entries override legacy **`architecture_kwargs.excluded_features`** when both are set.
-- `polyreg-v1`: logistic regression on polynomial features up to **`architecture_kwargs.degree`** (default `2`). Optional **`max_expanded_features`** caps the monomial count (large `degree` × wide inputs will error until you lower degree or shrink inputs).
-- `router.train.architecture_kwargs`: per-architecture validated kwargs.
+The config files used in the final testing presented in this project's dissertation live under [`configs/run-005/`](configs/run-005/) (orchestrator dataset, regressor/classifier training, E2E regression/classification, results).
 
-When `paths.router_architecture_id` is omitted in e2e:
+## Typical workflow
 
-- if exactly one child directory exists under `.../models/`, it is auto-selected;
-- if multiple exist, the run fails with a disambiguation error;
-- if no `models/` bundle exists, inference falls back to legacy `model/<input_mode>/`.
+Adjust `CONFIG` for each stage. Order assumes benchmarks, corpus, and indexes already exist (see [Data](#data)).
 
-## End-to-end benchmark & evaluation
+**1. Corpus (one-time per benchmark slice)**
 
-Benchmark bundles are defined in your pipeline YAML (`paths.benchmark_base`, `benchmark_name`, `benchmark_id`). Routed retrieval, optional cross-encoder reranking, OpenAI Batch generation, and overlap-split metrics are documented in **[docs/dev/end-to-end-system-and-evaluation.md](docs/dev/end-to-end-system-and-evaluation.md)**. Make targets: `e2e-prepare`, `e2e-submit`, `e2e-collect`, `e2e-evaluate`, `e2e-smoke-test-v01` (all use `CONFIG`, default `configs/pipelines/surf-bench-200.yaml`).
+```bash
+CONFIG=configs/your-pipeline.yaml make pipeline
+# ingest → fetch Wikipedia → align 2Wiki support → build corpus → filter benchmark
+```
 
-`e2e.policy` supports `dense-only`, `graph-only`, `50-50`, `learned-soft`, `hard-routing`, `hybrid`, `oracle-upper-bound`, and `oracle-classification`.
-For `oracle-upper-bound`, retrieval uses the per-question best fusion bin over the full oracle weight grid from `oracle_scores.jsonl`. For `oracle-classification`, retrieval uses the better of the two endpoint bins only (`dense_weight` **0.0** vs **1.0**), with dense winning on ties (same rule as binary oracle labels in `soft_labels`). Both oracle e2e policies write under `evaluations/<policy>/<run_id>/`, are **test-only**, require `paths.router_id`, and fail fast if router test QIDs or oracle caches are missing or invalid.
+**Note:** this pipeline was created for our specific research purposes. Running this corpus creation with a real API key can be **very expensive**. Please make sure you understand the cost of the run you are about to do before executing these scripts.
 
-**Config-driven runs:** every stage uses `--config "$(CONFIG)"`. Override with `CONFIG=...` or `make print-resolved-config`. See **[docs/config-driven-workflows.md](docs/config-driven-workflows.md)** and `configs/templates/`.
+**2. Oracle labels**
 
-**LLM QA generation** always uses a forced OpenAI **`format_answer`** tool call (`reasoning` plus short `answer`). Batch collect writes `answer` (for EM/F1), `generation_reasoning`, and optional `generation_parse_error` into `generation/answers.jsonl`.
+```bash
+CONFIG=configs/your-pipeline.yaml make oracle-labels
+```
 
-### Oracle retrieval upper-bound report
+**3. Router dataset and training**
 
-You can aggregate retrieval-only oracle upper-bound metrics on the router test split without rerunning retrieval:
+```bash
+CONFIG=configs/run-005/orchestrator-dataset.yaml make router-pipeline
+CONFIG=configs/run-005/regressor.yaml make router-train
+CONFIG=configs/run-005/regressor.yaml make router-evaluate
+```
 
-- `poetry run python -m scripts.router.report_oracle_upper_bound --config <pipeline.yaml>`
-- Output defaults to `data/router/<router_id>/oracle/reports/oracle_upper_bound_test.json`
-- Metrics include NDCG/Hit/Recall at `@5`, `@10`, and `@20`
+**4. End-to-end benchmark**
 
-### Model cache and corpus entity artifacts
+```bash
+CONFIG=configs/run-005/e2e-rg.yaml make e2e-submit      # submits OpenAI batch
+# wait for batch completion
+CONFIG=configs/run-005/e2e-rg.yaml make e2e-collect
+CONFIG=configs/run-005/e2e-rg.yaml make e2e-evaluate
+```
 
-- **`make setup-models`** — downloads/warms `sentence-transformers/all-MiniLM-L6-v2` and `cross-encoder/ms-marco-MiniLM-L-6-v2` using `HF_HOME` / `TRANSFORMERS_CACHE` (exported by the Makefile; see `.env.example`).
-- **Shared in-process models** — `src/surf_rag/core/model_cache.py` deduplicates `SentenceTransformer` / `CrossEncoder` construction across dense, graph, reranking, and router paths.
-- **`make build-entity-matching-artifacts`** — builds `entity_phrase_records.parquet`, `entity_phrase_matcher.pkl`, and `entity_matching_manifest.json` under `CORPUS_DIR` for faster, reproducible `kg_linkable` features (use `ENTITY_MATCHING_FORCE=1` to rebuild).
-- **E2E router batching** — `E2E_ROUTER_INFERENCE_BATCH_SIZE` (default `32`) batches learned-router query tensors; see the e2e dev doc for details.
+Use `make help` for the full target list (ablations, figures, LLM judge, answerability audits, `results-build`, etc.).
+
+**Dry run:** `make e2e-prepare` runs retrieval locally without submitting a generation batch.
+
+**All policies:** `make e2e-run-all-policies` (optional `E2E_RUN_ID=…`).
+
+## Routing policies
+
+| Policy         | Description                                               |
+| -------------- | --------------------------------------------------------- |
+| `dense-only`   | Dense branch only                                         |
+| `graph-only`   | Graph branch only                                         |
+| `50-50`        | Fixed equal fusion                                        |
+| `rrf`          | Reciprocal rank fusion of both branches                   |
+| `learned-soft` | Router predicts continuous dense weight (regression)      |
+| `hard-routing` | Router picks dense **or** graph endpoint (classification) |
+
+Regression vs classification training and policy naming are documented in [docs/router_dual_task_guide.md](docs/router_dual_task_guide.md).
+
+## Project layout and contents
+
+```text
+src/surf_rag/       Core library (retrieval, graph, router, evaluation, generation)
+scripts/            CLI entry points (corpus, oracle, router, e2e, results)
+configs/            Pipeline YAML recipes (run-005 committed; more may be local)
+prompts/            LLM prompts (generation, corpus IE)
+tests/              Pytest suite
+data/               Artifacts at runtime
+```
+
+**Note:** This repositorty contains several extra files, modules and technologies that were created throughout the development of this project and were NOT used in the final experimentation and results of the Honours thesis. Only what was reported in the paper is considered part of the final system and experimentation. At this stage, this repository is designed solely for this purpose.
+
+## Data
+
+Source benchmarks and corpora are **not** included in the repository. Download helpers:
+
+```bash
+poetry run python scripts/datasets/nq_download.py --help
+poetry run python scripts/datasets/2wiki_download.py --help
+```
+
+After ingest, artifacts are written under `data/` (benchmarks, processed corpus, FAISS indexes, graphs, router checkpoints, E2E run outputs). Router checkpoints follow:
+
+```text
+data/router/<router_id>/
+  oracle/           Oracle branch caches and soft labels
+  dataset/          router_dataset.parquet
+  models/<arch>/    Trained checkpoints (per input mode / task type)
+```
+
+## Citation
+
+If you use this code in academic work, please cite the associated thesis.
