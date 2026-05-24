@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-05-22T20:14:50.342942+00:00",
+  "run_id": "005",
+  "benchmark": "surf-bench",
+  "split": "test",
+  "pipeline_name": "routed-learned-soft",
+  "retrieval_asset_dir": "/Users/liamdemb/Projects/Honours Research/surf-rag/data/benchmarks/surf-bench/main/corpus",
+  "generator_model": "gpt-4o-mini",
+  "include_graph_provenance": false,
+  "completion_window": "24h",
+  "artifacts": {
+    "retrieval_results": "retrieval/retrieval_results.jsonl",
+    "retrieval_results_pretrunc": "retrieval/retrieval_results_pretrunc.jsonl",
+    "batch_input": "batch/batch_input.jsonl",
+    "batch_state": "batch/batch_state.json",
+    "generation_answers": "generation/answers.jsonl",
+    "resolved_config": "resolved_config.yaml",
+    "batch_output_raw": "batch/batch_output_raw.jsonl",
+    "batch_output_parsed": "batch/batch_output_parsed.jsonl",
+    "llm_judge_verdicts": "llm_judge/verdicts.jsonl"
+  },
+  "e2e": {
+    "schema": "surf-rag/e2e/v1",
+    "benchmark_id": "main",
+    "routing_policy": "learned-soft",
+    "branch_top_k": 25,
+    "fusion_keep_k": 10,
+    "rrf_k": 60,
+    "reranker": "none",
+    "rerank_top_k": 10,
+    "cross_encoder_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+    "cross_encoder_device": null,
+    "retrieval_metric_base_ks": [
+      5,
+      10,
+      20
+    ],
+    "router_id": "ndcg@10",
+    "router_architecture_id": "rg",
+    "router_input_mode": "embedding",
+    "router_task_type": "regression",
+    "router_inference_batch_size": 32,
+    "branch_cache": {
+      "mode": "router_oracle",
+      "dense_jsonl": "/Users/liamdemb/Projects/Honours Research/surf-rag/data/orchestrator/ndcg@10/oracle/retrieval_dense.jsonl",
+      "graph_jsonl": "/Users/liamdemb/Projects/Honours Research/surf-rag/data/orchestrator/ndcg@10/oracle/retrieval_graph.jsonl",
+      "strict_manifest": true,
+      "manifest_schema_version": 3,
+      "manifest_branch_top_k": 25,
+      "manifest_benchmark_path": "/Users/liamdemb/Projects/Honours Research/surf-rag/data/benchmarks/surf-bench/main/benchmark/benchmark.jsonl",
+      "manifest_retrieval_asset_dir": "/Users/liamdemb/Projects/Honours Research/surf-rag/data/benchmarks/surf-bench/main/corpus",
+      "oracle_run_root": "/Users/liamdemb/Projects/Honours Research/surf-rag/data/orchestrator/ndcg@10/oracle",
+      "provenance_created_at": "2026-05-22T19:31:17.465988+00:00",
+      "sequential_retrieval_total": false
+    },
+    "latency_protocol": {
+      "version": "v2",
+      "included_components": [
+        "routing_input",
+        "router_predict",
+        "branch_retrieval",
+        "fusion",
+        "retrieval_reported_total"
+      ],
+      "definitions": {
+        "retrieval_reported_total_ms": "Comparable per-question total: same as retrieval_stage_total_ms unless dual-branch sequential frozen fusion omitted MLP from the pipe total; then adds router_predict_ms. Reranker wall time remains excluded."
+      },
+      "excluded_components": [
+        "startup",
+        "warmup",
+        "reranker",
+        "generation"
+      ],
+      "warmup_questions": 50
+    },
+    "startup_latency_ms": {
+      "startup_total_ms": 166487.40154108964,
+      "startup_components": {
+        "dense_init_ms": 14649.893041001633,
+        "graph_init_ms": 51831.14154206123,
+        "router_init_ms": 100006.25650002621
+      }
+    },
+    "router_query_embedding_cache": {
+      "cache_mode": "required",
+      "embedding_provider": "openai",
+      "embedding_model": "text-embedding-3-large",
+      "cache_id": "002",
+      "cache_root": "/Users/liamdemb/Projects/Honours Research/surf-rag/data/benchmarks/surf-bench/main/query_embeddings/openai/text-embedding-3-large/dim-256/002",
+      "stats": {
+        "hits": 3650,
+        "misses": 0,
+        "live_computed": 0,
+        "appended_rows": 0
+      }
+    }
+  },
+  "updated_at": "2026-05-23T04:27:26.481229+00:00"
+}
