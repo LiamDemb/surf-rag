@@ -1,0 +1,43 @@
+schema_version: surf-rag/pipeline/v1
+experiment_id: classifier
+seed: 42
+
+paths:
+    data_base: data
+    benchmark_base: data/benchmarks
+    router_base: data/orchestrator
+    benchmark_name: surf-bench
+    benchmark_id: main
+    router_id: ndcg@10
+    router_architecture_id: cls
+    figures_base: figures
+
+model_setup:
+    embedding_model: all-MiniLM-L6-v2
+
+router:
+    train:
+        task_type: classification
+        loss: cross_entropy
+        input_mode: embedding
+        architecture: mlp-v2
+        architecture_kwargs:
+            hidden_dim_1: 32
+            hidden_dim_2: 8
+            dropout_1: 0.25
+            dropout_2: 0.1
+            activation: gelu
+        epochs: 100
+        batch_size: 32
+        learning_rate: 0.0001
+        device: cpu
+
+    dataset:
+        embedding_provider: openai
+        embedding_model: text-embedding-3-large
+        openai_embedding_dimensions: 256
+        embedding_cache_mode: auto
+        embedding_cache_id: "002"
+
+secrets:
+    openai_api_key_env: OPENAI_API_KEY

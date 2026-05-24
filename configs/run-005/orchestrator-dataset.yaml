@@ -1,0 +1,44 @@
+# Orchestrator dataset
+schema_version: surf-rag/pipeline/v1
+experiment_id: orchestrator-dataset
+seed: 42
+
+paths:
+    data_base: data
+    benchmark_base: data/benchmarks
+    router_base: data/orchestrator
+    benchmark_name: surf-bench
+    benchmark_id: main
+    router_id: ndcg@10
+
+model_setup:
+    embedding_model: all-MiniLM-L6-v2
+
+retrieval:
+    # taken from the graph rag grid search tuning
+    graph_ppr_alpha: 0.9
+    graph_transition_mode: support
+    graph_seed_softmax_temperature: 0.1
+    graph_entity_chunk_edge_weight: 0.9
+    graph_bidirectional: true
+    graph_max_hops: 2
+
+oracle:
+    branch_top_k: 25
+    fusion_keep_k: 10
+    oracle_metric: stateful_ndcg
+    oracle_metric_k: 10
+
+router:
+    dataset:
+        embedding_provider: openai
+        embedding_model: text-embedding-3-large
+        openai_embedding_dimensions: 256
+        embedding_cache_mode: auto
+        embedding_cache_id: "002"
+        train_ratio: 0.6
+        dev_ratio: 0.2
+        test_ratio: 0.2
+
+secrets:
+    openai_api_key_env: OPENAI_API_KEY
