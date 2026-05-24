@@ -1,0 +1,43 @@
+{
+  "version": "1",
+  "means": {
+    "content_token_len": 5.345833333333333,
+    "quoted_span_count": 0.0060185185185185185,
+    "numeric_or_date_token_count": 0.20555555555555555,
+    "named_entity_count": 0.7907407407407407,
+    "kg_linkable_entity_ratio": 0.9063271604938272,
+    "noun_phrase_count": 3.4962962962962965,
+    "relation_cue_density": 0.04359896276562943,
+    "max_dependency_depth": 4.404629629629629,
+    "coord_subordination_count": 0.8833333333333333
+  },
+  "stds": {
+    "content_token_len": 1.7434669293581775,
+    "quoted_span_count": 0.07736321359424121,
+    "numeric_or_date_token_count": 0.5951530850872733,
+    "named_entity_count": 0.7929210934877632,
+    "kg_linkable_entity_ratio": 0.2823821557984838,
+    "noun_phrase_count": 1.48264162969913,
+    "relation_cue_density": 0.08343615392184354,
+    "max_dependency_depth": 1.6615357695039925,
+    "coord_subordination_count": 1.201858989277249
+  },
+  "z_score_features": [
+    "content_token_len",
+    "quoted_span_count",
+    "numeric_or_date_token_count",
+    "named_entity_count",
+    "kg_linkable_entity_ratio",
+    "noun_phrase_count",
+    "relation_cue_density",
+    "max_dependency_depth",
+    "coord_subordination_count"
+  ],
+  "identity_features": [
+    "bridge_composition_indicator",
+    "comparison_indicator",
+    "multi_entity_indicator",
+    "numeric_count_indicator",
+    "temporal_indicator"
+  ]
+}

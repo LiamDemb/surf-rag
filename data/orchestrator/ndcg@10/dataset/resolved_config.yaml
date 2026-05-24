@@ -1,0 +1,215 @@
+schema_version: surf-rag/pipeline/v1
+experiment_id: orchestrator-dataset
+seed: 42
+paths:
+  data_base: data
+  benchmark_base: data/benchmarks
+  router_base: data/orchestrator
+  figures_base: null
+  benchmark_name: surf-bench
+  benchmark_id: main
+  router_id: ndcg@10
+  router_architecture_id: null
+  hf_home: null
+  transformers_cache: null
+raw_sources:
+  nq_path: data/raw/nq_100.jsonl
+  wiki2_path: data/raw/2wikimultihop_100.jsonl
+  hotpotqa_path: null
+  nq_version: null
+  wiki2_version: null
+  hotpotqa_version: null
+model_setup:
+  spacy_model: en_core_web_sm
+  embedding_model: all-MiniLM-L6-v2
+  cross_encoder_model: cross-encoder/ms-marco-MiniLM-L-6-v2
+  cross_encoder_device: null
+corpus:
+  max_pages: 12
+  max_hops: 2
+  max_list_pages: 2
+  max_country_pages: 1
+  chunk_min_tokens: 500
+  chunk_max_tokens: 800
+  chunk_overlap_tokens: 100
+  fetch_missing: false
+alignment:
+  full_report: false
+  keep_unresolved: false
+  tau_sem: null
+  tau_lex: null
+entity_matching:
+  build_artifacts: true
+  force: false
+  max_df: 8
+  max_per_query: 12
+  min_key_len: 3
+oracle:
+  branch_top_k: 25
+  fusion_keep_k: 10
+  oracle_metric: stateful_ndcg
+  oracle_metric_k: 10
+router:
+  dataset:
+    embedding_model: text-embedding-3-large
+    embedding_provider: openai
+    embedding_cache_mode: auto
+    embedding_cache_id: '002'
+    embedding_cache_path: null
+    embedding_cache_writeback: true
+    openai_embedding_dimensions: 256
+    train_ratio: 0.6
+    dev_ratio: 0.2
+    test_ratio: 0.2
+  train:
+    epochs: 100
+    batch_size: 32
+    learning_rate: 0.001
+    device: cpu
+    architecture: mlp-v1
+    architecture_kwargs: {}
+    excluded_features: []
+    input_mode: both
+    midpoint_balance_masking: false
+    midpoint_balance_epsilon: 1.0e-06
+    loss: regret
+    loss_kwargs: {}
+    task_type: regression
+    input_modes:
+    - both
+    - query-features
+    - embedding
+    task_types:
+    - regression
+    - classification
+retrieval:
+  dense_model: all-MiniLM-L6-v2
+  graph_max_hops: 2
+  graph_bidirectional: true
+  graph_entity_vector_top_k: 3
+  graph_entity_vector_threshold: 0.5
+  graph_hop_support_threshold: 0.5
+  graph_ppr_alpha: 0.9
+  graph_ppr_max_iter: 64
+  graph_ppr_tol: 1.0e-06
+  graph_transition_mode: support
+  graph_max_entities: 256
+  graph_max_paths: 500
+  graph_max_frontier_pops: 50000
+  graph_seed_softmax_temperature: 0.1
+  graph_entity_chunk_edge_weight: 0.9
+generation:
+  provider: openai
+  model: gpt-4o-mini
+  reasoning_effort: null
+  temperature: 0.0
+  max_tokens: 512
+  prompt_file: prompts/generator.txt
+  include_graph_provenance: false
+  completion_window: 24h
+  batch_max_requests: 50000
+e2e:
+  run_id: null
+  split: test
+  policy: learned-soft
+  policies:
+  - dense-only
+  - graph-only
+  - 50-50
+  - rrf
+  - learned-soft
+  - hard-routing
+  - hybrid
+  - oracle-upper-bound
+  - oracle-classification
+  branch_top_k: 25
+  fusion_keep_k: 10
+  rrf_k: 60
+  reranker: none
+  rerank_top_k: 5
+  cross_encoder_model: cross-encoder/ms-marco-MiniLM-L-6-v2
+  router_device: cpu
+  router_input_mode: both
+  router_task_type: regression
+  router_confidence_threshold: 0.7
+  router_fallback_regressor_id: null
+  router_fallback_architecture_id: null
+  router_inference_batch_size: 32
+  router_embedding_provider: null
+  router_embedding_cache_mode: auto
+  router_embedding_cache_id: null
+  router_embedding_cache_path: null
+  router_embedding_cache_writeback: true
+  router_openai_embedding_dimensions: null
+  latency_warmup_questions: 0
+  limit: null
+  only_question_ids: []
+  dry_run: false
+  include_graph_provenance: false
+  completion_window: 24h
+  apply_answerability_audit: false
+  branch_cache:
+    mode: 'off'
+    oracle_router_id: null
+    dense_jsonl: null
+    graph_jsonl: null
+    strict_manifest: true
+    sequential_retrieval_total: false
+secrets:
+  openai_api_key_env: OPENAI_API_KEY
+  wikimedia_token_env: WIKIMEDIA_OAUTH2_ACCESS_TOKEN
+graph_retrieval_sweep:
+  grid: {}
+  objective: overlap_breakdown.all.retrieval_before_ce.retrieval_at_k.10.ndcg
+  sweep_id: null
+  use_router_overlap_splits: false
+figures:
+  enabled: false
+  output_dir: null
+  theme:
+    name: default
+    dpi: 200
+    font_size: null
+    backend: null
+    overrides: {}
+  image_format: png
+  plots: []
+results:
+  bundle_id: default
+  output_root: results
+  split: test
+  theme:
+    name: default
+    dpi: 200
+    font_size: null
+    backend: null
+    overrides: {}
+  image_format: pdf
+  oracle:
+    metric: stateful_ndcg
+    k: 5
+    diagnostic_ks:
+    - 5
+    - 10
+    - 20
+    plateau_tau: 1.0e-06
+  router: {}
+  policies: {}
+  artifacts: []
+resolved_paths:
+  data_base: /Users/liamdemb/Projects/Honours Research/surf-rag/data
+  figures_base: /Users/liamdemb/figures
+  benchmark_base: /Users/liamdemb/Projects/Honours Research/surf-rag/data/benchmarks
+  router_base: /Users/liamdemb/Projects/Honours Research/surf-rag/data/orchestrator
+  bundle: /Users/liamdemb/Projects/Honours Research/surf-rag/data/benchmarks/surf-bench/main
+  benchmark_path: /Users/liamdemb/Projects/Honours Research/surf-rag/data/benchmarks/surf-bench/main/benchmark/benchmark.jsonl
+  corpus_dir: /Users/liamdemb/Projects/Honours Research/surf-rag/data/benchmarks/surf-bench/main/corpus
+  docstore_path: /Users/liamdemb/Projects/Honours Research/surf-rag/data/benchmarks/surf-bench/main/corpus/docstore.sqlite
+  corpus_path: /Users/liamdemb/Projects/Honours Research/surf-rag/data/benchmarks/surf-bench/main/corpus/corpus.jsonl
+  evaluations_dir: /Users/liamdemb/Projects/Honours Research/surf-rag/data/benchmarks/surf-bench/main/evaluations
+  hf_home: /Users/liamdemb/Projects/Honours Research/surf-rag/data/benchmarks/surf-bench/main/corpus/hf_cache
+  transformers_cache: /Users/liamdemb/Projects/Honours Research/surf-rag/data/benchmarks/surf-bench/main/corpus/hf_cache/transformers
+  router_oracle_dir: /Users/liamdemb/Projects/Honours Research/surf-rag/data/orchestrator/ndcg@10/oracle
+  router_dataset_dir: /Users/liamdemb/Projects/Honours Research/surf-rag/data/orchestrator/ndcg@10/dataset
+  router_model_dir: /Users/liamdemb/Projects/Honours Research/surf-rag/data/orchestrator/ndcg@10/model
+  router_architecture_id: null

@@ -1,0 +1,26 @@
+{
+  "total_assigned": 3600,
+  "by_split": {
+    "train": 2160,
+    "dev": 720,
+    "test": 720,
+    "other": 0
+  },
+  "label_rows": 3600,
+  "embedding_resolution": {
+    "embedding_provider": "openai",
+    "embedding_model": "text-embedding-3-large",
+    "cache_mode": "required",
+    "hits": 3600,
+    "misses": 0,
+    "live_computed": 0,
+    "appended_rows": 0,
+    "openai_embedding_dimensions": 256,
+    "openai_dimensions": 256,
+    "cache_root": "/Users/liamdemb/Projects/Honours Research/surf-rag/data/benchmarks/surf-bench/main/query_embeddings/openai/text-embedding-3-large/dim-256/002",
+    "embedding_source": "cache",
+    "embedding_dim": 256
+  },
+  "updated_at": "2026-05-22T19:59:24.810693+00:00",
+  "run_root": "/Users/liamdemb/Projects/Honours Research/surf-rag/data/orchestrator/ndcg@10/dataset"
+}
